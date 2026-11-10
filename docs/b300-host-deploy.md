@@ -24,6 +24,7 @@ B300 서버
 - vLLM은 호스트 GPU 7을 사용하고, API 컨테이너는 `host.docker.internal:8021`로 접근합니다.
 - Langfuse와 Mem0도 B300 안에서 동작합니다.
 - Mem0의 LLM은 vLLM(OpenAI 호환)을 사용하고, embedder는 FastEmbed를 사용합니다.
+- 검증 시점에는 GPU 7을 사용했습니다. 이후 GPU 7에 별도 학습 작업이 들어가, 현재 27B는 GPU 0(gpu-memory-utilization 0.30)에서 운영 중입니다.
 
 ## 2. 준비 파일
 
@@ -210,7 +211,7 @@ E2E_BASE_URL=http://127.0.0.1:3101 npm run test:e2e
 | Mem0 | 메모리 저장/검색 (vLLM OpenAI provider) |
 | Full-stack smoke | ALL CHECKS PASSED |
 | Playwright E2E | 11 checks passed |
-| API tests | 21 passed |
+| API tests | 24 passed |
 
 ## 10. 문제 해결
 

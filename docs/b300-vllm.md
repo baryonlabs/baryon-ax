@@ -100,7 +100,20 @@ curl -s http://127.0.0.1:8000/v1/models
 | Langfuse trace | ✅ latency ≈ 0.53초, user `b300-user` |
 | Full-stack smoke | ✅ ALL CHECKS PASSED |
 | Playwright E2E | ✅ 11 checks passed |
-| API tests | ✅ 21 passed |
+| API tests | ✅ 24 passed |
+
+### Qwen3.5-122B 테스트
+
+같은 GPU 7에서 122B 모델도 테스트했습니다.
+
+- 모델: `Qwen3.5-122B-A10B`, served name `baryon-ax-qwen-122b`
+- GPU 7, TP1, max-model-len 8192, gpu-memory-utilization 0.90
+- GPU 메모리: 약 268,560 MiB
+- 결과: 한국어 유지, 중국어 전환 없음, 조직 정보 환각 없음 (`우리 조직은?` → "제공된 문서에서 해당 정보를 찾지 못했습니다.")
+- 응답 시간: 0.14~3.47초 (쿼리/캐시 상태에 따라)
+- 주의: max-model-len 8192에서는 Mem0 추출 프롬프트가 8193 토큰을 넘어 400 오류가 발생할 수 있습니다. 16k 이상 또는 별도 메모리 모델을 권장합니다.
+
+> 테스트 이후 GPU 7에 별도 학습 작업이 시작되어, 현재 27B는 GPU 0(gpu-memory-utilization 0.30)에서 운영 중입니다. GPU 7을 다시 사용할 수 있을 때 `scripts/b300_serve_vllm.sh`로 재시작하세요.
 
 실제 답변 예시:
 

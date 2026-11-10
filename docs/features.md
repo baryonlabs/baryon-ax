@@ -62,6 +62,7 @@
 | LangGraph 오케스트레이션 | ✅ | 정책 검사 + 검색 단계를 그래프로 실행 |
 | Langfuse 트레이싱 | ✅ | trace/generation, 사용자·조직·모델 메타데이터 |
 | Redis 레이트 리밋 | ✅ | 사용자·조직당 분당 요청 제한 (fixed window) |
+| 모델별 시스템 프롬프트 | ✅ | `qwen35`/`qwen`/`generic` 프로필, 한국어 강제·근거 강제·환각 방지 |
 | 모델 선택 UI | 🔶 | 현재 설정된 모델 1개만 표시 |
 | RAG on/off | ✅ | 요청별 `use_retrieval` 토글 |
 | 출처 표시 | ✅ | 문서 ID·제목·청크 번호만 표시 (원문 비노출) |
@@ -96,6 +97,7 @@
 | 빈 ACL 보호 | ✅ | `allowed_roles`가 비면 소유자·관리자만 접근 |
 | 한국어 조사 대응 | ✅ | 질의 토큰의 한글 접두어 확장으로 `Qdrant는` ↔ `Qdrant와` 매칭 |
 | 검색 결과 제한 | ✅ | 기본 4개 (`search(limit=4)`) |
+| 검색 최소 점수 | ✅ | `RETRIEVAL_MIN_SCORE` 기본 0.3, 무관 문서 컷 |
 | 문서 삭제 | ✅ | 업로더 또는 관리자 |
 | 문서 ACL 편집 | ✅ | 관리자 전용, `PATCH /v1/documents/{id}` |
 | 원문 클라이언트 비노출 | ✅ | 출처에는 ID·제목·청크만 반환 |
@@ -277,7 +279,7 @@
 
 | 항목 | 상태 | 결과/설명 |
 | --- | --- | --- |
-| API 단위·통합 테스트 | ✅ | **21 passed** |
+| API 단위·통합 테스트 | ✅ | **24 passed** |
 | Playwright E2E | ✅ | **11 checks passed** (`npm run test:e2e`, Vite/Compose) |
 | Web 타입체크·빌드 | ✅ | `tsc -b && vite build` 성공 |
 | 전체 스택 스모크 | ✅ | `scripts/smoke_full_stack.py` — health/upload/search/chat/audit/memory |
@@ -300,6 +302,9 @@
 | `MODEL_BASE_URL` | 빈 값 | OpenAI 호환 엔드포인트 (빈 값이면 데모) |
 | `MODEL_API_KEY` | 빈 값 | 모델 서버 인증 키 |
 | `MODEL_TIMEOUT_SECONDS` | `180` | 업스트림 타임아웃 |
+| `MODEL_PROMPT_PROFILE` | `auto` | `qwen35`/`qwen`/`generic` 시스템 프롬프트 |
+| `MODEL_SYSTEM_PROMPT` | 빈 값 | 시스템 프롬프트 전체 오버라이드 |
+| `RETRIEVAL_MIN_SCORE` | `0.3` | Qdrant 검색 최소 유사도 |
 | `MODEL_DISABLE_THINKING` | `false` | Qwen3.5 vLLM thinking 비활성화 |
 | `MODEL_CHAT_TEMPLATE_KWARGS` | 빈 값 | vLLM `chat_template_kwargs` JSON |
 | `ALLOWED_ORIGINS` | `http://localhost:3001,http://localhost:5173` | CORS 허용 오리진 |
@@ -370,7 +375,7 @@
 ## 14. 검증 기준
 
 ```text
-API tests           21 passed
+API tests           24 passed
 Playwright E2E      11 checks passed (Vite 5173 / Compose 3001)
 Full-stack smoke    health + upload + Qdrant retrieval + chat + audit + Mem0
 Web build           tsc -b && vite build 성공

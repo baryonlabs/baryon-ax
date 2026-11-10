@@ -60,6 +60,8 @@ OLLAMA_HOST_URL=http://host.docker.internal:11435 \
 | `MODEL_BASE_URL` | empty | OpenAI-compatible endpoint; empty selects `demo-local` |
 | `MODEL_NAME` | `qwen2.5:7b` | Model ID (full stack) |
 | `MODEL_DISABLE_THINKING` | `false` | Send `enable_thinking=false` for Qwen3.5/vLLM |
+| `MODEL_PROMPT_PROFILE` | `auto` | Model-specific grounded system prompt (`qwen35`, `qwen`, `generic`) |
+| `RETRIEVAL_MIN_SCORE` | `0.3` | Minimum Qdrant similarity for a citation |
 | `MODEL_TIMEOUT_SECONDS` | `180` | Upstream connect/read timeout |
 | `DATABASE_URL` | empty | PostgreSQL audit store (empty = JSONL only) |
 | `REDIS_URL` | empty | Redis rate limiter (empty = disabled) |

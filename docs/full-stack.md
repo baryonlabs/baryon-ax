@@ -75,7 +75,9 @@ cp .env.example .env
 | --- | --- | --- |
 | `MODEL_BASE_URL` | `http://127.0.0.1:11434/v1` | 호스트 실행 시 Ollama OpenAI 호환 URL |
 | `MODEL_NAME` | `qwen2.5:7b` | 모델 ID |
-| `MODEL_TIMEOUT_SECONDS` | `180` | 7B 모델 응답 대기 |
+| `MODEL_TIMEOUT_SECONDS` | `180` | 모델 응답 대기 |
+| `MODEL_PROMPT_PROFILE` | `qwen35` | Qwen3.5용 시스템 프롬프트 (B300) |
+| `RETRIEVAL_MIN_SCORE` | `0.3` | Qdrant 검색 최소 유사도 |
 | `DATABASE_URL` | `postgresql://baryon:baryon@127.0.0.1:5433/baryon` | 호스트 실행 시 Postgres |
 | `REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis |
 | `QDRANT_URL` | `http://127.0.0.1:6333` | Qdrant |
