@@ -11,7 +11,7 @@ from collections import deque
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import AsyncIterator, Literal
+from typing import Annotated, AsyncIterator, Literal
 
 import httpx
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile
@@ -61,6 +61,10 @@ class ChatRequest(BaseModel):
     use_retrieval: bool = True
     thread_id: str | None = None
     locale: Literal["ko", "en"] = "ko"
+
+
+class DocumentUpdate(BaseModel):
+    allowed_roles: list[Annotated[str, Field(min_length=1, max_length=64)]] = Field(default_factory=list, max_length=20)
 
 
 class AuditSink:
@@ -198,6 +202,16 @@ class DocumentService:
         self.documents.pop(document_id)
         (self.storage_root / f"{document_id}.json").unlink(missing_ok=True)
         return True
+
+    def update_roles(self, principal: Principal, document_id: str, allowed_roles: set[str]) -> Document | None:
+        if "admin" not in principal.roles:
+            raise PermissionError("Administrator role required")
+        document = self.documents.get(document_id)
+        if not document or document.organization_id != principal.organization_id:
+            return None
+        document.allowed_roles = allowed_roles
+        self._persist(document)
+        return document
 
     def search(self, principal: Principal, query: str, limit: int = 4) -> list[dict]:
         terms = search_terms(query)
@@ -378,6 +392,24 @@ async def delete_document(
     return {"id": document_id, "deleted": True, "trace_id": trace_id}
 
 
+@app.patch("/v1/documents/{document_id}")
+async def update_document(
+    document_id: str, update: DocumentUpdate,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    roles = {role.strip() for role in update.allowed_roles if role.strip()}
+    try:
+        document = documents.update_roles(principal, document_id, roles)
+    except PermissionError as error:
+        raise HTTPException(403, str(error)) from error
+    if not document:
+        raise HTTPException(404, "Document not found")
+    trace_id = str(uuid.uuid4())
+    audit.emit("document.acl_updated", principal, trace_id, document_id=document.id, allowed_roles=sorted(document.allowed_roles))
+    return {"id": document.id, "allowed_roles": sorted(document.allowed_roles), "trace_id": trace_id}
+
+
 def sse(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
@@ -448,3 +480,35 @@ async def audit_events(
     if "admin" not in principal.roles:
         raise HTTPException(403, "Administrator role required")
     return {"data": audit.recent_for(principal, limit)}
+
+
+@app.get("/v1/admin/settings")
+async def admin_settings(
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if "admin" not in principal.roles:
+        raise HTTPException(403, "Administrator role required")
+    organization_documents = [document for document in documents.documents.values() if document.organization_id == principal.organization_id]
+    organization_events = audit.recent_for(principal, limit=5000)
+    return {
+        "version": __version__,
+        "organization_id": principal.organization_id,
+        "model": {
+            "name": model_adapter.model,
+            "adapter": "openai-compatible" if model_adapter.base_url else "demo-local",
+            "base_url_configured": bool(model_adapter.base_url),
+            "timeout_seconds": MODEL_TIMEOUT_SECONDS,
+        },
+        "storage": {
+            "documents": "local-json",
+            "audit": "jsonl",
+            "max_document_bytes": MAX_DOCUMENT_BYTES,
+        },
+        "policy": {
+            "blocked_patterns": len(policy.blocked_patterns),
+            "pii_masking": True,
+        },
+        "retrieval": {"mode": "lexical", "result_limit": 4},
+        "counts": {"documents": len(organization_documents), "audit_events": len(organization_events)},
+    }

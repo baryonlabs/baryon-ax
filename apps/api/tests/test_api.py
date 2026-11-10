@@ -133,6 +133,46 @@ def test_audit_endpoint_is_admin_only_and_organization_scoped() -> None:
     assert client.get("/v1/audit-events", headers=headers(user="admin-b", organization=org_b, roles="admin")).json()["data"] == []
 
 
+def test_admin_settings_are_admin_only() -> None:
+    assert client.get("/v1/admin/settings", headers=headers(roles="member")).status_code == 403
+    settings = client.get("/v1/admin/settings", headers=headers(user="admin", roles="admin")).json()
+    assert settings["version"] == "0.6.0"
+    assert settings["model"]["adapter"] in {"demo-local", "openai-compatible"}
+    assert settings["policy"] == {"blocked_patterns": 1, "pii_masking": True}
+    assert settings["retrieval"] == {"mode": "lexical", "result_limit": 4}
+    assert isinstance(settings["counts"]["documents"], int)
+
+
+def test_admin_can_update_document_acl() -> None:
+    org = "org-admin-acl"
+    upload = client.post("/v1/documents", files={"file": ("acl.md", b"acl update content")},
+                         headers=headers(user="owner", organization=org))
+    document_id = upload.json()["id"]
+
+    def patch(payload: dict, request_headers: dict[str, str]):
+        return client.patch(f"/v1/documents/{document_id}", json=payload, headers=request_headers)
+
+    assert patch({"allowed_roles": ["legal"]}, headers(user="owner", organization=org)).status_code == 403
+    assert patch({"allowed_roles": ["legal"]}, headers(user="admin", organization="org-admin-other", roles="admin")).status_code == 404
+    assert patch({"allowed_roles": ["legal"]}, headers(user="admin", organization=org, roles="admin")).json()["allowed_roles"] == ["legal"]
+    assert all(item["id"] != document_id for item in client.get("/v1/documents", headers=headers(user="member", organization=org)).json()["data"])
+    legal_documents = client.get("/v1/documents", headers=headers(user="legal", organization=org, roles="legal")).json()["data"]
+    assert any(item["id"] == document_id for item in legal_documents)
+
+    events = client.get("/v1/audit-events?limit=20", headers=headers(user="admin", organization=org, roles="admin")).json()["data"]
+    assert any(event["type"] == "document.acl_updated" and event["document_id"] == document_id for event in events)
+
+    assert patch({"allowed_roles": []}, headers(user="admin", organization=org, roles="admin")).status_code == 200
+    assert client.get("/v1/documents/search", params={"q": "acl update content"},
+                      headers=headers(user="legal", organization=org, roles="legal")).json()["data"] == []
+
+
+def test_patch_unknown_document_returns_not_found() -> None:
+    response = client.patch("/v1/documents/missing", json={"allowed_roles": ["member"]},
+                            headers=headers(user="admin", roles="admin"))
+    assert response.status_code == 404
+
+
 def test_streaming_chat_returns_tokens_and_citations() -> None:
     response = client.post("/v1/chat/completions", json={"messages": [{"role": "user", "content": "stream check"}], "stream": True},
                            headers=headers(organization="stream-org"))
