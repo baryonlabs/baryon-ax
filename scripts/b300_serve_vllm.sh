@@ -8,6 +8,7 @@ PORT=${B300_PORT:-8020}
 MODEL=${B300_MODEL:-$ROOT/models/base/Qwen3.5-27B}
 NAME=${B300_SERVED_NAME:-baryon-ax-qwen}
 MAX_LEN=${B300_MAX_LEN:-32768}
+GMU=${B300_GMU:-0.90}
 
 if [ "$(ss -ltnH "sport = :$PORT" | wc -l)" != "0" ]; then
   echo "port $PORT is already in use" >&2
@@ -30,6 +31,6 @@ exec vllm serve "$MODEL" \
   --host 127.0.0.1 --port "$PORT" \
   --tensor-parallel-size 1 \
   --max-model-len "$MAX_LEN" \
-  --gpu-memory-utilization 0.90 \
+  --gpu-memory-utilization "$GMU" \
   --max-num-seqs 32 \
   --enable-prefix-caching
