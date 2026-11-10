@@ -50,8 +50,12 @@ try {
   });
 
   await step("grounded chat streams an answer with sources", async () => {
-    await page.locator("textarea").fill("Qdrant는 무엇에 사용하나요?");
-    await page.locator('button[aria-label="채팅"]').click();
+    const composer = page.locator("textarea");
+    await composer.fill("first line");
+    await composer.press("Enter");
+    await page.waitForFunction(() => document.querySelector("textarea")?.value === "first line\n");
+    await composer.fill("Qdrant는 무엇에 사용하나요?");
+    await composer.press("Shift+Enter");
     await page.waitForFunction(() => {
       const messages = [...document.querySelectorAll("article.assistant .message-body p")];
       const last = messages.at(-1);
