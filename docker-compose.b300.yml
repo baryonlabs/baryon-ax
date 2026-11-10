@@ -1,0 +1,15 @@
+# B300 GPU 7 vLLM override.
+# Prerequisites: vLLM on B300 127.0.0.1:8020 + scripts/b300_vllm_tunnel.sh
+#                 local Ollama proxy on 11435 + scripts/ollama_proxy.py
+#
+#   docker compose -f docker-compose.yml -f docker-compose.full.yml \
+#     -f docker-compose.b300.yml --profile deps up -d --build
+services:
+  api:
+    environment:
+      MODEL_BASE_URL: http://host.docker.internal:8020/v1
+      MODEL_NAME: baryon-ax-qwen
+      MODEL_API_KEY: ollama
+      MODEL_DISABLE_THINKING: "true"
+      OLLAMA_BASE_URL: http://host.docker.internal:11435
+      MEM0_LLM_MODEL: qwen2.5:7b

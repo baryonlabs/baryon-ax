@@ -145,6 +145,10 @@ MODEL_NAME=baryon-ax-qwen \
 MODEL_DISABLE_THINKING=true \
 MEM0_LLM_MODEL=qwen2.5:7b \
   docker compose -f docker-compose.yml -f docker-compose.full.yml --profile deps up -d --build
+
+# 또는
+docker compose -f docker-compose.yml -f docker-compose.full.yml \
+  -f docker-compose.b300.yml --profile deps up -d --build
 ```
 
 Qwen3.5는 thinking 출력을 끄기 위해 `MODEL_DISABLE_THINKING=true`를 사용합니다. vLLM 시작·종료·검증 상세는 [b300-vllm.md](b300-vllm.md)를 참고하세요.

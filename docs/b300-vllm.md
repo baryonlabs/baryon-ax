@@ -65,6 +65,10 @@ MODEL_DISABLE_THINKING=true \
 MEM0_LLM_MODEL=qwen2.5:7b \
   docker compose -f docker-compose.yml -f docker-compose.full.yml \
   --profile deps up -d --build
+
+# 또는 B300 전용 override 사용
+docker compose -f docker-compose.yml -f docker-compose.full.yml \
+  -f docker-compose.b300.yml --profile deps up -d --build
 ```
 
 - `MODEL_HOST_URL`은 `docker-compose.full.yml`의 `MODEL_BASE_URL`로 전달됩니다.
