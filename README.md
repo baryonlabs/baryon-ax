@@ -14,7 +14,7 @@ The platform brings a chat workspace, agent execution, grounded knowledge search
 
 ## What works today
 
-- Chat UI with model selection and token streaming
+- Chat UI with model selection, token streaming, and Markdown rendering (GFM)
 - Keyboard-first composer: `Shift+Enter` sends, `Enter` starts a new line
 - Korean-first bilingual UI (한국어 / English), with browser-language detection and persisted preference
 - OpenAI-compatible model adapter, verified with **Ollama `qwen2.5:7b`** and **vLLM `Qwen3.5-27B` on B300 GPU 7**, with a safe local demo fallback

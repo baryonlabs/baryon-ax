@@ -99,7 +99,7 @@ curl -s http://127.0.0.1:8000/v1/models
 | PostgreSQL 감사 | ✅ `model=baryon-ax-qwen` |
 | Langfuse trace | ✅ latency ≈ 0.53초, user `b300-user` |
 | Full-stack smoke | ✅ ALL CHECKS PASSED |
-| Playwright E2E | ✅ 11 checks passed |
+| Playwright E2E | ✅ 12 checks passed |
 | API tests | ✅ 24 passed |
 
 ### Qwen3.5-122B 테스트

@@ -210,7 +210,7 @@ E2E_BASE_URL=http://127.0.0.1:3101 npm run test:e2e
 | Langfuse | trace/generation |
 | Mem0 | 메모리 저장/검색 (vLLM OpenAI provider) |
 | Full-stack smoke | ALL CHECKS PASSED |
-| Playwright E2E | 11 checks passed |
+| Playwright E2E | 12 checks passed |
 | API tests | 24 passed |
 
 ## 10. 문제 해결

@@ -39,6 +39,7 @@
 | 역할 전환 | ✅ | 헤더에서 `멤버` / `관리자` 전환, localStorage에 저장 |
 | 관리자 시각 구분 | ✅ | 앰버 테마, `ADMIN` 배지, 관리자 전용 메뉴 표시 |
 | 채팅 워크스페이스 | ✅ | 메시지 목록, 스트리밍 커서, 출처 표시 |
+| Markdown 렌더링 | ✅ | GFM 표·목록·코드·링크·줄바꿈, raw HTML 비활성화 |
 | 지식 라이브러리 | ✅ | 문서 목록, 청크 수, 허용 역할, 소유자 표시 |
 | 거버넌스 뷰 | ✅ | 관리자 감사 로그, 멤버 접근 차단 안내 |
 | 관리자 설정 뷰 | ✅ | 개요·런타임·보안 정책·저장소 카드 |
@@ -280,7 +281,7 @@
 | 항목 | 상태 | 결과/설명 |
 | --- | --- | --- |
 | API 단위·통합 테스트 | ✅ | **24 passed** |
-| Playwright E2E | ✅ | **11 checks passed** (`npm run test:e2e`, Vite/Compose) |
+| Playwright E2E | ✅ | **12 checks passed** (`npm run test:e2e`, Vite/Compose) |
 | Web 타입체크·빌드 | ✅ | `tsc -b && vite build` 성공 |
 | 전체 스택 스모크 | ✅ | `scripts/smoke_full_stack.py` — health/upload/search/chat/audit/memory |
 | Docker 이미지 빌드 | ✅ | API/Web 이미지 빌드 성공 |
@@ -376,7 +377,7 @@
 
 ```text
 API tests           24 passed
-Playwright E2E      11 checks passed (Vite 5173 / Compose 3001)
+Playwright E2E      12 checks passed (Vite 5173 / Compose 3001)
 Full-stack smoke    health + upload + Qdrant retrieval + chat + audit + Mem0
 Web build           tsc -b && vite build 성공
 Docker build        API/Web 이미지 성공

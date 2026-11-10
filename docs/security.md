@@ -14,5 +14,6 @@ Before production use, implement these controls:
 - A Redis fixed-window rate limit is applied per user and organization. Add CSRF strategy where cookie authentication is used, security headers, dependency scanning, distributed rate limits, and regular restore tests.
 - Remote vLLM is bound to the B300 loopback and reached through an SSH tunnel. Keep the tunnel on a trusted network, restrict `0.0.0.0:8020`, and terminate it after testing.
 - Langfuse traces, Mem0 memories, Qdrant payloads, and audit records may contain prompts or PII. Configure redaction, retention, deletion, and encryption for each store.
+- Chat Markdown is rendered with `react-markdown` without raw HTML (`rehype-raw` disabled), and links open with `rel="noreferrer"`. Do not enable raw HTML without sanitization.
 
 The included phone-number mask is illustrative only. It is not a complete PII detector or a substitute for a security review.

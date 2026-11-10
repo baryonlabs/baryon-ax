@@ -31,6 +31,7 @@
 | Vite | 프런트엔드 빌드·개발 서버 | MIT | `apps/web` |
 | TypeScript | 타입 시스템 | Apache-2.0 | `apps/web` |
 | lucide-react | UI 아이콘 | ISC | `apps/web` |
+| react-markdown / remark-gfm / remark-breaks | Markdown 렌더링 | MIT | `apps/web` |
 | Nginx | 정적 파일 서빙·API 프록시 | BSD-2-Clause | Web 컨테이너 |
 | Node.js | 프런트엔드 빌드 런타임 | MIT | Web 빌드 스테이지 |
 | Docker Engine | 컨테이너 빌드·실행 | Apache-2.0 | Compose |
