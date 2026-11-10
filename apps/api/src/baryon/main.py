@@ -382,6 +382,11 @@ def sse(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def citation_payload(citations: list[dict]) -> list[dict]:
+    """Return only the metadata the client needs; document bodies stay server-side."""
+    return [{"document_id": item["document_id"], "title": item["title"], "chunk": item["chunk"]} for item in citations]
+
+
 async def stream_chat(request: ChatRequest, principal: Principal, trace_id: str, started: float, citations: list[dict]) -> AsyncIterator[str]:
     buffer = ""
     try:
@@ -395,7 +400,7 @@ async def stream_chat(request: ChatRequest, principal: Principal, trace_id: str,
         audit.emit("chat.completed", principal, trace_id, thread_id=request.thread_id, model=request.model,
                    latency_ms=round((time.perf_counter() - started) * 1000),
                    citations=[item["document_id"] for item in citations], streamed=True)
-        yield sse({"type": "citations", "data": citations, "trace_id": trace_id})
+        yield sse({"type": "citations", "data": citation_payload(citations), "trace_id": trace_id})
         yield "data: [DONE]\n\n"
     except asyncio.CancelledError:
         audit.emit("chat.cancelled", principal, trace_id, thread_id=request.thread_id, model=request.model, streamed=True)
@@ -431,7 +436,7 @@ async def chat(
                citations=[item["document_id"] for item in citations], streamed=False)
     return {"id": trace_id, "object": "chat.completion", "model": request.model,
             "choices": [{"index": 0, "message": {"role": "assistant", "content": answer}, "finish_reason": "stop"}],
-            "citations": citations}
+            "citations": citation_payload(citations)}
 
 
 @app.get("/v1/audit-events")

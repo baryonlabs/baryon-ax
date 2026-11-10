@@ -145,6 +145,19 @@ def test_streaming_chat_returns_tokens_and_citations() -> None:
     assert any(item["type"] == "token" and item["content"] for item in payloads)
     citations = [item for item in payloads if item["type"] == "citations"]
     assert len(citations) == 1 and citations[0]["trace_id"] == trace_id
+    assert all("content" not in item for item in citations[0]["data"])
+
+
+def test_citations_do_not_expose_document_content() -> None:
+    org = "org-citation"
+    upload = client.post("/v1/documents", files={"file": ("contact.md", b"Reach me at 010-9876-5432.")}, headers=headers(organization=org))
+    assert upload.status_code == 200
+    response = client.post("/v1/chat/completions", json={"messages": [{"role": "user", "content": "Reach me"}], "stream": False},
+                           headers=headers(organization=org))
+    assert response.status_code == 200
+    assert "010-9876-5432" not in response.text
+    assert "[REDACTED-PHONE]" in response.text
+    assert all("content" not in citation for citation in response.json()["citations"])
 
 
 def test_pii_masking_spans_stream_chunks() -> None:

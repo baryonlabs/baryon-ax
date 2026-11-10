@@ -5,7 +5,7 @@ export type Locale = "ko" | "en";
 type Role = "member" | "admin";
 type View = "chat" | "knowledge" | "governance";
 type ChatMessage = { role: "user" | "assistant"; content: string; citations?: Citation[] };
-type Citation = { document_id: string; title: string; chunk: number; content: string };
+type Citation = { document_id: string; title: string; chunk: number };
 type KnowledgeDocument = { id: string; title: string; owner_id: string; allowed_roles: string[]; created_at: string; chunks: number };
 type AuditEvent = {
   id: string; at: string; type: string; trace_id: string; organization_id: string; user_id: string;
