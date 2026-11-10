@@ -85,6 +85,7 @@ cp .env.example .env
 | `MEM0_LLM_MODEL` | `qwen2.5:7b` | 메모리 추출 모델 |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Mem0용 Ollama URL |
 | `MEM0_HISTORY_DB` | `/tmp/baryon-ax-mem0/history.db` | Mem0 이력 SQLite |
+| `MEM0_TELEMETRY` | `false` | Mem0 PostHog 텔레메트리 비활성화 (온프레미스 권장) |
 | `LANGFUSE_ENABLED` | `true` | Langfuse 트레이싱 |
 | `LANGFUSE_HOST` | `http://127.0.0.1:3000` | Langfuse 서버 |
 | `LANGFUSE_PUBLIC_KEY` | `pk-lf-...` | 프로젝트 public key |

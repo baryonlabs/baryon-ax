@@ -18,6 +18,7 @@ services:
       MODEL_API_KEY: ${MODEL_API_KEY:-ollama}
       MEM0_ENABLED: "true"
       MEM0_LLM_MODEL: ${MODEL_NAME:-qwen2.5:7b}
+      MEM0_TELEMETRY: "false"
       OLLAMA_BASE_URL: ${OLLAMA_HOST_URL:-http://host.docker.internal:11434}
       MEM0_HISTORY_DB: /data/mem0/history.db
       LANGFUSE_ENABLED: "true"

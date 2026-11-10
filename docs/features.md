@@ -316,6 +316,7 @@
 | `MEM0_LLM_MODEL` | `qwen2.5:7b` | 메모리 추출 모델 |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Mem0용 Ollama |
 | `MEM0_HISTORY_DB` | `/tmp/baryon-ax-mem0/history.db` | Mem0 이력 SQLite |
+| `MEM0_TELEMETRY` | `false` | Mem0 텔레메트리 비활성화 |
 | `POSTGRES_DB` | `baryon` | Compose PostgreSQL DB |
 | `POSTGRES_USER` | `baryon` | Compose PostgreSQL 사용자 |
 | `POSTGRES_PASSWORD` | 예시 값 | Compose PostgreSQL 비밀번호 (변경 필수) |
