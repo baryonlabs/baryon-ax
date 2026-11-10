@@ -11,6 +11,7 @@ const copy = {
   ko: {
     welcome: "Baryon AX를 시작할 준비가 되었습니다. 질문을 입력하거나 Markdown 문서를 업로드해 근거 기반 대화를 시작하세요.",
     indexed: (title: string, chunks: number) => `${title} 문서를 ${chunks}개 청크로 색인했습니다. 이제 권한 범위 안에서 검색할 수 있습니다.`,
+    uploadFailed: "문서를 업로드할 수 없습니다. UTF-8 Markdown 또는 텍스트 파일인지 확인해 주세요.",
     failed: "요청을 완료할 수 없습니다. API가 실행 중인지 확인해 주세요.",
     newChat: "+ 새 대화", chat: "채팅", knowledge: "지식", governance: "거버넌스", workspace: "AI 작업 공간",
     groundedChat: "근거 기반 채팅", knowledgeLibrary: "지식 라이브러리", sources: "출처", ask: "무엇이든 질문하거나 업로드한 문서를 검색하세요…",
@@ -21,6 +22,7 @@ const copy = {
   en: {
     welcome: "Baryon AX is ready. Ask a question or upload a Markdown document to ground the conversation.",
     indexed: (title: string, chunks: number) => `Indexed ${title} into ${chunks} chunk(s). It is now available for permission-scoped retrieval.`,
+    uploadFailed: "The document could not be uploaded. Check that it is a UTF-8 Markdown or text file.",
     failed: "The request could not be completed. Check that the API is running.",
     newChat: "+ New conversation", chat: "Chat", knowledge: "Knowledge", governance: "Governance", workspace: "AI WORKSPACE",
     groundedChat: "Grounded chat", knowledgeLibrary: "Knowledge library", sources: "Sources", ask: "Ask anything, or query an uploaded document…",
@@ -62,11 +64,15 @@ export default function App() {
   }
 
   async function upload(file: File) {
-    const data = new FormData(); data.append("file", file);
-    const response = await fetch(`${API}/v1/documents`, { method: "POST", body: data });
-    if (!response.ok) throw new Error("Document upload failed");
-    const result = await response.json(); await loadKnowledge();
-    setMessages(previous => [...previous, { role: "assistant", content: t.indexed(result.title, result.chunks) }]);
+    try {
+      const data = new FormData(); data.append("file", file);
+      const response = await fetch(`${API}/v1/documents`, { method: "POST", body: data });
+      if (!response.ok) throw new Error("Document upload failed");
+      const result = await response.json(); await loadKnowledge();
+      setMessages(previous => [...previous, { role: "assistant", content: t.indexed(result.title, result.chunks) }]);
+    } catch {
+      setMessages(previous => [...previous, { role: "assistant", content: t.uploadFailed }]);
+    }
   }
 
   async function removeDocument(id: string) {
@@ -89,10 +95,18 @@ export default function App() {
         for (const frame of frames) {
           const raw = frame.replace(/^data: /, ""); if (raw === "[DONE]") continue;
           const item = JSON.parse(raw);
+          if (item.type === "error") throw new Error(item.message);
           setMessages(previous => { const copied = [...previous]; const last = copied.length - 1; copied[last] = { ...copied[last], content: copied[last].content + (item.type === "token" ? item.content : ""), citations: item.type === "citations" ? item.data : copied[last].citations }; return copied; });
         }
       }
-    } catch { setMessages(previous => [...previous.slice(0, -1), { role: "assistant", content: t.failed }]); }
+    } catch {
+      setMessages(previous => {
+        const copied = [...previous]; const last = copied.length - 1;
+        const partial = copied[last]?.content.trim();
+        copied[last] = { role: "assistant", content: partial ? `${partial}\n\n${t.failed}` : t.failed };
+        return copied;
+      });
+    }
     finally { setBusy(false); }
   }
 
