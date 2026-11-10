@@ -5,36 +5,43 @@ Baryon AX keeps product responsibilities separate even when a development profil
 | Layer | Current implementation | Production replacement point |
 | --- | --- | --- |
 | UI | React/Vite chat workspace | SSO-aware enterprise frontend |
-| Execution | FastAPI gateway and model adapter | LangGraph workflows + durable checkpointer |
-| Knowledge | permission-filtered lexical retrieval with durable document files | LlamaIndex ingestion + Qdrant or Milvus |
-| Governance | policy engine and audit schema | NeMo/Llama Guard, OPA, Langfuse |
-| Infrastructure | Docker Compose services | PostgreSQL, Redis, Qdrant, object storage, Kubernetes |
+| Execution | FastAPI gateway + LangGraph policy/retrieval graph | Durable LangGraph checkpoints and tool loops |
+| Knowledge | Qdrant + FastEmbed retrieval, LlamaIndex chunking, lexical fallback | Milvus, hybrid search, richer parsing |
+| Governance | PolicyEngine, PostgreSQL/JSONL audit, Langfuse traces | NeMo/Llama Guard, OPA, retention policy |
+| Infrastructure | Docker Compose Basic Core + full-stack override | HA PostgreSQL, Redis, Qdrant, object storage, Kubernetes |
 
 ## Compose vs. target architecture
 
 The overview image is a **target production architecture**, not a one-to-one container map. Several L2/L3 boxes are libraries or in-process adapters today; only the UI, API, and stateful infrastructure need containers.
 
-| Diagram component | Layer | Current Compose service | Used by the app today |
+| Diagram component | Layer | Current implementation | Status |
 | --- | --- | --- | --- |
-| Chat Web UI | L4 | `web` | ✅ React/Nginx |
-| FastAPI gateway | L3 | `api` | ✅ orchestration, policy, audit |
-| LangGraph | L3 | — | ⛔ direct FastAPI handler (no durable graph state) |
-| Guardrails | L3 | — | 🔶 in-process `PolicyEngine` |
-| Langfuse | L3 | — | ⛔ JSONL audit sink instead |
-| Qdrant / Milvus | L2 | `qdrant` (`deps` profile) | ⛔ placeholder, lexical search instead |
-| LlamaIndex | L2 | — | 🔶 simple 900-character chunker |
-| Redis / Mem0 | L2 | `redis` (`deps` profile) | ⛔ placeholder, browser-side history only |
-| PostgreSQL | L1 | `postgres` (`deps` profile) | ⛔ placeholder, JSON files instead |
-| Model serving | L1 | external | ✅ OpenAI-compatible `MODEL_BASE_URL` |
-| Docker | L1 | `api`, `web` | ✅ |
+| Chat Web UI | L4 | `web` (React/Nginx) | ✅ |
+| FastAPI gateway | L3 | `api` | ✅ |
+| LangGraph | L3 | in-process policy/retrieval graph | ✅ |
+| Guardrails | L3 | in-process `PolicyEngine` | 🔶 NeMo/Guardrails AI optional |
+| Langfuse | L3 | host Langfuse v2 + SDK | ✅ |
+| Qdrant | L2 | `qdrant` (`deps` profile) + FastEmbed | ✅ |
+| Milvus | L2 | — | ⛔ Qdrant alternative |
+| LlamaIndex | L2 | sentence splitter in the API | ✅ |
+| Redis | L2 | `redis` (`deps`) fixed-window limiter | ✅ |
+| Mem0 | L2 | in-process Mem0 + Qdrant + Ollama | ✅ |
+| PostgreSQL | L1 | `postgres` (`deps`) audit table | ✅ |
+| Ollama / model serving | L1 | host Ollama OpenAI-compatible endpoint | ✅ |
+| vLLM / SGLang | L1 | — | ⛔ Linux/GPU alternative |
+| Docker | L1 | `api`, `web`, data services | ✅ |
 | Kubernetes | L1 | `deploy/kubernetes` (API only) | 🔶 starter manifests |
 
-The default Compose profile starts only `api` and `web`. PostgreSQL, Redis, and Qdrant are opt-in integration placeholders. See [open-source.md](open-source.md) for the component and license inventory behind this mapping.
+The Basic Core profile starts only `api` and `web` with the `demo-local` model. The full-stack override connects the data services and host services:
 
 ```bash
-docker compose up --build                 # Basic Core: API + UI
-docker compose --profile deps up -d       # + PostgreSQL, Redis, Qdrant
+docker compose up --build                                  # Basic Core
+python3 scripts/ollama_proxy.py --listen-port 11435 &      # Docker Desktop -> loopback Ollama
+OLLAMA_HOST_URL=http://host.docker.internal:11435 \
+  docker compose -f docker-compose.yml -f docker-compose.full.yml --profile deps up -d --build
 ```
+
+See [full-stack.md](full-stack.md) for prerequisites and verification.
 
 ## Trust boundaries
 
@@ -52,7 +59,7 @@ When streaming is requested, the gateway forwards upstream server-sent events to
 
 ## Next production increments
 
-1. Add OIDC/JWT validation and persist organizations, users, roles, threads, and audit events in PostgreSQL.
-2. Replace `DocumentService` with LlamaIndex parsing/embeddings and Qdrant collections filtered by organization and ACL metadata.
-3. Introduce LangGraph state/checkpoint persistence for tool loops, retries, approval interrupts, and resumable runs.
-4. Export OpenTelemetry/Langfuse traces and promote policy decisions to structured governance events.
+1. Add OIDC/JWT validation and persist organizations, users, roles, threads, and messages in PostgreSQL.
+2. Add durable LangGraph checkpoints, tool execution, approval interrupts, and resumable runs.
+3. Add richer Guardrails (NeMo/Guardrails AI) and organization-specific policy rules.
+4. Evaluate Milvus/hybrid search, vLLM/SGLang/LiteLLM, object storage, and managed HA services for scale.

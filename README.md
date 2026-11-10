@@ -4,58 +4,85 @@
 
 > Connect models. Orchestrate agents. Ground knowledge. Observe everything.
 
-This repository is an executable Basic Core v0.6 reference implementation. It offers a small but complete vertical slice: role-aware chat, OpenAI-compatible model routing, document ingestion and retrieval with citations, policy checks, audit events, and a browser UI. It is intentionally modular: production deployments can swap the development retrieval implementation for Qdrant, the demo model for vLLM/Ollama, and the in-process audit sink for PostgreSQL + Langfuse.
+This repository is an executable Basic Core v0.6 reference implementation. It offers a complete vertical slice: role-aware chat, OpenAI-compatible model routing, document ingestion and vector retrieval with citations, policy checks, audit events, memory, and a browser UI. The Basic Core runs with a local demo model and file storage; the **full-stack profile** connects Ollama, Qdrant, PostgreSQL, Redis, Langfuse, LangGraph, LlamaIndex, and Mem0. See [docs/full-stack.md](docs/full-stack.md) for the applied stack.
 
 ## Platform at a glance
 
 ![Baryon AX platform overview: user flow, layered architecture, and core engines](docs/images/baryon-ax-platform-overview.png)
 
-The platform brings a chat workspace, agent execution, grounded knowledge search, and on-premises infrastructure into one operating model. The image summarizes the user flow—ask, run an agent, evaluate, and review evidence—and the responsibilities of each layer. It is the **target production architecture**; the Basic Core runs the UI and API containers and implements policy, retrieval, and audit in-process. See [docs/architecture.md](docs/architecture.md#compose-vs-target-architecture) for the component-by-component mapping.
+The platform brings a chat workspace, agent execution, grounded knowledge search, and on-premises infrastructure into one operating model. The image summarizes the user flow—ask, run an agent, evaluate, and review evidence—and the responsibilities of each layer. It is the **target production architecture**; the Basic Core maps most of it to in-process adapters, and the full-stack profile connects the stateful services. See [docs/architecture.md](docs/architecture.md#compose-vs-target-architecture) for the component-by-component mapping.
 
 ## What works today
 
 - Chat UI with model selection and token streaming
 - Keyboard-first composer: `Shift+Enter` sends, `Enter` starts a new line
 - Korean-first bilingual UI (한국어 / English), with browser-language detection and persisted preference
-- OpenAI-compatible model adapter (`MODEL_BASE_URL`) with end-to-end token streaming and a safe local demo fallback
+- OpenAI-compatible model adapter, verified with **Ollama `qwen2.5:7b`**, with a safe local demo fallback
 - Input/output policy checks and basic PII masking, including chunk-boundary-safe streaming masks
-- Durable document upload, chunking, permission-scoped lexical retrieval, and source citations
-- One visibility rule shared by document listing and retrieval, scoped by organization, role, and owner
-- Administrator settings view with runtime, policy, storage, and activity overview
-- Inline document ACL editing for administrators, with audit events on every change
-- Append-only JSONL audit events, filtered by organization and readable by administrators
-- Docker Compose services for API and UI, with optional PostgreSQL, Redis, and Qdrant integration placeholders (`--profile deps`)
+- Durable document upload, **LlamaIndex sentence chunking**, **Qdrant vector retrieval** with lexical fallback, and source citations
+- **LangGraph** policy/retrieval orchestration, **FastEmbed** multilingual embeddings
+- Role-aware document ACLs, inline administrator editing, and organization isolation
+- **PostgreSQL audit events** with JSONL mirroring, **Redis rate limiting**, and **Langfuse tracing**
+- **Mem0 user memory** with Qdrant + Ollama, managed from a dedicated UI tab
+- Administrator settings with runtime, policy, storage, integration, and activity overview
+- Docker Compose Basic Core profile and a **full-stack override** (`docker-compose.full.yml`)
 - Kubernetes starter manifests and deployment profiles
 
 ## Quick start
 
+### Basic Core (no external services)
+
 ```bash
 cp .env.example .env
-docker compose up --build                 # Basic Core: API + UI
-# docker compose --profile deps up -d     # optional: PostgreSQL, Redis, Qdrant
+docker compose up --build
 ```
 
-Open `http://localhost:3000`. The default `demo-local` model works without an API key. To use a local OpenAI-compatible server (such as vLLM), set `MODEL_BASE_URL`, `MODEL_NAME`, and if required `MODEL_API_KEY` in `.env`.
+Open `http://localhost:3001`. The default `demo-local` model works without an API key.
+
+### Full stack (Ollama + Qdrant + PostgreSQL + Redis + Langfuse + Mem0)
+
+```bash
+# Docker Desktop에서 Ollama(127.0.0.1)를 노출하는 프록시
+python3 scripts/ollama_proxy.py --listen-port 11435 &
+
+OLLAMA_HOST_URL=http://host.docker.internal:11435 \
+  docker compose -f docker-compose.yml -f docker-compose.full.yml \
+  --profile deps up -d --build
+```
+
+- UI: `http://localhost:3001` (Langfuse가 3000을 사용)
+- API: `http://localhost:8000`
+- 자세한 준비·검증·문제 해결: [docs/full-stack.md](docs/full-stack.md)
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `MODEL_BASE_URL` | empty | OpenAI-compatible inference endpoint; empty selects `demo-local` |
-| `MODEL_TIMEOUT_SECONDS` | `90` | Upstream connect/read timeout |
-| `DOCUMENT_STORE` | `/tmp/baryon-ax-documents` | Directory for durable document JSON files |
-| `AUDIT_LOG` | `/tmp/baryon-ax-audit/events.jsonl` | Append-only JSONL audit sink |
-| `MAX_DOCUMENT_BYTES` | `2000000` | Upload size limit per document |
+| `MODEL_BASE_URL` | empty | OpenAI-compatible endpoint; empty selects `demo-local` |
+| `MODEL_NAME` | `qwen2.5:7b` | Model ID (full stack) |
+| `MODEL_TIMEOUT_SECONDS` | `180` | Upstream connect/read timeout |
+| `DATABASE_URL` | empty | PostgreSQL audit store (empty = JSONL only) |
+| `REDIS_URL` | empty | Redis rate limiter (empty = disabled) |
+| `QDRANT_URL` | empty | Qdrant vector store (empty = lexical fallback) |
+| `EMBEDDING_MODEL` | multilingual MiniLM | FastEmbed model |
+| `LANGFUSE_ENABLED` / `LANGFUSE_HOST` | `false` / local | Langfuse tracing |
+| `MEM0_ENABLED` / `OLLAMA_BASE_URL` | `false` / local | Mem0 memory layer |
+| `DOCUMENT_STORE` | `/tmp/baryon-ax-documents` | Durable document JSON directory |
+| `AUDIT_LOG` | `/tmp/baryon-ax-audit/events.jsonl` | JSONL audit mirror |
+| `MAX_DOCUMENT_BYTES` | `2000000` | Upload size limit |
+| `RATE_LIMIT_PER_MINUTE` | `60` | Chat requests per user/org per minute |
 
 ## Architecture
 
 ```text
-Browser UI ──> FastAPI gateway ──> policy gate ──> model adapter ──> response stream
-                       │                 │                 │
-                       ├──> document service / retrieval ──┘
-                       ├──> audit events (trace_id)
-                       └──> PostgreSQL / Redis / Qdrant (deployment services)
+Browser UI ──> FastAPI gateway ──> LangGraph policy/retrieval ──> model adapter ──> response stream
+                        │                    │                          │
+                        │                    ├──> Qdrant + FastEmbed ───┤
+                        │                    └──> Mem0 (Qdrant/Ollama)  │
+                        ├──> PostgreSQL audit / JSONL mirror
+                        ├──> Redis rate limiter
+                        └──> Langfuse traces
 ```
 
-See [docs/features.md](docs/features.md) for the complete feature inventory, [docs/open-source.md](docs/open-source.md) for the open-source component and license inventory, and [docs/architecture.md](docs/architecture.md), [docs/operations.md](docs/operations.md), and [docs/security.md](docs/security.md) for the intended production integration boundaries.
+See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/features.md](docs/features.md) for the complete feature inventory, [docs/open-source.md](docs/open-source.md) for the open-source component and license inventory, and [docs/architecture.md](docs/architecture.md), [docs/operations.md](docs/operations.md), and [docs/security.md](docs/security.md) for the intended production integration boundaries.
 
 ## API highlights
 
@@ -69,8 +96,13 @@ See [docs/features.md](docs/features.md) for the complete feature inventory, [do
 | `DELETE /v1/documents/{id}` | Delete a document as its uploader or an administrator |
 | `PATCH /v1/documents/{id}` | Update a document's role ACL as an administrator |
 | `GET /v1/documents/search` | Permission-scoped retrieval results |
+| `POST /v1/memories` | Store a user memory with Mem0 |
+| `GET /v1/memories` | List the caller's memories |
+| `GET /v1/memories/search` | Semantic memory search |
+| `DELETE /v1/memories/{id}` | Delete the caller's memory |
 | `GET /v1/audit-events` | Recent audit events for administrators |
-| `GET /v1/admin/settings` | Effective runtime, storage, policy, and activity settings for administrators |
+| `POST /v1/admin/reindex` | Reindex documents into Qdrant (administrator) |
+| `GET /v1/admin/settings` | Effective runtime, storage, policy, and integration settings for administrators |
 
 For local development, callers can send `X-User-Id`, `X-Organization-Id`, and `X-Roles` headers. Replace this development identity adapter with OIDC/SSO before production use.
 
@@ -80,19 +112,26 @@ For local development, callers can send `X-User-Id`, `X-Organization-Id`, and `X
 apps/api/       FastAPI control plane and API
 apps/web/       React + Vite chat UI
 deploy/         Compose and Kubernetes deployment assets
-docs/           Architecture, operations, security, feature and open-source inventory
+docs/           Architecture, operations, security, full-stack, feature and open-source inventory
+scripts/        Ollama proxy and full-stack smoke check
 ```
 
 ## Development
 
 ```bash
-cd apps/api && python -m venv .venv && source .venv/bin/activate
+cd apps/api && python3.12 -m venv .venv && source .venv/bin/activate
 pip install -e '.[dev]'
 pytest
 
 cd ../web
 npm install
 npm run build
+```
+
+API를 호스트에서 실행할 때 `.env`를 명시적으로 로드합니다.
+
+```bash
+uvicorn baryon.main:app --app-dir apps/api/src --host 127.0.0.1 --port 8000 --env-file .env
 ```
 
 ### End-to-end test
@@ -105,11 +144,19 @@ npx playwright install chromium   # first run only
 npm run test:e2e
 ```
 
-Set `E2E_BASE_URL` to test another deployment (for example the Compose web service), and `E2E_SCREENSHOT=/tmp/baryon-ax.png` to capture a full-page screenshot.
+Set `E2E_BASE_URL` to test another deployment (for example `http://127.0.0.1:3001` for the Compose web service), and `E2E_SCREENSHOT=/tmp/baryon-ax.png` to capture a full-page screenshot.
+
+### Full-stack smoke
+
+```bash
+API_BASE=http://127.0.0.1:8000 REQUIRE_FULL=1 python3 scripts/smoke_full_stack.py
+```
+
+The smoke check covers health backends, document upload, Qdrant retrieval, chat, audit, and Mem0 memory.
 
 ## Security status
 
-This is a reference implementation, not a security certification. The default identity headers, local document store, lexical retrieval, and JSON audit sink are development conveniences. Follow [docs/security.md](docs/security.md) before exposing a deployment to users or confidential data.
+This is a reference implementation, not a security certification. The development identity headers, local JSON files, and JSONL audit mirror are development conveniences. The full-stack profile adds PostgreSQL, Qdrant, Redis, Langfuse, and Mem0, but OIDC/JWT, security headers, and a complete retention policy are still required for production. Follow [docs/security.md](docs/security.md) before exposing a deployment to users or confidential data.
 
 ## License
 
