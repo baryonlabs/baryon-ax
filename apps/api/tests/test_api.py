@@ -67,6 +67,14 @@ def test_owner_can_view_and_retrieve_without_matching_role(tmp_path) -> None:
     assert store.search(stranger, "legal-only content") == []
 
 
+def test_korean_particles_do_not_block_retrieval(tmp_path) -> None:
+    store = DocumentService(tmp_path)
+    principal = Principal("user", "org-korean", {"member"})
+    store.create(principal, "korean.md", "Baryon AX는 Qdrant와 LangGraph를 사용합니다.", {"member"})
+    results = store.search(principal, "Qdrant는 무엇에 사용하나요?")
+    assert results and results[0]["title"] == "korean.md"
+
+
 def test_document_without_roles_is_private_to_owner(tmp_path) -> None:
     store = DocumentService(tmp_path)
     owner = Principal("owner", "org-private", {"member"})

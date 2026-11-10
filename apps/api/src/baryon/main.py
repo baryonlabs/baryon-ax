@@ -200,7 +200,7 @@ class DocumentService:
         return True
 
     def search(self, principal: Principal, query: str, limit: int = 4) -> list[dict]:
-        terms = {term.lower() for term in re.findall(r"[\w가-힣]{2,}", query)}
+        terms = search_terms(query)
         matches = []
         for document in self.documents.values():
             if not self.can_view(principal, document):
@@ -215,6 +215,23 @@ class DocumentService:
 
 def chunk_text(text: str, size: int = 900) -> list[str]:
     return [text[index:index + size] for index in range(0, len(text), size)] or [""]
+
+
+TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_]+|[가-힣]+")
+
+
+def search_terms(text: str) -> set[str]:
+    """Expand query tokens with short Korean prefixes so particles do not block matches."""
+    terms: set[str] = set()
+    for token in TOKEN_PATTERN.findall(text.lower()):
+        if len(token) < 2:
+            continue
+        terms.add(token)
+        if re.fullmatch(r"[가-힣]+", token):
+            terms.add(token[:2])
+            if len(token) > 3:
+                terms.add(token[:3])
+    return terms
 
 
 class ModelAdapter:
