@@ -26,6 +26,7 @@ The platform brings a chat workspace, agent execution, grounded knowledge search
 - **Mem0 user memory** with Qdrant + Ollama, managed from a dedicated UI tab
 - Administrator settings with runtime, policy, storage, integration, and activity overview
 - Docker Compose Basic Core profile and a **full-stack override** (`docker-compose.full.yml`)
+- **B300 host deployment**: platform, Langfuse, Mem0, Qdrant, PostgreSQL, and Redis on the B300 server, using GPU 7 vLLM
 - Kubernetes starter manifests and deployment profiles
 
 ## Quick start
@@ -83,7 +84,7 @@ Browser UI ──> FastAPI gateway ──> LangGraph policy/retrieval ──> mo
                         └──> Langfuse traces
 ```
 
-See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/b300-vllm.md](docs/b300-vllm.md) for the remote B300 GPU 7 vLLM test, [docs/features.md](docs/features.md) for the complete feature inventory, [docs/open-source.md](docs/open-source.md) for the open-source component and license inventory, and [docs/architecture.md](docs/architecture.md), [docs/operations.md](docs/operations.md), and [docs/security.md](docs/security.md) for the intended production integration boundaries.
+See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/b300-vllm.md](docs/b300-vllm.md) for the remote B300 GPU 7 vLLM test, [docs/b300-host-deploy.md](docs/b300-host-deploy.md) for the full platform on B300, [docs/research/strata-and-local-ai-shortlist.md](docs/research/strata-and-local-ai-shortlist.md) for the Strata/local-AI research, [docs/features.md](docs/features.md) for the complete feature inventory, [docs/open-source.md](docs/open-source.md) for the open-source component and license inventory, and [docs/architecture.md](docs/architecture.md), [docs/operations.md](docs/operations.md), and [docs/security.md](docs/security.md) for the intended production integration boundaries.
 
 ## API highlights
 
@@ -113,8 +114,8 @@ For local development, callers can send `X-User-Id`, `X-Organization-Id`, and `X
 apps/api/       FastAPI control plane and API
 apps/web/       React + Vite chat UI
 deploy/         Compose and Kubernetes deployment assets
-docs/           Architecture, operations, security, full-stack, feature and open-source inventory
-scripts/        Ollama proxy and full-stack smoke check
+docs/           Architecture, operations, security, full-stack, B300 deployment, research, inventory
+scripts/        Ollama proxy, B300 vLLM serve/tunnel, full-stack smoke
 ```
 
 ## Development

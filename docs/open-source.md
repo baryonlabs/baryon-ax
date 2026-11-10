@@ -144,6 +144,8 @@ Redis 라이선스는 **버전에 따라 다릅니다.**
 
 - [기능 목록](features.md)
 - [전체 스택 실행 가이드](full-stack.md)
+- [B300 호스트 배포](b300-host-deploy.md)
+- [Strata/로컬 AI 조사](research/strata-and-local-ai-shortlist.md)
 - [아키텍처](architecture.md)
 - [운영 가이드](operations.md)
 - [보안 베이스라인](security.md)

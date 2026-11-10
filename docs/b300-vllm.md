@@ -7,6 +7,8 @@
 > vLLM: `0.32.0` (`/data/baryon-b300/.venv`)  
 > 포트: `127.0.0.1:8020`
 
+> 플랫폼 전체를 B300 안에서 실행한 배포는 [b300-host-deploy.md](b300-host-deploy.md)를 참고하세요.
+
 ## 1. 구성
 
 ```text

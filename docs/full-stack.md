@@ -153,6 +153,10 @@ docker compose -f docker-compose.yml -f docker-compose.full.yml \
 
 Qwen3.5는 thinking 출력을 끄기 위해 `MODEL_DISABLE_THINKING=true`를 사용합니다. vLLM 시작·종료·검증 상세는 [b300-vllm.md](b300-vllm.md)를 참고하세요.
 
+### D. B300 호스트에 전체 플랫폼 배포
+
+vLLM만 B300에 두는 구성이 아니라 **플랫폼 전체를 B300에서 실행**하려면 [b300-host-deploy.md](b300-host-deploy.md)를 사용합니다. Web/API/Qdrant/PostgreSQL/Redis/Langfuse/Mem0가 모두 B300 컨테이너에서 실행되고, Mac은 SSH 터널로 접속합니다.
+
 ## 5. 검증
 
 ```bash

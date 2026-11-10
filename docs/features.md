@@ -251,6 +251,7 @@
 | Docker Compose Basic Core | ✅ | API + Web, `demo-local` |
 | Full-stack override | ✅ | `docker-compose.full.yml` + `--profile deps` |
 | B300 vLLM override | ✅ | `docker-compose.b300.yml`, GPU 7, SSH 터널 |
+| B300 host full deployment | ✅ | `docker-compose.b300-host.yml`, Langfuse, `/data` bind mounts |
 | Ollama 프록시 | ✅ | `scripts/ollama_proxy.py` (Docker Desktop loopback 우회) |
 | Compose 데이터 서비스 | ✅ | PostgreSQL(5433), Redis(6379), Qdrant(6333/6334) |
 | API 이미지 | ✅ | Python 3.12 slim, 비루트 사용자(uid 10001) |
@@ -384,6 +385,8 @@ pip check           깨진 요구사항 없음
 
 - [아키텍처](architecture.md)
 - [전체 스택 실행 가이드](full-stack.md)
+- [B300 호스트 배포](b300-host-deploy.md)
+- [Strata/로컬 AI 조사](research/strata-and-local-ai-shortlist.md)
 - [오픈소스 구성 요소](open-source.md)
 - [운영 가이드](operations.md)
 - [보안 베이스라인](security.md)
