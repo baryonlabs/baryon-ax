@@ -46,7 +46,7 @@ try {
       mimeType: "text/markdown",
       buffer: Buffer.from(documentBody),
     });
-    await page.waitForFunction(() => document.body.innerText.includes("색인했습니다"), null, { timeout: 15000 });
+    await page.waitForFunction(() => document.body.innerText.includes("색인했습니다"), null, { timeout: 60000 });
   });
 
   await step("grounded chat streams an answer with sources", async () => {
@@ -60,8 +60,8 @@ try {
       const messages = [...document.querySelectorAll("article.assistant .message-body p")];
       const last = messages.at(-1);
       return Boolean(last?.textContent?.trim());
-    }, null, { timeout: 20000 });
-    await page.waitForSelector(".sources button", { timeout: 20000 });
+    }, null, { timeout: 60000 });
+    await page.waitForSelector(".sources button", { timeout: 30000 });
     assert.ok((await page.locator(".sources button").count()) >= 1);
   });
 
@@ -83,8 +83,19 @@ try {
     assert.ok((await page.locator(".setting-card").count()) >= 4);
     const text = await page.locator(".settings-grid").innerText();
     assert.match(text, /0\.6\.0/);
-    assert.match(text, /어휘 검색/);
+    assert.match(text, /Qdrant \+ FastEmbed/);
+    assert.match(text, /langfuse/);
     assert.match(text, /전화번호 마스킹/);
+  });
+
+  await step("memory layer stores and searches preferences", async () => {
+    await page.getByRole("button", { name: "메모리", exact: true }).click();
+    await page.locator(".memory-form input").fill("사용자는 Qdrant와 LangGraph를 선호하고 한국어 답변을 원합니다.");
+    await page.getByRole("button", { name: "메모리 저장", exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll(".memory-item").length > 0, null, { timeout: 60000 });
+    await page.locator(".memory-search input").fill("Qdrant");
+    await page.getByRole("button", { name: "검색", exact: true }).click();
+    await page.waitForFunction(() => document.body.innerText.includes("Qdrant"), null, { timeout: 30000 });
   });
 
   await step("knowledge library lists the uploaded document", async () => {

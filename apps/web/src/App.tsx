@@ -1,12 +1,13 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, Bot, ChevronRight, FileUp, Globe2, RefreshCw, Save, Send, Settings, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { BookOpen, Bot, Brain, ChevronRight, FileUp, Globe2, Plus, RefreshCw, Save, Search, Send, Settings, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 
 export type Locale = "ko" | "en";
 type Role = "member" | "admin";
-type View = "chat" | "knowledge" | "governance" | "settings";
+type View = "chat" | "knowledge" | "memory" | "governance" | "settings";
 type ChatMessage = { role: "user" | "assistant"; content: string; citations?: Citation[] };
 type Citation = { document_id: string; title: string; chunk: number };
 type KnowledgeDocument = { id: string; title: string; owner_id: string; allowed_roles: string[]; created_at: string; chunks: number };
+type MemoryItem = { id: string; memory: string; created_at?: string; metadata?: Record<string, unknown>; score?: number };
 type AuditEvent = {
   id: string; at: string; type: string; trace_id: string; organization_id: string; user_id: string;
   model?: string; latency_ms?: number; reason?: string; [key: string]: unknown;
@@ -17,6 +18,7 @@ type AdminSettings = {
   storage: { documents: string; audit: string; max_document_bytes: number };
   policy: { blocked_patterns: number; pii_masking: boolean };
   retrieval: { mode: string; result_limit: number };
+  integrations: { orchestration: string; chunking: string; vector: string; database: string; cache: string; tracing: string; memory: string };
   counts: { documents: number; audit_events: number };
 };
 const API = "/api";
@@ -37,7 +39,7 @@ const copy = {
     indexed: (title: string, chunks: number) => `${title} 문서를 ${chunks}개 청크로 색인했습니다. 이제 권한 범위 안에서 검색할 수 있습니다.`,
     uploadFailed: "문서를 업로드할 수 없습니다. UTF-8 Markdown 또는 텍스트 파일인지 확인해 주세요.",
     failed: "요청을 완료할 수 없습니다. API가 실행 중인지 확인해 주세요.",
-    newChat: "+ 새 대화", chat: "채팅", knowledge: "지식", governance: "거버넌스", settings: "설정", workspace: "AI 작업 공간",
+    newChat: "+ 새 대화", chat: "채팅", knowledge: "지식", memory: "메모리", governance: "거버넌스", settings: "설정", workspace: "AI 작업 공간",
     groundedChat: "근거 기반 채팅", knowledgeLibrary: "지식 라이브러리", sources: "출처", ask: "무엇이든 질문하거나 업로드한 문서를 검색하세요…",
     scope: "문서는 조직 및 역할 권한 범위 안에서만 검색됩니다.", indexedDocs: "색인된 문서", visibleDocs: "내 조직과 역할에서 조회 가능한 문서만 표시됩니다.",
     sendHint: "Shift+Enter로 전송",
@@ -45,6 +47,10 @@ const copy = {
     chunks: "청크", roles: "역할", deleteDocument: "문서 삭제", onPremises: "온프레미스 프로필", language: "언어", profile: "local-org",
     role: "역할", member: "멤버", admin: "관리자",
     auditLog: "감사 로그", auditBody: "조직 단위로 기록된 최근 감사 이벤트입니다. 관리자 역할만 조회할 수 있습니다.",
+    memoryBody: "Mem0에 사용자 선호와 중요한 사실을 저장하고 검색합니다.",
+    memoryPlaceholder: "기억할 내용을 입력하세요…", saveMemory: "메모리 저장", searchMemory: "메모리 검색", search: "검색",
+    noMemories: "저장된 메모리가 없습니다", noMemoriesBody: "선호나 중요한 사실을 저장해 보세요.", deleteMemory: "메모리 삭제",
+    memoryDisabled: "메모리 기능이 비활성화되어 있습니다", memoryDisabledBody: "MEM0_ENABLED, Qdrant, Ollama 설정을 확인하세요.", saving: "저장 중…",
     adminRequired: "관리자 역할이 필요합니다", adminRequiredBody: "헤더의 역할을 관리자로 바꾸면 이 조직의 감사 이벤트를 볼 수 있습니다.",
     noEvents: "아직 감사 이벤트가 없습니다", noEventsBody: "채팅이나 문서 작업을 실행하면 여기에 감사 기록이 쌓입니다.", refresh: "새로고침",
     adminSettings: "관리자 설정", adminSettingsBody: "런타임 구성과 보안 정책, 저장소 상태를 확인하고 문서 권한을 관리합니다.",
@@ -52,18 +58,20 @@ const copy = {
     versionLabel: "버전", modelLabel: "모델", adapterLabel: "어댑터", endpointLabel: "모델 엔드포인트", configured: "설정됨",
     notConfigured: "demo-local (미설정)", timeoutLabel: "타임아웃", documentCount: "문서", auditEventCount: "감사 이벤트",
     documentStore: "문서 저장소", auditStore: "감사 저장소", maxUpload: "최대 업로드", blockedPatterns: "차단 패턴",
-    phoneMasking: "전화번호 마스킹", enabled: "사용", disabled: "사용 안 함", lexicalMode: "어휘 검색", resultLimit: "결과 수",
+    phoneMasking: "전화번호 마스킹", enabled: "사용", disabled: "사용 안 함", lexicalMode: "어휘 검색", vectorMode: "Qdrant + FastEmbed", resultLimit: "결과 수",
+    integrations: "통합 구성", orchestration: "오케스트레이션", chunking: "청킹", vectorStore: "벡터 저장소", database: "데이터베이스", cache: "캐시", tracing: "트레이싱",
     localJson: "로컬 JSON 파일", jsonl: "JSONL (append-only)", organizationLabel: "조직",
     editRoles: "권한 편집", allowedRoles: "허용 역할", save: "저장", cancel: "취소",
     aclUpdated: "문서 권한을 저장했습니다.", aclFailed: "문서 권한을 저장할 수 없습니다.",
     settingsFailed: "관리자 설정을 불러올 수 없습니다.", ownerLabel: "소유자",
+    reindex: "벡터 재색인", reindexing: "재색인 중…", reindexed: (count: number) => `${count}개 문서를 Qdrant에 재색인했습니다.`, reindexFailed: "벡터 재색인에 실패했습니다.",
   },
   en: {
     welcome: "Baryon AX is ready. Ask a question or upload a Markdown document to ground the conversation.",
     indexed: (title: string, chunks: number) => `Indexed ${title} into ${chunks} chunk(s). It is now available for permission-scoped retrieval.`,
     uploadFailed: "The document could not be uploaded. Check that it is a UTF-8 Markdown or text file.",
     failed: "The request could not be completed. Check that the API is running.",
-    newChat: "+ New conversation", chat: "Chat", knowledge: "Knowledge", governance: "Governance", settings: "Settings", workspace: "AI WORKSPACE",
+    newChat: "+ New conversation", chat: "Chat", knowledge: "Knowledge", memory: "Memory", governance: "Governance", settings: "Settings", workspace: "AI WORKSPACE",
     groundedChat: "Grounded chat", knowledgeLibrary: "Knowledge library", sources: "Sources", ask: "Ask anything, or query an uploaded document…",
     scope: "Documents are searched only within your organization and role scope.", indexedDocs: "Indexed documents", visibleDocs: "Only documents visible to your organization and role are shown.",
     sendHint: "Shift+Enter to send",
@@ -71,6 +79,10 @@ const copy = {
     chunks: "chunk(s)", roles: "roles", deleteDocument: "Delete document", onPremises: "On-premises profile", language: "Language", profile: "local-org",
     role: "Role", member: "Member", admin: "Administrator",
     auditLog: "Audit log", auditBody: "Recent audit events recorded for your organization. Administrator role required.",
+    memoryBody: "Store and search user preferences and facts with Mem0.",
+    memoryPlaceholder: "What should I remember?", saveMemory: "Save memory", searchMemory: "Search memories", search: "Search",
+    noMemories: "No memories yet", noMemoriesBody: "Save a preference or an important fact.", deleteMemory: "Delete memory",
+    memoryDisabled: "Memory is disabled", memoryDisabledBody: "Check MEM0_ENABLED, Qdrant, and Ollama configuration.", saving: "Saving…",
     adminRequired: "Administrator role required", adminRequiredBody: "Switch the header role to Administrator to view this organization's audit events.",
     noEvents: "No audit events yet", noEventsBody: "Chat and document activity will appear here as audit records.", refresh: "Refresh",
     adminSettings: "Administrator settings", adminSettingsBody: "Inspect runtime configuration, security policy, and storage, and manage document access.",
@@ -78,11 +90,13 @@ const copy = {
     versionLabel: "Version", modelLabel: "Model", adapterLabel: "Adapter", endpointLabel: "Model endpoint", configured: "Configured",
     notConfigured: "demo-local (unconfigured)", timeoutLabel: "Timeout", documentCount: "Documents", auditEventCount: "Audit events",
     documentStore: "Document store", auditStore: "Audit store", maxUpload: "Max upload", blockedPatterns: "Blocked patterns",
-    phoneMasking: "Phone masking", enabled: "Enabled", disabled: "Disabled", lexicalMode: "Lexical", resultLimit: "Result limit",
+    phoneMasking: "Phone masking", enabled: "Enabled", disabled: "Disabled", lexicalMode: "Lexical", vectorMode: "Qdrant + FastEmbed", resultLimit: "Result limit",
+    integrations: "Integrations", orchestration: "Orchestration", chunking: "Chunking", vectorStore: "Vector store", database: "Database", cache: "Cache", tracing: "Tracing",
     localJson: "Local JSON files", jsonl: "JSONL (append-only)", organizationLabel: "Organization",
     editRoles: "Edit roles", allowedRoles: "Allowed roles", save: "Save", cancel: "Cancel",
     aclUpdated: "Document roles saved.", aclFailed: "Could not save document roles.",
     settingsFailed: "Could not load administrator settings.", ownerLabel: "Owner",
+    reindex: "Reindex vectors", reindexing: "Reindexing…", reindexed: (count: number) => `Reindexed ${count} document(s) into Qdrant.`, reindexFailed: "Vector reindex failed.",
   },
 } as const;
 
@@ -107,10 +121,17 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<View>("chat");
   const [knowledge, setKnowledge] = useState<KnowledgeDocument[]>([]);
+  const [memories, setMemories] = useState<MemoryItem[]>([]);
+  const [memoryInput, setMemoryInput] = useState("");
+  const [memoryQuery, setMemoryQuery] = useState("");
+  const [memoryBusy, setMemoryBusy] = useState(false);
+  const [memoryError, setMemoryError] = useState<"disabled" | "failed" | null>(null);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [auditError, setAuditError] = useState<"forbidden" | "failed" | null>(null);
   const [settings, setSettings] = useState<AdminSettings | null>(null);
   const [settingsError, setSettingsError] = useState(false);
+  const [reindexBusy, setReindexBusy] = useState(false);
+  const [reindexMessage, setReindexMessage] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [roleDraft, setRoleDraft] = useState("");
   const [aclMessage, setAclMessage] = useState<{ id: string; ok: boolean } | null>(null);
@@ -128,6 +149,23 @@ export default function App() {
   const loadKnowledge = useCallback(async () => {
     const response = await fetch(`${API}/v1/documents`, { headers: identity(role) });
     if (response.ok) setKnowledge((await response.json()).data);
+  }, [role]);
+
+  const loadMemories = useCallback(async () => {
+    try {
+      const response = await fetch(`${API}/v1/memories?limit=50`, { headers: identity(role) });
+      if (response.status === 503) {
+        setMemories([]);
+        setMemoryError("disabled");
+        return;
+      }
+      if (!response.ok) throw new Error("Memory list failed");
+      setMemoryError(null);
+      setMemories((await response.json()).data);
+    } catch {
+      setMemories([]);
+      setMemoryError("failed");
+    }
   }, [role]);
 
   const loadAudit = useCallback(async () => {
@@ -173,6 +211,7 @@ export default function App() {
   }, [role]);
 
   useEffect(() => { if (view === "knowledge") void loadKnowledge(); }, [view, loadKnowledge]);
+  useEffect(() => { if (view === "memory") void loadMemories(); }, [view, loadMemories]);
   useEffect(() => { if (view === "governance") void loadAudit(); }, [view, loadAudit]);
   useEffect(() => { if (view === "settings") void loadSettings(); }, [view, loadSettings]);
   useEffect(() => {
@@ -203,6 +242,56 @@ export default function App() {
     }
   }
 
+  async function addMemory() {
+    const text = memoryInput.trim();
+    if (!text || memoryBusy) return;
+    setMemoryBusy(true);
+    try {
+      const response = await fetch(`${API}/v1/memories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...identity(role) },
+        body: JSON.stringify({ text }),
+      });
+      if (response.status === 503) {
+        setMemoryError("disabled");
+        return;
+      }
+      if (!response.ok) throw new Error("Memory add failed");
+      setMemoryInput("");
+      setMemoryError(null);
+      await loadMemories();
+    } catch {
+      setMemoryError("failed");
+    } finally {
+      setMemoryBusy(false);
+    }
+  }
+
+  async function searchMemories() {
+    const query = memoryQuery.trim();
+    if (!query) {
+      await loadMemories();
+      return;
+    }
+    try {
+      const response = await fetch(`${API}/v1/memories/search?q=${encodeURIComponent(query)}&limit=20`, { headers: identity(role) });
+      if (response.status === 503) {
+        setMemoryError("disabled");
+        return;
+      }
+      if (!response.ok) throw new Error("Memory search failed");
+      setMemoryError(null);
+      setMemories((await response.json()).data);
+    } catch {
+      setMemoryError("failed");
+    }
+  }
+
+  async function deleteMemory(id: string) {
+    const response = await fetch(`${API}/v1/memories/${id}`, { method: "DELETE", headers: identity(role) });
+    if (response.ok) setMemories(previous => previous.filter(item => item.id !== id));
+  }
+
   function startEditingRoles(document: KnowledgeDocument) {
     setEditingId(document.id);
     setRoleDraft(document.allowed_roles.join(", "));
@@ -230,6 +319,22 @@ export default function App() {
     if (event.key !== "Enter" || !event.shiftKey || event.nativeEvent.isComposing) return;
     event.preventDefault();
     if (!busy && input.trim()) event.currentTarget.form?.requestSubmit();
+  }
+
+  async function reindexDocuments() {
+    setReindexBusy(true);
+    setReindexMessage("");
+    try {
+      const response = await fetch(`${API}/v1/admin/reindex`, { method: "POST", headers: identity(role) });
+      if (!response.ok) throw new Error("Reindex failed");
+      const result = await response.json();
+      setReindexMessage(t.reindexed(result.indexed));
+      await loadSettings();
+    } catch {
+      setReindexMessage(t.reindexFailed);
+    } finally {
+      setReindexBusy(false);
+    }
   }
 
   async function send(event: FormEvent) {
@@ -264,6 +369,7 @@ export default function App() {
 
   function title() {
     if (view === "knowledge") return t.knowledgeLibrary;
+    if (view === "memory") return t.memory;
     if (view === "governance") return t.auditLog;
     if (view === "settings") return t.adminSettings;
     return t.groundedChat;
@@ -276,6 +382,7 @@ export default function App() {
       <nav>
         <button className={view === "chat" ? "active" : ""} onClick={() => setView("chat")}><Bot size={16}/>{t.chat}</button>
         <button className={view === "knowledge" ? "active" : ""} onClick={() => setView("knowledge")}><BookOpen size={16}/>{t.knowledge}</button>
+        <button className={view === "memory" ? "active" : ""} onClick={() => setView("memory")}><Brain size={16}/>{t.memory}</button>
         <button className={view === "governance" ? "active" : ""} onClick={() => setView("governance")}><ShieldCheck size={16}/>{t.governance}</button>
         {role === "admin" && <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><Settings size={16}/>{t.settings}</button>}
       </nav>
@@ -335,6 +442,31 @@ export default function App() {
           </div>)}
         </div>}
       </div>}
+      {view === "memory" && <div className="knowledge">
+        <div className="knowledge-top">
+          <div><h2>{t.memory}</h2><p>{t.memoryBody}</p></div>
+          <button className="primary" onClick={() => void loadMemories()}><RefreshCw size={16}/>{t.refresh}</button>
+        </div>
+        <div className="memory-form">
+          <input value={memoryInput} onChange={event => setMemoryInput(event.target.value)} placeholder={t.memoryPlaceholder} aria-label={t.memoryPlaceholder}/>
+          <button className="primary" disabled={memoryBusy || !memoryInput.trim()} onClick={() => void addMemory()}><Plus size={16}/>{memoryBusy ? t.saving : t.saveMemory}</button>
+        </div>
+        <div className="memory-search">
+          <input value={memoryQuery} onChange={event => setMemoryQuery(event.target.value)} placeholder={t.searchMemory} aria-label={t.searchMemory}/>
+          <button className="primary" onClick={() => void searchMemories()}><Search size={16}/>{t.search}</button>
+          <button className="ghost" onClick={() => { setMemoryQuery(""); void loadMemories(); }}>{t.cancel}</button>
+        </div>
+        {memoryError ? <div className="empty"><Brain size={28}/><h3>{memoryError === "disabled" ? t.memoryDisabled : t.failed}</h3><p>{memoryError === "disabled" ? t.memoryDisabledBody : t.scope}</p></div> : memories.length === 0 ? <div className="empty"><Brain size={28}/><h3>{t.noMemories}</h3><p>{t.noMemoriesBody}</p></div> : <div className="memory-list">
+          {memories.map(item => <div className="memory-item" key={item.id}>
+            <Brain size={16}/>
+            <div>
+              <p>{item.memory}</p>
+              {item.created_at && <small>{new Date(item.created_at).toLocaleString(locale === "ko" ? "ko-KR" : "en-US")}</small>}
+            </div>
+            <button className="delete" title={t.deleteMemory} aria-label={t.deleteMemory} onClick={() => void deleteMemory(item.id)}><Trash2 size={16}/></button>
+          </div>)}
+        </div>}
+      </div>}
       {view === "governance" && <div className="knowledge">
         <div className="knowledge-top">
           <div><h2>{t.auditLog}</h2><p>{t.auditBody}</p></div>
@@ -353,8 +485,12 @@ export default function App() {
       {view === "settings" && <div className="knowledge">
         <div className="knowledge-top">
           <div><h2>{t.adminSettings}</h2><p>{t.adminSettingsBody}</p></div>
-          <button className="primary" onClick={() => void loadSettings()}><RefreshCw size={16}/>{t.refresh}</button>
+          <div className="setting-actions">
+            <button className="primary" disabled={reindexBusy} onClick={() => void reindexDocuments()}><RefreshCw size={16}/>{reindexBusy ? t.reindexing : t.reindex}</button>
+            <button className="primary" onClick={() => void loadSettings()}><RefreshCw size={16}/>{t.refresh}</button>
+          </div>
         </div>
+        {reindexMessage && <p className="settings-note">{reindexMessage}</p>}
         {settingsError || !settings ? <div className="empty"><Settings size={28}/><h3>{t.adminOnly}</h3><p>{t.settingsFailed}</p></div> : <div className="settings-grid">
           <section className="setting-card">
             <h3>{t.overview}</h3>
@@ -379,7 +515,7 @@ export default function App() {
             <dl>
               <div><dt>{t.blockedPatterns}</dt><dd>{settings.policy.blocked_patterns}</dd></div>
               <div><dt>{t.phoneMasking}</dt><dd>{settings.policy.pii_masking ? t.enabled : t.disabled}</dd></div>
-              <div><dt>{t.retrieval}</dt><dd>{settings.retrieval.mode === "lexical" ? t.lexicalMode : settings.retrieval.mode}</dd></div>
+              <div><dt>{t.retrieval}</dt><dd>{settings.retrieval.mode.startsWith("qdrant") ? t.vectorMode : t.lexicalMode}</dd></div>
               <div><dt>{t.resultLimit}</dt><dd>{settings.retrieval.result_limit}</dd></div>
             </dl>
           </section>
@@ -389,6 +525,18 @@ export default function App() {
               <div><dt>{t.documentStore}</dt><dd>{settings.storage.documents === "local-json" ? t.localJson : settings.storage.documents}</dd></div>
               <div><dt>{t.auditStore}</dt><dd>{settings.storage.audit === "jsonl" ? t.jsonl : settings.storage.audit}</dd></div>
               <div><dt>{t.organizationLabel}</dt><dd>{settings.organization_id}</dd></div>
+            </dl>
+          </section>
+          <section className="setting-card">
+            <h3>{t.integrations}</h3>
+            <dl>
+              <div><dt>{t.orchestration}</dt><dd>{settings.integrations.orchestration}</dd></div>
+              <div><dt>{t.chunking}</dt><dd>{settings.integrations.chunking}</dd></div>
+              <div><dt>{t.vectorStore}</dt><dd>{settings.integrations.vector}</dd></div>
+              <div><dt>{t.database}</dt><dd>{settings.integrations.database}</dd></div>
+              <div><dt>{t.cache}</dt><dd>{settings.integrations.cache}</dd></div>
+              <div><dt>{t.tracing}</dt><dd>{settings.integrations.tracing}</dd></div>
+              <div><dt>{t.memory}</dt><dd>{settings.integrations.memory}</dd></div>
             </dl>
           </section>
         </div>}
