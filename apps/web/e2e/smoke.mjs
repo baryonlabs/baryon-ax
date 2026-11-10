@@ -73,9 +73,36 @@ try {
     assert.ok((await page.locator(".event").count()) >= 1);
   });
 
+  await step("administrator settings show runtime and policy", async () => {
+    await page.getByRole("button", { name: "설정", exact: true }).click();
+    await page.waitForSelector(".setting-card", { timeout: 10000 });
+    assert.ok((await page.locator(".setting-card").count()) >= 4);
+    const text = await page.locator(".settings-grid").innerText();
+    assert.match(text, /0\.6\.0/);
+    assert.match(text, /어휘 검색/);
+    assert.match(text, /전화번호 마스킹/);
+  });
+
   await step("knowledge library lists the uploaded document", async () => {
     await page.getByRole("button", { name: "지식", exact: true }).click();
     await page.waitForFunction(name => document.body.innerText.includes(name), documentName, { timeout: 10000 });
+  });
+
+  await step("administrator edits document roles", async () => {
+    const row = page.locator(".document", { hasText: documentName });
+    await row.getByRole("button", { name: "권한 편집" }).click();
+    await row.getByLabel("허용 역할").fill("member, admin, legal");
+    await row.getByRole("button", { name: "저장" }).click();
+    await row.getByText("문서 권한을 저장했습니다.").waitFor({ timeout: 10000 });
+    assert.match(await row.innerText(), /legal/);
+  });
+
+  await step("settings and ACL controls are hidden from members", async () => {
+    await page.locator('select[aria-label="역할"]').selectOption("member");
+    await page.waitForTimeout(300);
+    assert.equal(await page.getByRole("button", { name: "설정", exact: true }).count(), 0);
+    assert.equal(await page.locator(".admin-badge").count(), 0);
+    assert.equal(await page.locator(".document", { hasText: documentName }).getByRole("button", { name: "권한 편집" }).count(), 0);
   });
 
   assert.deepEqual(consoleErrors, [], `Unexpected browser console errors:\n${consoleErrors.join("\n")}`);

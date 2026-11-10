@@ -18,3 +18,28 @@ footer { width:min(860px, 100%); margin:0 auto; padding:16px 30px 24px; }.upload
 .event strong { font-size:13px; }
 .event p { margin:4px 0 0; color:#8495af; font-size:12px; }
 .event code { margin-left:auto; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#8cb3f2; font-size:11px; }
+
+.shell.admin { background: radial-gradient(circle at 78% 0%, #2b2a1a 0, transparent 31%), #0b1020; }
+.shell.admin .brand-mark { border-color: #8a6a34; background: #2a2112; color: #ffe2b0; }
+.shell.admin .environment .dot { background: #f0b45a; }
+.environment .admin-badge { display: inline-block; margin-top: 7px; padding: 2px 7px; border: 1px solid #7a5a28; border-radius: 999px; color: #f0c37a; background: #2a1f0e; font-size: 10px; letter-spacing: .12em; }
+.document-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.document-main > strong { font-size: 14px; }
+.document-main > p { margin: 0; color: #8495af; font-size: 13px; }
+.acl { align-self: flex-start; border: 1px solid #35507a; background: #14223a; color: #a9c6f4; border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; }
+.acl:hover { background: #1c3150; }
+.acl-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.acl-editor input { min-width: 200px; flex: 1; color: #edf3fc; background: #0f1a2c; border: 1px solid #354764; border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+.primary.small, .ghost.small { padding: 5px 8px; font-size: 11px; }
+.ghost { border: 1px solid #354764; background: transparent; color: #b6c2d3; border-radius: 6px; cursor: pointer; }
+.acl-ok { color: #64d9a5; font-size: 11px; }
+.acl-error { color: #ff9a9a; font-size: 11px; }
+.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.setting-card { border: 1px solid #273a59; border-radius: 10px; padding: 16px; background: rgba(17, 29, 49, .5); }
+.setting-card h3 { margin: 0 0 12px; font-size: 14px; color: #dce7ff; }
+.setting-card dl { margin: 0; display: grid; gap: 8px; }
+.setting-card dl div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed #24344e; padding-bottom: 7px; }
+.setting-card dl div:last-child { border-bottom: 0; padding-bottom: 0; }
+.setting-card dt { color: #8495af; font-size: 12px; }
+.setting-card dd { margin: 0; color: #d8e0ec; font-size: 12px; text-align: right; overflow-wrap: anywhere; }
+@media (max-width: 700px) { .settings-grid { grid-template-columns: 1fr; } }
