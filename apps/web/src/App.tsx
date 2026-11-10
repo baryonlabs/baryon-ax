@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import { BookOpen, Bot, ChevronRight, FileUp, Globe2, RefreshCw, Save, Send, Settings, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 
 export type Locale = "ko" | "en";
@@ -40,6 +40,7 @@ const copy = {
     newChat: "+ 새 대화", chat: "채팅", knowledge: "지식", governance: "거버넌스", settings: "설정", workspace: "AI 작업 공간",
     groundedChat: "근거 기반 채팅", knowledgeLibrary: "지식 라이브러리", sources: "출처", ask: "무엇이든 질문하거나 업로드한 문서를 검색하세요…",
     scope: "문서는 조직 및 역할 권한 범위 안에서만 검색됩니다.", indexedDocs: "색인된 문서", visibleDocs: "내 조직과 역할에서 조회 가능한 문서만 표시됩니다.",
+    sendHint: "Shift+Enter로 전송",
     upload: "문서 업로드", noDocs: "아직 문서가 없습니다", noDocsBody: "UTF-8 Markdown 또는 텍스트 파일을 업로드해 근거 기반 채팅에 활용하세요.",
     chunks: "청크", roles: "역할", deleteDocument: "문서 삭제", onPremises: "온프레미스 프로필", language: "언어", profile: "local-org",
     role: "역할", member: "멤버", admin: "관리자",
@@ -65,6 +66,7 @@ const copy = {
     newChat: "+ New conversation", chat: "Chat", knowledge: "Knowledge", governance: "Governance", settings: "Settings", workspace: "AI WORKSPACE",
     groundedChat: "Grounded chat", knowledgeLibrary: "Knowledge library", sources: "Sources", ask: "Ask anything, or query an uploaded document…",
     scope: "Documents are searched only within your organization and role scope.", indexedDocs: "Indexed documents", visibleDocs: "Only documents visible to your organization and role are shown.",
+    sendHint: "Shift+Enter to send",
     upload: "Upload document", noDocs: "No documents yet", noDocsBody: "Upload a UTF-8 Markdown or text file to make it available for grounded chat.",
     chunks: "chunk(s)", roles: "roles", deleteDocument: "Delete document", onPremises: "On-premises profile", language: "Language", profile: "local-org",
     role: "Role", member: "Member", admin: "Administrator",
@@ -224,6 +226,12 @@ export default function App() {
     }
   }
 
+  function composerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || !event.shiftKey || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    if (!busy && input.trim()) event.currentTarget.form?.requestSubmit();
+  }
+
   async function send(event: FormEvent) {
     event.preventDefault(); if (!input.trim() || busy) return;
     const question = input.trim(); setInput(""); setBusy(true);
@@ -299,8 +307,8 @@ export default function App() {
         <footer>
           <input ref={fileInput} type="file" accept=".txt,.md" hidden onChange={event => event.target.files?.[0] && upload(event.target.files[0])}/>
           <button className="upload" title={t.upload} aria-label={t.upload} onClick={() => fileInput.current?.click()}><FileUp size={18}/></button>
-          <form onSubmit={send}><textarea value={input} onChange={event => setInput(event.target.value)} placeholder={t.ask} rows={1}/><button aria-label={t.chat} disabled={busy || !input.trim()}><Send size={17}/></button></form>
-          <p>{t.scope}</p>
+          <form onSubmit={send}><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={composerKeyDown} placeholder={t.ask} rows={1}/><button aria-label={t.chat} aria-keyshortcuts="Shift+Enter" disabled={busy || !input.trim()}><Send size={17}/></button></form>
+          <p>{t.scope} · {t.sendHint}</p>
         </footer>
       </>}
       {view === "knowledge" && <div className="knowledge">
