@@ -20,6 +20,8 @@ The platform brings a chat workspace, agent execution, grounded knowledge search
 - Input/output policy checks and basic PII masking, including chunk-boundary-safe streaming masks
 - Durable document upload, chunking, permission-scoped lexical retrieval, and source citations
 - One visibility rule shared by document listing and retrieval, scoped by organization, role, and owner
+- Administrator settings view with runtime, policy, storage, and activity overview
+- Inline document ACL editing for administrators, with audit events on every change
 - Append-only JSONL audit events, filtered by organization and readable by administrators
 - Docker Compose services for API, UI, PostgreSQL, Redis, and Qdrant
 - Kubernetes starter manifests and deployment profiles
@@ -63,8 +65,10 @@ See [docs/architecture.md](docs/architecture.md), [docs/operations.md](docs/oper
 | `POST /v1/documents` | Upload a UTF-8 text/Markdown document |
 | `GET /v1/documents` | List documents visible to the caller |
 | `DELETE /v1/documents/{id}` | Delete a document as its uploader or an administrator |
+| `PATCH /v1/documents/{id}` | Update a document's role ACL as an administrator |
 | `GET /v1/documents/search` | Permission-scoped retrieval results |
 | `GET /v1/audit-events` | Recent audit events for administrators |
+| `GET /v1/admin/settings` | Effective runtime, storage, policy, and activity settings for administrators |
 
 For local development, callers can send `X-User-Id`, `X-Organization-Id`, and `X-Roles` headers. Replace this development identity adapter with OIDC/SSO before production use.
 
