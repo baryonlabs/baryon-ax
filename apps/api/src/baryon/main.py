@@ -2,20 +2,29 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import time
 import uuid
+from collections import deque
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncIterator, Literal
 
 import httpx
-from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+
+from . import __version__
+
+logger = logging.getLogger("baryon.ax")
+
+MAX_DOCUMENT_BYTES = int(os.getenv("MAX_DOCUMENT_BYTES", "2000000"))
+MODEL_TIMEOUT_SECONDS = float(os.getenv("MODEL_TIMEOUT_SECONDS", "90"))
 
 
 def now() -> str:
@@ -55,21 +64,46 @@ class ChatRequest(BaseModel):
 
 
 class AuditSink:
-    """Append-only local sink; production adapters can forward the same schema to Postgres/Langfuse."""
+    """Append-only JSONL sink; production adapters can forward the same schema to Postgres/Langfuse."""
 
-    def __init__(self) -> None:
-        self.events: list[dict] = []
+    def __init__(self, storage_path: Path | None = None) -> None:
+        self.storage_path = storage_path or Path(os.getenv("AUDIT_LOG", "/tmp/baryon-ax-audit/events.jsonl"))
+        self.events: deque[dict] = deque(maxlen=5000)
+        self._load()
+
+    def _load(self) -> None:
+        if not self.storage_path.exists():
+            return
+        for line in self.storage_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict):
+                self.events.append(event)
 
     def emit(self, event_type: str, principal: Principal, trace_id: str, **payload: object) -> None:
-        self.events.append({
+        event = {
             "id": str(uuid.uuid4()), "at": now(), "type": event_type, "trace_id": trace_id,
             "organization_id": principal.organization_id, "user_id": principal.user_id, **payload,
-        })
+        }
+        self.events.append(event)
+        try:
+            self.storage_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.storage_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
+        except OSError:
+            logger.exception("Could not persist audit event %s", event_type)
+
+    def recent_for(self, principal: Principal, limit: int = 100) -> list[dict]:
+        matching = [event for event in self.events if event.get("organization_id") == principal.organization_id]
+        return matching[-limit:]
 
 
 class PolicyEngine:
     blocked_patterns = (re.compile(r"\b(?:how to make a bomb|credit card dump)\b", re.I),)
     pii_pattern = re.compile(r"\b\d{3}[- ]?\d{2,4}[- ]?\d{4}\b")
+    pii_max_length = 13
 
     def check_input(self, text: str) -> None:
         if any(pattern.search(text) for pattern in self.blocked_patterns):
@@ -77,6 +111,26 @@ class PolicyEngine:
 
     def mask_output(self, text: str) -> str:
         return self.pii_pattern.sub("[REDACTED-PHONE]", text)
+
+    def mask_stream(self, buffer: str, final: bool = False) -> tuple[str, str]:
+        """Return text that is safe to stream plus the tail that must wait for more input.
+
+        Keeping the final ``pii_max_length`` characters preserves matches that could
+        otherwise be split across two model chunks. A match that starts before the
+        boundary and ends after it moves the boundary back to its start.
+        """
+        if final:
+            return self.mask_output(buffer), ""
+        if len(buffer) <= self.pii_max_length:
+            return "", buffer
+        limit = len(buffer) - self.pii_max_length
+        for match in self.pii_pattern.finditer(buffer):
+            if match.start() < limit < match.end():
+                limit = match.start()
+                break
+        if limit <= 0:
+            return "", buffer
+        return self.mask_output(buffer[:limit]), buffer[limit:]
 
 
 class DocumentService:
@@ -112,6 +166,14 @@ class DocumentService:
         temporary.write_text(json.dumps(asdict(document), ensure_ascii=False, default=list), encoding="utf-8")
         temporary.replace(target)
 
+    def can_view(self, principal: Principal, document: Document) -> bool:
+        """Single visibility rule shared by listing and retrieval."""
+        if document.organization_id != principal.organization_id:
+            return False
+        if "admin" in principal.roles or document.owner_id == principal.user_id:
+            return True
+        return bool(document.allowed_roles.intersection(principal.roles))
+
     def create(self, principal: Principal, title: str, content: str, allowed_roles: set[str]) -> Document:
         document = Document(str(uuid.uuid4()), principal.organization_id, principal.user_id, title, content, allowed_roles)
         self.documents[document.id] = document
@@ -124,8 +186,7 @@ class DocumentService:
              "allowed_roles": sorted(document.allowed_roles), "created_at": document.created_at,
              "chunks": len(chunk_text(document.content))}
             for document in self.documents.values()
-            if document.organization_id == principal.organization_id
-            and (document.allowed_roles.intersection(principal.roles) or document.owner_id == principal.user_id or "admin" in principal.roles)
+            if self.can_view(principal, document)
         ]
 
     def delete(self, principal: Principal, document_id: str) -> bool:
@@ -142,9 +203,7 @@ class DocumentService:
         terms = {term.lower() for term in re.findall(r"[\w가-힣]{2,}", query)}
         matches = []
         for document in self.documents.values():
-            if document.organization_id != principal.organization_id:
-                continue
-            if document.allowed_roles and not document.allowed_roles.intersection(principal.roles):
+            if not self.can_view(principal, document):
                 continue
             for number, chunk in enumerate(chunk_text(document.content)):
                 score = sum(term in chunk.lower() for term in terms)
@@ -164,40 +223,82 @@ class ModelAdapter:
         self.base_url = os.getenv("MODEL_BASE_URL", "").rstrip("/")
         self.api_key = os.getenv("MODEL_API_KEY", "")
 
-    async def complete(self, request: ChatRequest, context: list[dict]) -> str:
+    def demo_answer(self, request: ChatRequest, context: list[dict]) -> str:
         prompt = request.messages[-1].content
-        if not self.base_url:
-            sources = "\n".join(f"- {item['title']}: {item['content'][:180]}" for item in context)
-            if request.locale == "ko":
-                suffix = f"\n\n검색된 근거:\n{sources}" if sources else ""
-                return f"[demo-local] 요청을 받았습니다: {prompt}{suffix}\n\n실제 온프레미스 모델을 사용하려면 MODEL_BASE_URL을 설정하세요."
-            suffix = f"\n\nRetrieved context:\n{sources}" if sources else ""
-            return f"[demo-local] I received: {prompt}{suffix}\n\nConfigure MODEL_BASE_URL to use your on-premises model."
-        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        sources = "\n".join(f"- {item['title']}: {item['content'][:180]}" for item in context)
+        if request.locale == "ko":
+            suffix = f"\n\n검색된 근거:\n{sources}" if sources else ""
+            return f"[demo-local] 요청을 받았습니다: {prompt}{suffix}\n\n실제 온프레미스 모델을 사용하려면 MODEL_BASE_URL을 설정하세요."
+        suffix = f"\n\nRetrieved context:\n{sources}" if sources else ""
+        return f"[demo-local] I received: {prompt}{suffix}\n\nConfigure MODEL_BASE_URL to use your on-premises model."
+
+    def payload(self, request: ChatRequest, context: list[dict], stream: bool) -> dict:
         messages = [message.model_dump() for message in request.messages]
         if context:
             instruction = "관련된 경우 다음 검색 문서를 근거로 답변하고, 한국어로 답변하세요:\n" if request.locale == "ko" else "Answer using this retrieved context when relevant:\n"
             messages.insert(0, {"role": "system", "content": instruction + "\n".join(item["content"] for item in context)})
-        async with httpx.AsyncClient(timeout=90) as client:
-            response = await client.post(f"{self.base_url}/chat/completions", headers=headers,
-                json={"model": request.model, "messages": messages, "stream": False})
+        return {"model": request.model, "messages": messages, "stream": stream}
+
+    def headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+
+    async def complete(self, request: ChatRequest, context: list[dict]) -> str:
+        if not self.base_url:
+            return self.demo_answer(request, context)
+        async with httpx.AsyncClient(timeout=MODEL_TIMEOUT_SECONDS) as client:
+            response = await client.post(f"{self.base_url}/chat/completions", headers=self.headers(),
+                json=self.payload(request, context, stream=False))
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"]
 
+    async def stream(self, request: ChatRequest, context: list[dict]) -> AsyncIterator[str]:
+        if not self.base_url:
+            for token in re.findall(r"\S+\s*", self.demo_answer(request, context)):
+                yield token
+                await asyncio.sleep(0.01)
+            return
+        async with httpx.AsyncClient(timeout=MODEL_TIMEOUT_SECONDS) as client:
+            async with client.stream("POST", f"{self.base_url}/chat/completions", headers=self.headers(),
+                json=self.payload(request, context, stream=True)) as response:
+                response.raise_for_status()
+                if "text/event-stream" not in response.headers.get("content-type", ""):
+                    payload = json.loads(await response.aread())
+                    content = payload["choices"][0]["message"]["content"]
+                    if content:
+                        yield content
+                    return
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        payload = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    delta = payload.get("choices", [{}])[0].get("delta", {}).get("content")
+                    if delta:
+                        yield delta
 
-app = FastAPI(title="Baryon AX API", version="0.1.0")
-origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+
+app = FastAPI(title="Baryon AX API", version=__version__)
+origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",") if origin.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 documents, policy, audit, model_adapter = DocumentService(), PolicyEngine(), AuditSink(), ModelAdapter()
 
 
+def roles_from_header(value: str) -> set[str]:
+    return {role.strip() for role in value.split(",") if role.strip()}
+
+
 def principal_from_headers(user_id: str | None, organization_id: str | None, roles: str | None) -> Principal:
-    return Principal(user_id or "local-user", organization_id or "local-org", {role.strip() for role in (roles or "member").split(",") if role.strip()})
+    return Principal(user_id or "local-user", organization_id or "local-org", roles_from_header(roles or "member"))
 
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "model_adapter": "openai-compatible" if model_adapter.base_url else "demo-local", "time": now()}
+    return {"status": "ok", "version": __version__, "model_adapter": "openai-compatible" if model_adapter.base_url else "demo-local", "time": now()}
 
 
 @app.get("/v1/models")
@@ -207,16 +308,22 @@ async def models() -> dict:
 
 @app.post("/v1/documents")
 async def upload_document(
-    file: UploadFile = File(...), allowed_roles: str = "member,admin",
+    file: UploadFile = File(...), allowed_roles: str = Form("member,admin"),
     x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
 ) -> dict:
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
     if not file.filename or Path(file.filename).suffix.lower() not in {".txt", ".md"}:
         raise HTTPException(415, "Only UTF-8 .txt and .md files are supported by the basic parser")
-    content = (await file.read()).decode("utf-8", errors="strict")
+    payload = await file.read(MAX_DOCUMENT_BYTES + 1)
+    if len(payload) > MAX_DOCUMENT_BYTES:
+        raise HTTPException(413, f"Document exceeds the {MAX_DOCUMENT_BYTES} byte limit")
+    try:
+        content = payload.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as error:
+        raise HTTPException(415, "Document must be UTF-8 encoded") from error
     if not content.strip():
         raise HTTPException(422, "Document is empty")
-    document = documents.create(principal, file.filename, content, {role.strip() for role in allowed_roles.split(",") if role.strip()})
+    document = documents.create(principal, file.filename, content, roles_from_header(allowed_roles))
     trace_id = str(uuid.uuid4())
     audit.emit("document.ingested", principal, trace_id, document_id=document.id, title=document.title)
     return {"id": document.id, "title": document.title, "chunks": len(chunk_text(content)), "trace_id": trace_id}
@@ -254,12 +361,34 @@ async def delete_document(
     return {"id": document_id, "deleted": True, "trace_id": trace_id}
 
 
-async def stream_sse(text: str, trace_id: str, citations: list[dict]) -> AsyncIterator[str]:
-    for token in re.findall(r"\S+\s*", text):
-        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
-        await asyncio.sleep(0.01)
-    yield f"data: {json.dumps({'type': 'citations', 'data': citations, 'trace_id': trace_id})}\n\n"
-    yield "data: [DONE]\n\n"
+def sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+async def stream_chat(request: ChatRequest, principal: Principal, trace_id: str, started: float, citations: list[dict]) -> AsyncIterator[str]:
+    buffer = ""
+    try:
+        async for chunk in model_adapter.stream(request, citations):
+            safe, buffer = policy.mask_stream(buffer + chunk)
+            if safe:
+                yield sse({"type": "token", "content": safe})
+        tail, _ = policy.mask_stream(buffer, final=True)
+        if tail:
+            yield sse({"type": "token", "content": tail})
+        audit.emit("chat.completed", principal, trace_id, thread_id=request.thread_id, model=request.model,
+                   latency_ms=round((time.perf_counter() - started) * 1000),
+                   citations=[item["document_id"] for item in citations], streamed=True)
+        yield sse({"type": "citations", "data": citations, "trace_id": trace_id})
+        yield "data: [DONE]\n\n"
+    except asyncio.CancelledError:
+        audit.emit("chat.cancelled", principal, trace_id, thread_id=request.thread_id, model=request.model, streamed=True)
+        raise
+    except Exception as error:
+        logger.exception("Streaming completion failed for trace %s", trace_id)
+        audit.emit("chat.failed", principal, trace_id, thread_id=request.thread_id, model=request.model,
+                   reason=type(error).__name__, streamed=True)
+        yield sse({"type": "error", "message": "Configured model endpoint could not complete the request"})
+        yield "data: [DONE]\n\n"
 
 
 @app.post("/v1/chat/completions")
@@ -272,21 +401,28 @@ async def chat(
     trace_id, started = str(uuid.uuid4()), time.perf_counter()
     citations = documents.search(principal, latest) if request.use_retrieval else []
     audit.emit("chat.started", principal, trace_id, thread_id=request.thread_id, model=request.model, retrieval_count=len(citations))
+    if request.stream:
+        return StreamingResponse(stream_chat(request, principal, trace_id, started, citations), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
     try:
         answer = policy.mask_output(await model_adapter.complete(request, citations))
     except httpx.HTTPError as error:
-        audit.emit("chat.failed", principal, trace_id, reason=str(error))
+        audit.emit("chat.failed", principal, trace_id, thread_id=request.thread_id, model=request.model, reason=str(error), streamed=False)
         raise HTTPException(502, "Configured model endpoint could not complete the request") from error
-    audit.emit("chat.completed", principal, trace_id, latency_ms=round((time.perf_counter() - started) * 1000), citations=[item["document_id"] for item in citations])
-    if request.stream:
-        return StreamingResponse(stream_sse(answer, trace_id, citations), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+    audit.emit("chat.completed", principal, trace_id, thread_id=request.thread_id, model=request.model,
+               latency_ms=round((time.perf_counter() - started) * 1000),
+               citations=[item["document_id"] for item in citations], streamed=False)
     return {"id": trace_id, "object": "chat.completion", "model": request.model,
             "choices": [{"index": 0, "message": {"role": "assistant", "content": answer}, "finish_reason": "stop"}],
             "citations": citations}
 
 
 @app.get("/v1/audit-events")
-async def audit_events(x_roles: str | None = Header(None)) -> dict:
-    if "admin" not in (x_roles or "").split(","):
+async def audit_events(
+    limit: int = Query(100, ge=1, le=500), x_user_id: str | None = Header(None),
+    x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if "admin" not in principal.roles:
         raise HTTPException(403, "Administrator role required")
-    return {"data": audit.events[-100:]}
+    return {"data": audit.recent_for(principal, limit)}
