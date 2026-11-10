@@ -205,9 +205,9 @@
 | 감사 JSONL 저장 | ✅ | append-only, 재시작 시 복원 |
 | 인메모리 문서 인덱스 | ✅ | 시작 시 JSON 로드 |
 | 감사 메모리 버퍼 | ✅ | 최근 5,000건 유지 |
-| PostgreSQL | 🔶 | Compose에 포함, 앱 로직 미사용 |
-| Redis | 🔶 | Compose에 포함, 앱 로직 미사용 |
-| Qdrant | 🔶 | Compose에 포함, 벡터 검색 미연동 |
+| PostgreSQL | 🔶 | `deps` 프로필에 포함, 앱 로직 미사용 |
+| Redis | 🔶 | `deps` 프로필에 포함, 앱 로직 미사용 |
+| Qdrant | 🔶 | `deps` 프로필에 포함, 벡터 검색 미연동 |
 | 오브젝트 스토리지 | ⛔ | S3/MinIO 등 미연동 |
 | 데이터 백업 가이드 | ✅ | `docs/operations.md`에 문서·감사·벡터 백업 지침 |
 
@@ -215,9 +215,11 @@
 
 ## 9. 배포 · 운영
 
+> 기본 `docker compose up`은 `api` + `web`만 실행합니다. PostgreSQL, Redis, Qdrant는 `--profile deps`로 명시적으로 켜는 통합 placeholder이며 현재 앱 로직에는 연결되어 있지 않습니다.
+
 | 기능 | 상태 | 설명 |
 | --- | --- | --- |
-| Docker Compose | ✅ | API, Web, PostgreSQL, Redis, Qdrant |
+| Docker Compose | ✅ | API, Web 기본 + `deps` 프로필(PostgreSQL, Redis, Qdrant) |
 | API 이미지 | ✅ | Python 3.12 slim, 비루트 사용자(uid 10001) |
 | Web 이미지 | ✅ | Node 22 빌드 + Nginx 1.27 정적 서빙 |
 | Nginx SPA 라우팅 | ✅ | `root`/`index`/`try_files` 설정 |

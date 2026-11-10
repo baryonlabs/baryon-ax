@@ -10,6 +10,32 @@ Baryon AX keeps product responsibilities separate even when a development profil
 | Governance | policy engine and audit schema | NeMo/Llama Guard, OPA, Langfuse |
 | Infrastructure | Docker Compose services | PostgreSQL, Redis, Qdrant, object storage, Kubernetes |
 
+## Compose vs. target architecture
+
+The overview image is a **target production architecture**, not a one-to-one container map. Several L2/L3 boxes are libraries or in-process adapters today; only the UI, API, and stateful infrastructure need containers.
+
+| Diagram component | Layer | Current Compose service | Used by the app today |
+| --- | --- | --- | --- |
+| Chat Web UI | L4 | `web` | ✅ React/Nginx |
+| FastAPI gateway | L3 | `api` | ✅ orchestration, policy, audit |
+| LangGraph | L3 | — | ⛔ direct FastAPI handler (no durable graph state) |
+| Guardrails | L3 | — | 🔶 in-process `PolicyEngine` |
+| Langfuse | L3 | — | ⛔ JSONL audit sink instead |
+| Qdrant / Milvus | L2 | `qdrant` (`deps` profile) | ⛔ placeholder, lexical search instead |
+| LlamaIndex | L2 | — | 🔶 simple 900-character chunker |
+| Redis / Mem0 | L2 | `redis` (`deps` profile) | ⛔ placeholder, browser-side history only |
+| PostgreSQL | L1 | `postgres` (`deps` profile) | ⛔ placeholder, JSON files instead |
+| Model serving | L1 | external | ✅ OpenAI-compatible `MODEL_BASE_URL` |
+| Docker | L1 | `api`, `web` | ✅ |
+| Kubernetes | L1 | `deploy/kubernetes` (API only) | 🔶 starter manifests |
+
+The default Compose profile starts only `api` and `web`. PostgreSQL, Redis, and Qdrant are opt-in integration placeholders:
+
+```bash
+docker compose up --build                 # Basic Core: API + UI
+docker compose --profile deps up -d       # + PostgreSQL, Redis, Qdrant
+```
+
 ## Trust boundaries
 
 1. The browser never talks directly to a model, vector store, or tool.

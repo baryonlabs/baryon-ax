@@ -10,7 +10,7 @@ This repository is an executable Basic Core v0.6 reference implementation. It of
 
 ![Baryon AX platform overview: user flow, layered architecture, and core engines](docs/images/baryon-ax-platform-overview.png)
 
-The platform brings a chat workspace, agent execution, grounded knowledge search, and on-premises infrastructure into one operating model. The image summarizes the user flow—ask, run an agent, evaluate, and review evidence—and the responsibilities of each layer.
+The platform brings a chat workspace, agent execution, grounded knowledge search, and on-premises infrastructure into one operating model. The image summarizes the user flow—ask, run an agent, evaluate, and review evidence—and the responsibilities of each layer. It is the **target production architecture**; the Basic Core runs the UI and API containers and implements policy, retrieval, and audit in-process. See [docs/architecture.md](docs/architecture.md#compose-vs-target-architecture) for the component-by-component mapping.
 
 ## What works today
 
@@ -24,14 +24,15 @@ The platform brings a chat workspace, agent execution, grounded knowledge search
 - Administrator settings view with runtime, policy, storage, and activity overview
 - Inline document ACL editing for administrators, with audit events on every change
 - Append-only JSONL audit events, filtered by organization and readable by administrators
-- Docker Compose services for API, UI, PostgreSQL, Redis, and Qdrant
+- Docker Compose services for API and UI, with optional PostgreSQL, Redis, and Qdrant integration placeholders (`--profile deps`)
 - Kubernetes starter manifests and deployment profiles
 
 ## Quick start
 
 ```bash
 cp .env.example .env
-docker compose up --build
+docker compose up --build                 # Basic Core: API + UI
+# docker compose --profile deps up -d     # optional: PostgreSQL, Redis, Qdrant
 ```
 
 Open `http://localhost:3000`. The default `demo-local` model works without an API key. To use a local OpenAI-compatible server (such as vLLM), set `MODEL_BASE_URL`, `MODEL_NAME`, and if required `MODEL_API_KEY` in `.env`.
