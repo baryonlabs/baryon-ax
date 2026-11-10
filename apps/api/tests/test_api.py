@@ -173,6 +173,12 @@ def test_patch_unknown_document_returns_not_found() -> None:
     assert response.status_code == 404
 
 
+def test_memory_endpoints_are_disabled_without_mem0() -> None:
+    assert client.post("/v1/memories", json={"text": "remember this"}, headers=headers()).status_code == 503
+    assert client.get("/v1/memories", headers=headers()).status_code == 503
+    assert client.get("/v1/memories/search", params={"q": "remember"}, headers=headers()).status_code == 503
+
+
 def test_streaming_chat_returns_tokens_and_citations() -> None:
     response = client.post("/v1/chat/completions", json={"messages": [{"role": "user", "content": "stream check"}], "stream": True},
                            headers=headers(organization="stream-org"))

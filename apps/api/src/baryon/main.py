@@ -5,13 +5,16 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 import uuid
 from collections import deque
+from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, AsyncIterator, Literal
+from typing import Annotated, AsyncIterator, Literal, TypedDict
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile
@@ -67,13 +70,53 @@ class DocumentUpdate(BaseModel):
     allowed_roles: list[Annotated[str, Field(min_length=1, max_length=64)]] = Field(default_factory=list, max_length=20)
 
 
-class AuditSink:
-    """Append-only JSONL sink; production adapters can forward the same schema to Postgres/Langfuse."""
+class MemoryCreate(BaseModel):
+    text: str = Field(min_length=1, max_length=10_000)
+    metadata: dict[str, str] = Field(default_factory=dict)
 
-    def __init__(self, storage_path: Path | None = None) -> None:
+
+class ChatState(TypedDict):
+    request: ChatRequest
+    principal: Principal
+    citations: list[dict]
+
+
+class AuditSink:
+    """Append-only audit sink: Postgres when configured, JSONL otherwise."""
+
+    def __init__(self, storage_path: Path | None = None, database_url: str | None = None) -> None:
         self.storage_path = storage_path or Path(os.getenv("AUDIT_LOG", "/tmp/baryon-ax-audit/events.jsonl"))
+        self.database_url = database_url if database_url is not None else os.getenv("DATABASE_URL", "")
+        self.db_ready = False
         self.events: deque[dict] = deque(maxlen=5000)
+        if self.database_url:
+            try:
+                self._init_db()
+            except Exception:
+                logger.exception("PostgreSQL audit store unavailable; using JSONL")
+                self.database_url = ""
+                self.db_ready = False
         self._load()
+
+    def _connect(self):
+        import psycopg
+        return psycopg.connect(self.database_url, connect_timeout=3)
+
+    def _init_db(self) -> None:
+        with self._connect() as connection:
+            connection.execute("""
+                CREATE TABLE IF NOT EXISTS audit_events (
+                    id text PRIMARY KEY,
+                    at timestamptz NOT NULL,
+                    type text NOT NULL,
+                    trace_id text NOT NULL,
+                    organization_id text NOT NULL,
+                    user_id text NOT NULL,
+                    payload jsonb NOT NULL
+                )
+            """)
+            connection.execute("CREATE INDEX IF NOT EXISTS audit_events_org_at ON audit_events (organization_id, at DESC)")
+        self.db_ready = True
 
     def _load(self) -> None:
         if not self.storage_path.exists():
@@ -98,8 +141,29 @@ class AuditSink:
                 handle.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
         except OSError:
             logger.exception("Could not persist audit event %s", event_type)
+        if self.db_ready:
+            try:
+                from psycopg.types.json import Jsonb
+                with self._connect() as connection:
+                    connection.execute(
+                        "INSERT INTO audit_events (id, at, type, trace_id, organization_id, user_id, payload) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING",
+                        (event["id"], event["at"], event_type, trace_id, principal.organization_id, principal.user_id, Jsonb(event)),
+                    )
+            except Exception:
+                logger.exception("Could not persist audit event %s in PostgreSQL", event_type)
 
     def recent_for(self, principal: Principal, limit: int = 100) -> list[dict]:
+        if self.db_ready:
+            try:
+                with self._connect() as connection:
+                    rows = connection.execute(
+                        "SELECT payload FROM audit_events WHERE organization_id = %s ORDER BY at DESC LIMIT %s",
+                        (principal.organization_id, limit),
+                    ).fetchall()
+                return [row[0] for row in reversed(rows)]
+            except Exception:
+                logger.exception("Could not read audit events from PostgreSQL; using memory")
         matching = [event for event in self.events if event.get("organization_id") == principal.organization_id]
         return matching[-limit:]
 
@@ -144,8 +208,9 @@ class DocumentService:
     adapter must preserve: organization scope, role ACL, source title, and content.
     """
 
-    def __init__(self, storage_root: Path | None = None) -> None:
+    def __init__(self, storage_root: Path | None = None, vector=None) -> None:
         self.storage_root = storage_root or Path(os.getenv("DOCUMENT_STORE", "/tmp/baryon-ax-documents"))
+        self.vector = vector
         self.documents: dict[str, Document] = {}
         self._load()
 
@@ -182,6 +247,8 @@ class DocumentService:
         document = Document(str(uuid.uuid4()), principal.organization_id, principal.user_id, title, content, allowed_roles)
         self.documents[document.id] = document
         self._persist(document)
+        if self.vector:
+            self.vector.index_document(document)
         return document
 
     def list_for(self, principal: Principal) -> list[dict]:
@@ -201,6 +268,8 @@ class DocumentService:
             raise PermissionError("Only the uploader or an administrator can delete this document")
         self.documents.pop(document_id)
         (self.storage_root / f"{document_id}.json").unlink(missing_ok=True)
+        if self.vector:
+            self.vector.delete_document(document_id)
         return True
 
     def update_roles(self, principal: Principal, document_id: str, allowed_roles: set[str]) -> Document | None:
@@ -211,9 +280,27 @@ class DocumentService:
             return None
         document.allowed_roles = allowed_roles
         self._persist(document)
+        if self.vector:
+            self.vector.update_roles(document_id, allowed_roles)
         return document
 
+    def reindex_all(self) -> int:
+        if not self.vector:
+            return 0
+        for document in self.documents.values():
+            self.vector.index_document(document)
+        return len(self.documents)
+
     def search(self, principal: Principal, query: str, limit: int = 4) -> list[dict]:
+        if self.vector:
+            vector_results = self.vector.search(principal, query, limit)
+            if vector_results is not None:
+                visible = []
+                for item in vector_results:
+                    document = self.documents.get(item["document_id"])
+                    if document and self.can_view(principal, document):
+                        visible.append(item)
+                return visible
         terms = search_terms(query)
         matches = []
         for document in self.documents.values():
@@ -227,7 +314,21 @@ class DocumentService:
         return sorted(matches, key=lambda item: item["score"], reverse=True)[:limit]
 
 
+try:
+    from llama_index.core.node_parser import SentenceSplitter
+    CHUNKING_BACKEND = "llamaindex"
+    _splitter = SentenceSplitter(chunk_size=256, chunk_overlap=32)
+except Exception:
+    CHUNKING_BACKEND = "fixed"
+    _splitter = None
+
+
 def chunk_text(text: str, size: int = 900) -> list[str]:
+    if _splitter is not None and size == 900:
+        try:
+            return _splitter.split_text(text) or [""]
+        except Exception:
+            logger.exception("LlamaIndex chunking failed; using fixed chunks")
     return [text[index:index + size] for index in range(0, len(text), size)] or [""]
 
 
@@ -246,6 +347,258 @@ def search_terms(text: str) -> set[str]:
             if len(token) > 3:
                 terms.add(token[:3])
     return terms
+
+
+class VectorIndex:
+    """Qdrant-backed semantic index; returns None when unavailable so callers can fall back."""
+
+    def __init__(self) -> None:
+        self.url = os.getenv("QDRANT_URL", "").rstrip("/")
+        self.collection = os.getenv("QDRANT_COLLECTION", "baryon_documents")
+        self.model_name = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+        self.dimension = int(os.getenv("EMBEDDING_DIMENSION", "384"))
+        self.client = None
+        self.embedder = None
+        self._embedder_lock = threading.Lock()
+        self._embed_lock = threading.Lock()
+        self.enabled = False
+        self.last_error = ""
+        if self.url:
+            self._connect()
+
+    def _connect(self) -> None:
+        try:
+            from qdrant_client import QdrantClient
+            from qdrant_client.models import Distance, PayloadSchemaType, VectorParams
+            client = QdrantClient(url=self.url, timeout=5)
+            client.get_collections()
+            if not client.collection_exists(self.collection):
+                client.create_collection(self.collection, vectors_config=VectorParams(size=self.dimension, distance=Distance.COSINE))
+            for field in ("organization_id", "owner_id", "document_id", "allowed_roles"):
+                try:
+                    client.create_payload_index(self.collection, field_name=field, field_schema=PayloadSchemaType.KEYWORD)
+                except Exception:
+                    pass
+            self.client = client
+            self.enabled = True
+        except Exception as error:
+            self.last_error = str(error)
+            logger.exception("Qdrant is unavailable; using lexical retrieval")
+
+    def _embed(self, texts: list[str], query: bool = False) -> list[list[float]]:
+        if self.embedder is None:
+            with self._embedder_lock:
+                if self.embedder is None:
+                    from fastembed import TextEmbedding
+                    self.embedder = TextEmbedding(self.model_name)
+        prefix = "query: " if query else "passage: "
+        with self._embed_lock:
+            return [vector.tolist() for vector in self.embedder.embed([prefix + text for text in texts])]
+
+    @staticmethod
+    def _point_id(document_id: str, index: int) -> str:
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{document_id}:{index}"))
+
+    @staticmethod
+    def _document_filter(document_id: str):
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+        return Filter(must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))])
+
+    def index_document(self, document: Document) -> None:
+        if not self.enabled or not self.client:
+            return
+        try:
+            from qdrant_client.models import PointStruct
+            chunks = chunk_text(document.content)
+            vectors = self._embed(chunks)
+            points = [
+                PointStruct(
+                    id=self._point_id(document.id, index),
+                    vector=vector,
+                    payload={
+                        "document_id": document.id, "title": document.title, "chunk": index + 1,
+                        "content": chunk, "organization_id": document.organization_id,
+                        "owner_id": document.owner_id, "allowed_roles": sorted(document.allowed_roles),
+                    },
+                )
+                for index, (chunk, vector) in enumerate(zip(chunks, vectors))
+            ]
+            self.client.upsert(self.collection, points=points, wait=True)
+        except Exception:
+            logger.exception("Could not index document %s in Qdrant", document.id)
+
+    def delete_document(self, document_id: str) -> None:
+        if not self.enabled or not self.client:
+            return
+        try:
+            self.client.delete(self.collection, points_selector=self._document_filter(document_id), wait=True)
+        except Exception:
+            logger.exception("Could not delete document %s from Qdrant", document_id)
+
+    def update_roles(self, document_id: str, allowed_roles: set[str]) -> None:
+        if not self.enabled or not self.client:
+            return
+        try:
+            self.client.set_payload(self.collection, payload={"allowed_roles": sorted(allowed_roles)},
+                                    points=self._document_filter(document_id), wait=True)
+        except Exception:
+            logger.exception("Could not update Qdrant ACLs for document %s", document_id)
+
+    def search(self, principal: Principal, query: str, limit: int) -> list[dict] | None:
+        if not self.enabled or not self.client:
+            return None
+        try:
+            from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
+            must = [FieldCondition(key="organization_id", match=MatchValue(value=principal.organization_id))]
+            should = []
+            if "admin" not in principal.roles:
+                should.append(FieldCondition(key="owner_id", match=MatchValue(value=principal.user_id)))
+                if principal.roles:
+                    should.append(FieldCondition(key="allowed_roles", match=MatchAny(any=sorted(principal.roles))))
+            query_filter = Filter(must=must, should=should) if should else Filter(must=must)
+            result = self.client.query_points(
+                self.collection, query=self._embed([query], query=True)[0],
+                query_filter=query_filter, limit=limit, with_payload=True,
+            )
+            return [
+                {
+                    "document_id": point.payload["document_id"], "title": point.payload["title"],
+                    "chunk": point.payload["chunk"], "content": point.payload["content"],
+                    "score": round(float(point.score), 4),
+                }
+                for point in result.points
+                if point.payload
+            ]
+        except Exception:
+            logger.exception("Qdrant search failed; using lexical retrieval")
+            return None
+
+
+class Tracer:
+    """Optional Langfuse tracing; failures never block a request."""
+
+    def __init__(self) -> None:
+        self.enabled = os.getenv("LANGFUSE_ENABLED", "false").lower() == "true"
+        self.client = None
+        if self.enabled:
+            try:
+                from langfuse import Langfuse
+                self.client = Langfuse(
+                    public_key=os.getenv("LANGFUSE_PUBLIC_KEY", ""),
+                    secret_key=os.getenv("LANGFUSE_SECRET_KEY", ""),
+                    host=os.getenv("LANGFUSE_HOST", "http://127.0.0.1:3000"),
+                )
+                self.client.auth_check()
+            except Exception:
+                logger.exception("Langfuse is unavailable; tracing disabled")
+                self.enabled = False
+                self.client = None
+
+    def trace(self, trace_id: str, principal: Principal, request: ChatRequest):
+        if not self.enabled or not self.client:
+            return None
+        try:
+            return self.client.trace(
+                id=trace_id, name="baryon-ax.chat", user_id=principal.user_id, session_id=request.thread_id,
+                metadata={"organization_id": principal.organization_id, "model": request.model, "retrieval": request.use_retrieval},
+                input=[message.model_dump() for message in request.messages], tags=["baryon-ax"],
+            )
+        except Exception:
+            logger.exception("Could not create Langfuse trace")
+            return None
+
+    def generation(self, trace, request: ChatRequest, citations: list[dict]):
+        if trace is None:
+            return None
+        try:
+            return trace.generation(
+                name="chat.completion", model=request.model,
+                input=[message.model_dump() for message in request.messages],
+                metadata={"citation_count": len(citations), "retrieval": request.use_retrieval},
+            )
+        except Exception:
+            logger.exception("Could not create Langfuse generation")
+            return None
+
+    def finish(self, generation, answer: str, error: str | None = None) -> None:
+        if generation is None:
+            return
+        try:
+            generation.end(output=answer, level="ERROR" if error else "DEFAULT", status_message=error)
+        except Exception:
+            logger.exception("Could not finish Langfuse generation")
+
+
+class RateLimiter:
+    """Redis fixed-window limiter; disabled when Redis is not configured."""
+
+    def __init__(self) -> None:
+        self.url = os.getenv("REDIS_URL", "")
+        self.limit = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
+        self.client = None
+        self.enabled = False
+        if self.url:
+            try:
+                import redis
+                self.client = redis.Redis.from_url(self.url, socket_timeout=1, decode_responses=True)
+                self.client.ping()
+                self.enabled = True
+            except Exception:
+                logger.exception("Redis is unavailable; rate limiting disabled")
+
+    def check(self, key: str) -> None:
+        if not self.enabled or not self.client:
+            return
+        bucket = int(time.time() // 60)
+        redis_key = f"baryon:ratelimit:{key}:{bucket}"
+        try:
+            count = int(self.client.incr(redis_key))
+            if count == 1:
+                self.client.expire(redis_key, 61)
+            if count > self.limit:
+                raise HTTPException(429, "Rate limit exceeded")
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("Redis rate limiting failed; allowing request")
+
+
+class ChatPipeline:
+    """LangGraph orchestration for the policy gate and retrieval step."""
+
+    def __init__(self) -> None:
+        self.enabled = False
+        self.graph = None
+        try:
+            from langgraph.graph import END, StateGraph
+
+            async def policy_node(state: ChatState) -> dict:
+                policy.check_input(state["request"].messages[-1].content)
+                return {}
+
+            async def retrieve_node(state: ChatState) -> dict:
+                request = state["request"]
+                if not request.use_retrieval:
+                    return {"citations": []}
+                return {"citations": await asyncio.to_thread(documents.search, state["principal"], request.messages[-1].content)}
+
+            graph = StateGraph(ChatState)
+            graph.add_node("policy", policy_node)
+            graph.add_node("retrieve", retrieve_node)
+            graph.set_entry_point("policy")
+            graph.add_edge("policy", "retrieve")
+            graph.add_edge("retrieve", END)
+            self.graph = graph.compile()
+            self.enabled = True
+        except Exception:
+            logger.exception("LangGraph is unavailable; using direct orchestration")
+
+    async def prepare(self, request: ChatRequest, principal: Principal) -> list[dict]:
+        if not self.enabled or self.graph is None:
+            policy.check_input(request.messages[-1].content)
+            return await asyncio.to_thread(documents.search, principal, request.messages[-1].content) if request.use_retrieval else []
+        state = await self.graph.ainvoke({"request": request, "principal": principal, "citations": []})
+        return state["citations"]
 
 
 class ModelAdapter:
@@ -268,10 +621,15 @@ class ModelAdapter:
         if context:
             instruction = "관련된 경우 다음 검색 문서를 근거로 답변하고, 한국어로 답변하세요:\n" if request.locale == "ko" else "Answer using this retrieved context when relevant:\n"
             messages.insert(0, {"role": "system", "content": instruction + "\n".join(item["content"] for item in context)})
-        return {"model": request.model, "messages": messages, "stream": stream}
+        return {"model": self.resolved_model(request), "messages": messages, "stream": stream}
 
     def headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+
+    def resolved_model(self, request: ChatRequest) -> str:
+        if self.base_url and request.model in {"", "demo-local"}:
+            return self.model
+        return request.model
 
     async def complete(self, request: ChatRequest, context: list[dict]) -> str:
         if not self.base_url:
@@ -313,10 +671,116 @@ class ModelAdapter:
                         yield delta
 
 
-app = FastAPI(title="Baryon AX API", version=__version__)
-origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",") if origin.strip()]
+class MemoryService:
+    """Lazy Mem0 memory layer backed by Qdrant, FastEmbed, and Ollama."""
+
+    def __init__(self, default_model: str = "qwen2.5:7b") -> None:
+        self.enabled = os.getenv("MEM0_ENABLED", "false").lower() == "true"
+        self.default_model = default_model
+        self.memory = None
+        self.last_error = ""
+        self._lock = threading.Lock()
+
+    def _ensure_memory(self):
+        if not self.enabled or self.memory is not None:
+            return self.memory
+        with self._lock:
+            if self.memory is not None:
+                return self.memory
+            try:
+                from mem0 import Memory
+                qdrant_url = urlparse(os.getenv("QDRANT_URL", "http://127.0.0.1:6333"))
+                history_path = Path(os.getenv("MEM0_HISTORY_DB", "/tmp/baryon-ax-mem0/history.db"))
+                history_path.parent.mkdir(parents=True, exist_ok=True)
+                config = {
+                    "vector_store": {
+                        "provider": "qdrant",
+                        "config": {
+                            "host": qdrant_url.hostname or "127.0.0.1",
+                            "port": qdrant_url.port or 6333,
+                            "collection_name": os.getenv("MEM0_COLLECTION", "baryon_memories"),
+                            "embedding_model_dims": int(os.getenv("EMBEDDING_DIMENSION", "384")),
+                        },
+                    },
+                    "llm": {
+                        "provider": "ollama",
+                        "config": {
+                            "model": os.getenv("MEM0_LLM_MODEL", self.default_model),
+                            "ollama_base_url": os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
+                            "max_tokens": 500,
+                        },
+                    },
+                    "embedder": {
+                        "provider": "fastembed",
+                        "config": {
+                            "model": os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"),
+                            "embedding_dims": int(os.getenv("EMBEDDING_DIMENSION", "384")),
+                        },
+                    },
+                    "history_db_path": str(history_path),
+                }
+                self.memory = Memory.from_config(config)
+            except Exception as error:
+                self.last_error = str(error)
+                logger.exception("Mem0 is unavailable; memory endpoints disabled")
+                self.enabled = False
+                self.memory = None
+        return self.memory
+
+    @staticmethod
+    def _organization_items(principal: Principal, items: list[dict]) -> list[dict]:
+        return [item for item in items if (item.get("metadata") or {}).get("organization_id") == principal.organization_id]
+
+    def add(self, text: str, principal: Principal, metadata: dict[str, str]) -> dict:
+        memory = self._ensure_memory()
+        if not memory:
+            raise RuntimeError("Mem0 is not enabled")
+        return memory.add(text, user_id=principal.user_id, metadata={"organization_id": principal.organization_id, **metadata})
+
+    def search(self, query: str, principal: Principal, limit: int = 5) -> list[dict]:
+        memory = self._ensure_memory()
+        if not memory:
+            return []
+        result = memory.search(query, filters={"user_id": principal.user_id}, limit=limit)
+        items = result.get("results", []) if isinstance(result, dict) else result
+        return self._organization_items(principal, items)
+
+    def list(self, principal: Principal, limit: int = 50) -> list[dict]:
+        memory = self._ensure_memory()
+        if not memory:
+            return []
+        result = memory.get_all(filters={"user_id": principal.user_id}, limit=limit)
+        items = result.get("results", []) if isinstance(result, dict) else result
+        return self._organization_items(principal, items)
+
+    def delete(self, memory_id: str, principal: Principal) -> bool:
+        memory = self._ensure_memory()
+        if not memory or not any(item.get("id") == memory_id for item in self.list(principal, limit=1000)):
+            return False
+        memory.delete(memory_id)
+        return True
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    if documents.vector and documents.vector.enabled and os.getenv("QDRANT_REINDEX_ON_START", "false").lower() == "true":
+        indexed = await asyncio.to_thread(documents.reindex_all)
+        logger.info("Reindexed %s documents into Qdrant", indexed)
+    yield
+
+
+app = FastAPI(title="Baryon AX API", version=__version__, lifespan=lifespan)
+origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3001,http://localhost:5173").split(",") if origin.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-documents, policy, audit, model_adapter = DocumentService(), PolicyEngine(), AuditSink(), ModelAdapter()
+policy = PolicyEngine()
+vector = VectorIndex()
+documents = DocumentService(vector=vector)
+audit = AuditSink()
+model_adapter = ModelAdapter()
+rate_limiter = RateLimiter()
+tracer = Tracer()
+memory_service = MemoryService(model_adapter.model)
+pipeline = ChatPipeline()
 
 
 def roles_from_header(value: str) -> set[str]:
@@ -329,7 +793,16 @@ def principal_from_headers(user_id: str | None, organization_id: str | None, rol
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "version": __version__, "model_adapter": "openai-compatible" if model_adapter.base_url else "demo-local", "time": now()}
+    return {
+        "status": "ok", "version": __version__,
+        "model_adapter": "openai-compatible" if model_adapter.base_url else "demo-local",
+        "vector_backend": "qdrant" if vector.enabled else "lexical",
+        "audit_backend": "postgresql" if audit.db_ready else "jsonl",
+        "cache_backend": "redis" if rate_limiter.enabled else "disabled",
+        "tracing_backend": "langfuse" if tracer.enabled else "disabled",
+        "memory_backend": "mem0" if memory_service.enabled else "disabled",
+        "time": now(),
+    }
 
 
 @app.get("/v1/models")
@@ -354,7 +827,7 @@ async def upload_document(
         raise HTTPException(415, "Document must be UTF-8 encoded") from error
     if not content.strip():
         raise HTTPException(422, "Document is empty")
-    document = documents.create(principal, file.filename, content, roles_from_header(allowed_roles))
+    document = await asyncio.to_thread(documents.create, principal, file.filename, content, roles_from_header(allowed_roles))
     trace_id = str(uuid.uuid4())
     audit.emit("document.ingested", principal, trace_id, document_id=document.id, title=document.title)
     return {"id": document.id, "title": document.title, "chunks": len(chunk_text(content)), "trace_id": trace_id}
@@ -365,7 +838,7 @@ async def search_documents(
     q: str = Query(min_length=2), x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
 ) -> dict:
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
-    return {"data": documents.search(principal, q)}
+    return {"data": await asyncio.to_thread(documents.search, principal, q)}
 
 
 @app.get("/v1/documents")
@@ -373,7 +846,7 @@ async def list_documents(
     x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
 ) -> dict:
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
-    return {"data": documents.list_for(principal)}
+    return {"data": await asyncio.to_thread(documents.list_for, principal)}
 
 
 @app.delete("/v1/documents/{document_id}")
@@ -382,7 +855,7 @@ async def delete_document(
 ) -> dict:
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
     try:
-        deleted = documents.delete(principal, document_id)
+        deleted = await asyncio.to_thread(documents.delete, principal, document_id)
     except PermissionError as error:
         raise HTTPException(403, str(error)) from error
     if not deleted:
@@ -400,7 +873,7 @@ async def update_document(
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
     roles = {role.strip() for role in update.allowed_roles if role.strip()}
     try:
-        document = documents.update_roles(principal, document_id, roles)
+        document = await asyncio.to_thread(documents.update_roles, principal, document_id, roles)
     except PermissionError as error:
         raise HTTPException(403, str(error)) from error
     if not document:
@@ -408,6 +881,58 @@ async def update_document(
     trace_id = str(uuid.uuid4())
     audit.emit("document.acl_updated", principal, trace_id, document_id=document.id, allowed_roles=sorted(document.allowed_roles))
     return {"id": document.id, "allowed_roles": sorted(document.allowed_roles), "trace_id": trace_id}
+
+
+@app.post("/v1/memories")
+async def add_memory(
+    payload: MemoryCreate, x_user_id: str | None = Header(None),
+    x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if not memory_service.enabled:
+        raise HTTPException(503, "Mem0 is not enabled")
+    result = await asyncio.to_thread(memory_service.add, payload.text, principal, payload.metadata)
+    trace_id = str(uuid.uuid4())
+    audit.emit("memory.added", principal, trace_id, memory_count=len(result.get("results", [])) if isinstance(result, dict) else 1)
+    return result
+
+
+@app.get("/v1/memories/search")
+async def search_memories(
+    q: str = Query(min_length=1), limit: int = Query(5, ge=1, le=20),
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if not memory_service.enabled:
+        raise HTTPException(503, "Mem0 is not enabled")
+    return {"data": await asyncio.to_thread(memory_service.search, q, principal, limit)}
+
+
+@app.get("/v1/memories")
+async def list_memories(
+    limit: int = Query(50, ge=1, le=200),
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if not memory_service.enabled:
+        raise HTTPException(503, "Mem0 is not enabled")
+    return {"data": await asyncio.to_thread(memory_service.list, principal, limit)}
+
+
+@app.delete("/v1/memories/{memory_id}")
+async def delete_memory(
+    memory_id: str, x_user_id: str | None = Header(None),
+    x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if not memory_service.enabled:
+        raise HTTPException(503, "Mem0 is not enabled")
+    deleted = await asyncio.to_thread(memory_service.delete, memory_id, principal)
+    if not deleted:
+        raise HTTPException(404, "Memory not found")
+    trace_id = str(uuid.uuid4())
+    audit.emit("memory.deleted", principal, trace_id, memory_id=memory_id)
+    return {"id": memory_id, "deleted": True, "trace_id": trace_id}
 
 
 def sse(payload: dict) -> str:
@@ -419,26 +944,32 @@ def citation_payload(citations: list[dict]) -> list[dict]:
     return [{"document_id": item["document_id"], "title": item["title"], "chunk": item["chunk"]} for item in citations]
 
 
-async def stream_chat(request: ChatRequest, principal: Principal, trace_id: str, started: float, citations: list[dict]) -> AsyncIterator[str]:
+async def stream_chat(request: ChatRequest, principal: Principal, trace_id: str, started: float, citations: list[dict], trace=None, generation=None) -> AsyncIterator[str]:
     buffer = ""
+    answer_parts: list[str] = []
     try:
         async for chunk in model_adapter.stream(request, citations):
             safe, buffer = policy.mask_stream(buffer + chunk)
             if safe:
+                answer_parts.append(safe)
                 yield sse({"type": "token", "content": safe})
         tail, _ = policy.mask_stream(buffer, final=True)
         if tail:
+            answer_parts.append(tail)
             yield sse({"type": "token", "content": tail})
+        tracer.finish(generation, "".join(answer_parts))
         audit.emit("chat.completed", principal, trace_id, thread_id=request.thread_id, model=request.model,
                    latency_ms=round((time.perf_counter() - started) * 1000),
                    citations=[item["document_id"] for item in citations], streamed=True)
         yield sse({"type": "citations", "data": citation_payload(citations), "trace_id": trace_id})
         yield "data: [DONE]\n\n"
     except asyncio.CancelledError:
+        tracer.finish(generation, "".join(answer_parts), "cancelled")
         audit.emit("chat.cancelled", principal, trace_id, thread_id=request.thread_id, model=request.model, streamed=True)
         raise
     except Exception as error:
         logger.exception("Streaming completion failed for trace %s", trace_id)
+        tracer.finish(generation, "".join(answer_parts), type(error).__name__)
         audit.emit("chat.failed", principal, trace_id, thread_id=request.thread_id, model=request.model,
                    reason=type(error).__name__, streamed=True)
         yield sse({"type": "error", "message": "Configured model endpoint could not complete the request"})
@@ -450,19 +981,27 @@ async def chat(
     request: ChatRequest, x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
 ):
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
-    latest = request.messages[-1].content
-    policy.check_input(latest)
+    request.model = model_adapter.resolved_model(request)
     trace_id, started = str(uuid.uuid4()), time.perf_counter()
-    citations = documents.search(principal, latest) if request.use_retrieval else []
+    rate_limiter.check(f"{principal.organization_id}:{principal.user_id}")
+    citations = await pipeline.prepare(request, principal)
     audit.emit("chat.started", principal, trace_id, thread_id=request.thread_id, model=request.model, retrieval_count=len(citations))
+    trace = tracer.trace(trace_id, principal, request)
+    generation = tracer.generation(trace, request, citations)
     if request.stream:
-        return StreamingResponse(stream_chat(request, principal, trace_id, started, citations), media_type="text/event-stream",
+        return StreamingResponse(stream_chat(request, principal, trace_id, started, citations, trace, generation), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Trace-Id": trace_id})
     try:
         answer = policy.mask_output(await model_adapter.complete(request, citations))
     except httpx.HTTPError as error:
+        tracer.finish(generation, "", type(error).__name__)
         audit.emit("chat.failed", principal, trace_id, thread_id=request.thread_id, model=request.model, reason=type(error).__name__, streamed=False)
         raise HTTPException(502, "Configured model endpoint could not complete the request") from error
+    except Exception as error:
+        tracer.finish(generation, "", type(error).__name__)
+        audit.emit("chat.failed", principal, trace_id, thread_id=request.thread_id, model=request.model, reason=type(error).__name__, streamed=False)
+        raise
+    tracer.finish(generation, answer)
     audit.emit("chat.completed", principal, trace_id, thread_id=request.thread_id, model=request.model,
                latency_ms=round((time.perf_counter() - started) * 1000),
                citations=[item["document_id"] for item in citations], streamed=False)
@@ -502,13 +1041,37 @@ async def admin_settings(
         },
         "storage": {
             "documents": "local-json",
-            "audit": "jsonl",
+            "audit": "postgresql" if audit.db_ready else "jsonl",
             "max_document_bytes": MAX_DOCUMENT_BYTES,
         },
         "policy": {
             "blocked_patterns": len(policy.blocked_patterns),
             "pii_masking": True,
         },
-        "retrieval": {"mode": "lexical", "result_limit": 4},
+        "retrieval": {"mode": "qdrant+fastembed" if vector.enabled else "lexical", "result_limit": 4},
+        "integrations": {
+            "orchestration": "langgraph" if pipeline.enabled else "direct",
+            "chunking": CHUNKING_BACKEND,
+            "vector": "qdrant" if vector.enabled else "lexical",
+            "database": "postgresql" if audit.db_ready else "jsonl",
+            "cache": "redis" if rate_limiter.enabled else "disabled",
+            "tracing": "langfuse" if tracer.enabled else "disabled",
+            "memory": "mem0" if memory_service.enabled else "disabled",
+        },
         "counts": {"documents": len(organization_documents), "audit_events": len(organization_events)},
     }
+
+
+@app.post("/v1/admin/reindex")
+async def reindex_documents(
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if "admin" not in principal.roles:
+        raise HTTPException(403, "Administrator role required")
+    if not vector.enabled:
+        raise HTTPException(409, "Qdrant vector backend is not enabled")
+    indexed = await asyncio.to_thread(documents.reindex_all)
+    trace_id = str(uuid.uuid4())
+    audit.emit("admin.reindexed", principal, trace_id, indexed=indexed)
+    return {"indexed": indexed, "backend": "qdrant", "trace_id": trace_id}
