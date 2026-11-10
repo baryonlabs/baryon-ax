@@ -308,8 +308,8 @@ export default function App() {
       });
       if (!response.ok) throw new Error("Document ACL update failed");
       setEditingId(null);
-      setAclMessage({ id, ok: true });
       await loadKnowledge();
+      setAclMessage({ id, ok: true });
     } catch {
       setAclMessage({ id, ok: false });
     }

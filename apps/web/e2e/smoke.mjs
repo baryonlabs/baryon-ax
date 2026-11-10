@@ -11,7 +11,9 @@ assert.ok(
   healthResponse?.ok,
   `Cannot reach ${baseUrl}/api/health. Start the API (port 8000) and the web dev server (port 5173) first.`,
 );
-assert.equal((await healthResponse.json()).status, "ok");
+const health = await healthResponse.json();
+assert.equal(health.status, "ok");
+const memoryEnabled = health.memory_backend === "mem0";
 
 let browser;
 try {
@@ -84,19 +86,23 @@ try {
     const text = await page.locator(".settings-grid").innerText();
     assert.match(text, /0\.6\.0/);
     assert.match(text, /Qdrant \+ FastEmbed/);
-    assert.match(text, /langfuse/);
+    assert.match(text, /postgresql/i);
     assert.match(text, /전화번호 마스킹/);
   });
 
-  await step("memory layer stores and searches preferences", async () => {
-    await page.getByRole("button", { name: "메모리", exact: true }).click();
-    await page.locator(".memory-form input").fill("사용자는 Qdrant와 LangGraph를 선호하고 한국어 답변을 원합니다.");
-    await page.getByRole("button", { name: "메모리 저장", exact: true }).click();
-    await page.waitForFunction(() => document.querySelectorAll(".memory-item").length > 0, null, { timeout: 60000 });
-    await page.locator(".memory-search input").fill("Qdrant");
-    await page.getByRole("button", { name: "검색", exact: true }).click();
-    await page.waitForFunction(() => document.body.innerText.includes("Qdrant"), null, { timeout: 30000 });
-  });
+  if (memoryEnabled) {
+    await step("memory layer stores and searches preferences", async () => {
+      await page.getByRole("button", { name: "메모리", exact: true }).click();
+      await page.locator(".memory-form input").fill("사용자는 Qdrant와 LangGraph를 선호하고 한국어 답변을 원합니다.");
+      await page.getByRole("button", { name: "메모리 저장", exact: true }).click();
+      await page.waitForFunction(() => document.querySelectorAll(".memory-item").length > 0, null, { timeout: 60000 });
+      await page.locator(".memory-search input").fill("Qdrant");
+      await page.getByRole("button", { name: "검색", exact: true }).click();
+      await page.waitForFunction(() => document.body.innerText.includes("Qdrant"), null, { timeout: 30000 });
+    });
+  } else {
+    console.log("SKIP memory layer (Mem0 disabled)");
+  }
 
   await step("knowledge library lists the uploaded document", async () => {
     await page.getByRole("button", { name: "지식", exact: true }).click();
@@ -109,6 +115,7 @@ try {
     await row.getByLabel("허용 역할").fill("member, admin, legal");
     await row.getByRole("button", { name: "저장" }).click();
     await row.getByText("문서 권한을 저장했습니다.").waitFor({ timeout: 10000 });
+    await row.getByText("legal").waitFor({ timeout: 10000 });
     assert.match(await row.innerText(), /legal/);
   });
 
