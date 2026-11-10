@@ -17,7 +17,7 @@
 
 ## Backups
 
-Back up PostgreSQL, Qdrant storage, and the original document/object store as a coordinated set. Test restore procedures with an isolated environment. Conversation/audit data and vector indexes have different recovery characteristics; do not treat a vector snapshot as the system of record for original documents.
+Back up PostgreSQL, Qdrant storage, the original document/object store, and the append-only audit log (`AUDIT_LOG`, `/data/audit/events.jsonl` in Compose) as a coordinated set. Test restore procedures with an isolated environment. Conversation/audit data and vector indexes have different recovery characteristics; do not treat a vector snapshot as the system of record for original documents.
 
 ## Air-gapped deployments
 

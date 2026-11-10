@@ -22,6 +22,8 @@ Baryon AX keeps product responsibilities separate even when a development profil
 
 The gateway uses OpenAI-compatible `/chat/completions`. This permits vLLM, SGLang, LiteLLM gateways, and many internal inference services without coupling UI code to any one provider. If `MODEL_BASE_URL` is unset, `demo-local` returns an explicit non-inference response for smoke testing.
 
+When streaming is requested, the gateway forwards upstream server-sent events token by token. Policy output masks are applied with a small holdback buffer so a phone-number-like value is not split across chunks. Audit events are appended to a JSONL sink (`AUDIT_LOG`) and filtered by organization when read through `/v1/audit-events`.
+
 ## Next production increments
 
 1. Add OIDC/JWT validation and persist organizations, users, roles, threads, and audit events in PostgreSQL.

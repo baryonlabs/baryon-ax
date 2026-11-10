@@ -14,12 +14,13 @@ The platform brings a chat workspace, agent execution, grounded knowledge search
 
 ## What works today
 
-- Chat UI with model selection and streaming responses
+- Chat UI with model selection and token streaming
 - Korean-first bilingual UI (한국어 / English), with browser-language detection and persisted preference
-- OpenAI-compatible model adapter (`MODEL_BASE_URL`) with a safe local demo fallback
-- Input/output policy checks and basic PII masking
+- OpenAI-compatible model adapter (`MODEL_BASE_URL`) with end-to-end token streaming and a safe local demo fallback
+- Input/output policy checks and basic PII masking, including chunk-boundary-safe streaming masks
 - Durable document upload, chunking, permission-scoped lexical retrieval, and source citations
-- JSON audit events that link request, thread, model, and tool/retrieval activity
+- One visibility rule shared by document listing and retrieval, scoped by organization, role, and owner
+- Append-only JSONL audit events, filtered by organization and readable by administrators
 - Docker Compose services for API, UI, PostgreSQL, Redis, and Qdrant
 - Kubernetes starter manifests and deployment profiles
 
@@ -31,6 +32,14 @@ docker compose up --build
 ```
 
 Open `http://localhost:3000`. The default `demo-local` model works without an API key. To use a local OpenAI-compatible server (such as vLLM), set `MODEL_BASE_URL`, `MODEL_NAME`, and if required `MODEL_API_KEY` in `.env`.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MODEL_BASE_URL` | empty | OpenAI-compatible inference endpoint; empty selects `demo-local` |
+| `MODEL_TIMEOUT_SECONDS` | `90` | Upstream connect/read timeout |
+| `DOCUMENT_STORE` | `/tmp/baryon-ax-documents` | Directory for durable document JSON files |
+| `AUDIT_LOG` | `/tmp/baryon-ax-audit/events.jsonl` | Append-only JSONL audit sink |
+| `MAX_DOCUMENT_BYTES` | `2000000` | Upload size limit per document |
 
 ## Architecture
 
