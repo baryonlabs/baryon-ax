@@ -6,6 +6,7 @@ Before production use, implement these controls:
 - Store secrets in an approved secret manager; never place live API keys in Compose files, images, or browser code.
 - Encrypt transport, database, object store, and backup paths according to organizational policy.
 - Enforce tenant and document ACL filters in the retrieval query itself, not after results are returned.
+- Return only citation metadata (document ID, title, and chunk number) to the browser; do not echo raw retrieved content back to the client.
 - Apply tool allowlists, parameter schemas, time limits, network egress rules, idempotency keys, and human approval for impactful actions.
 - Use policy events and audit records that exclude secrets and minimize sensitive prompt retention.
 - Replace the local JSONL audit sink with append-only storage that enforces retention, integrity, and organization-level access controls; the reference sink has no tamper protection.
