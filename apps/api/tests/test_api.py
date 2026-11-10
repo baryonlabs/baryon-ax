@@ -6,6 +6,9 @@ from pathlib import Path
 TEST_ROOT = Path(tempfile.mkdtemp(prefix="baryon-ax-test-"))
 os.environ["DOCUMENT_STORE"] = str(TEST_ROOT / "documents")
 os.environ["AUDIT_LOG"] = str(TEST_ROOT / "audit" / "events.jsonl")
+os.environ["FASTEMBED_CACHE_PATH"] = str(TEST_ROOT / "fastembed")
+os.environ["MEM0_HISTORY_DB"] = str(TEST_ROOT / "mem0" / "history.db")
+os.environ["SYSTEM_METRICS_ENABLED"] = "false"
 
 from fastapi.testclient import TestClient
 
@@ -141,6 +144,16 @@ def test_admin_settings_are_admin_only() -> None:
     assert settings["policy"] == {"blocked_patterns": 1, "pii_masking": True}
     assert settings["retrieval"] == {"mode": "lexical", "result_limit": 4}
     assert isinstance(settings["counts"]["documents"], int)
+
+
+def test_admin_settings_include_system_metrics() -> None:
+    data = client.get("/v1/admin/settings", headers=headers(user="admin", roles="admin")).json()
+    system = data["system"]
+    assert system["process"]["total"] >= 1
+    assert system["memory"]["total_bytes"] > 0
+    assert system["storage"]["total_bytes"] > 0
+    assert system["containers"]["available"] is False
+    assert data["links"]["langgraph"].startswith("https://")
 
 
 def test_admin_can_update_document_acl() -> None:

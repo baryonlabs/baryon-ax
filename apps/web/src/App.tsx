@@ -1,5 +1,5 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, Bot, Brain, ChevronRight, FileUp, Globe2, Plus, RefreshCw, Save, Search, Send, Settings, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { BookOpen, Bot, Boxes, Brain, ChevronRight, Cpu, ExternalLink, FileUp, Globe2, HardDrive, Plus, RefreshCw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
@@ -15,14 +15,30 @@ type AuditEvent = {
   id: string; at: string; type: string; trace_id: string; organization_id: string; user_id: string;
   model?: string; latency_ms?: number; reason?: string; [key: string]: unknown;
 };
+type ContainerInfo = { name: string; image: string; status: string; health?: string | null; project?: string; ports: string[] };
+type SystemInfo = {
+  host: { hostname: string; platform: string; python: string; uptime_seconds: number };
+  storage: { total_bytes: number; used_bytes: number; free_bytes: number; percent: number; documents_bytes: number; audit_bytes: number; mem0_bytes: number; fastembed_bytes: number; documents_count: number };
+  memory: { total_bytes: number; used_bytes: number; available_bytes: number; percent: number };
+  process: { total: number; api_pid: number; api_threads: number; api_rss_bytes: number; api_cpu_percent: number };
+  cpu: { cores: number; load_1: number; load_5: number; load_15: number };
+  containers: { available: boolean; project: string; total: number; running: number; platform_total: number; platform_running: number; items: ContainerInfo[] };
+  services: {
+    database?: { available: boolean; rows?: number; size_bytes?: number; backend?: string };
+    vector?: { available: boolean; points?: number; vectors?: number | null; status?: string; backend?: string };
+    cache?: { available: boolean; used_memory_bytes?: number; used_memory_human?: string; keys?: number };
+  };
+};
 type AdminSettings = {
   version: string; organization_id: string;
-  model: { name: string; adapter: string; base_url_configured: boolean; timeout_seconds: number };
+  model: { name: string; adapter: string; base_url_configured: boolean; timeout_seconds: number; thinking_disabled: boolean; prompt_profile: string };
   storage: { documents: string; audit: string; max_document_bytes: number };
   policy: { blocked_patterns: number; pii_masking: boolean };
   retrieval: { mode: string; result_limit: number };
   integrations: { orchestration: string; chunking: string; vector: string; database: string; cache: string; tracing: string; memory: string };
   counts: { documents: number; audit_events: number };
+  system: SystemInfo;
+  links: Record<string, string>;
 };
 const API = "/api";
 const CURRENT_USER = "local-user";
@@ -33,7 +49,19 @@ function identity(role: Role): Record<string, string> {
 }
 
 function formatBytes(value: number): string {
-  return value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)} MB` : `${Math.round(value / 1000)} KB`;
+  if (value >= 1_000_000_000_000) return `${(value / 1_000_000_000_000).toFixed(2)} TB`;
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)} GB`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB`;
+  return `${Math.round(value / 1000)} KB`;
+}
+
+function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days) return `${days}d ${hours}h`;
+  if (hours) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
 }
 
 const copy = {
@@ -67,6 +95,14 @@ const copy = {
     editRoles: "권한 편집", allowedRoles: "허용 역할", save: "저장", cancel: "취소",
     aclUpdated: "문서 권한을 저장했습니다.", aclFailed: "문서 권한을 저장할 수 없습니다.",
     settingsFailed: "관리자 설정을 불러올 수 없습니다.", ownerLabel: "소유자",
+    host: "호스트", systemStatus: "시스템 상태", storageUsage: "저장공간", memoryUsage: "메모리", processCount: "프로세스", containers: "컨테이너",
+    modelProvider: "모델 프로바이더", adminLinks: "관리자 링크", quickLinks: "빠른 이동", uptime: "가동 시간", apiProcess: "API 프로세스",
+    threads: "스레드", cpuLoad: "CPU 부하", cores: "코어", documentsSize: "문서", auditSize: "감사 로그", mem0Size: "Mem0", fastembedSize: "FastEmbed",
+    documentsCount: "문서 수", total: "전체", free: "여유", memoryAvailable: "여유 메모리", dockerUnavailable: "Docker 소켓에 연결할 수 없습니다.",
+    platformContainers: "플랫폼", allContainers: "전체", open: "열기", docs: "문서", noLink: "링크 없음",
+    providerAdapter: "어댑터", providerModel: "모델", providerEndpoint: "엔드포인트", thinking: "Thinking", promptProfile: "프롬프트",
+    modelServer: "모델 서버", pgadmin: "pgAdmin", redisInsight: "Redis Insight", qdrant: "Qdrant", langfuse: "Langfuse",
+    connected: "연결됨", notConnected: "미연결", dbSize: "DB 크기", auditRows: "감사 행", vectorPoints: "벡터 포인트", cacheKeys: "캐시 키", services: "서비스",
     reindex: "벡터 재색인", reindexing: "재색인 중…", reindexed: (count: number) => `${count}개 문서를 Qdrant에 재색인했습니다.`, reindexFailed: "벡터 재색인에 실패했습니다.",
   },
   en: {
@@ -99,6 +135,14 @@ const copy = {
     editRoles: "Edit roles", allowedRoles: "Allowed roles", save: "Save", cancel: "Cancel",
     aclUpdated: "Document roles saved.", aclFailed: "Could not save document roles.",
     settingsFailed: "Could not load administrator settings.", ownerLabel: "Owner",
+    host: "Host", systemStatus: "System status", storageUsage: "Storage", memoryUsage: "Memory", processCount: "Processes", containers: "Containers",
+    modelProvider: "Model provider", adminLinks: "Admin links", quickLinks: "Quick links", uptime: "Uptime", apiProcess: "API process",
+    threads: "threads", cpuLoad: "CPU load", cores: "cores", documentsSize: "Documents", auditSize: "Audit log", mem0Size: "Mem0", fastembedSize: "FastEmbed",
+    documentsCount: "Document count", total: "Total", free: "Free", memoryAvailable: "Available memory", dockerUnavailable: "Cannot reach the Docker socket.",
+    platformContainers: "Platform", allContainers: "All", open: "Open", docs: "Docs", noLink: "No link",
+    providerAdapter: "Adapter", providerModel: "Model", providerEndpoint: "Endpoint", thinking: "Thinking", promptProfile: "Prompt",
+    modelServer: "Model server", pgadmin: "pgAdmin", redisInsight: "Redis Insight", qdrant: "Qdrant", langfuse: "Langfuse",
+    connected: "Connected", notConnected: "Not connected", dbSize: "DB size", auditRows: "Audit rows", vectorPoints: "Vector points", cacheKeys: "Cache keys", services: "Services",
     reindex: "Reindex vectors", reindexing: "Reindexing…", reindexed: (count: number) => `Reindexed ${count} document(s) into Qdrant.`, reindexFailed: "Vector reindex failed.",
   },
 } as const;
@@ -378,6 +422,10 @@ export default function App() {
     return t.groundedChat;
   }
 
+  function integrationValue(value: string, href?: string) {
+    return <dd>{value}{href && <a className="inline-link" href={href} target="_blank" rel="noreferrer" title={t.open}><ExternalLink size={12}/></a>}</dd>;
+  }
+
   return <main className={`shell ${role === "admin" ? "admin" : ""}`}>
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark"><Sparkles size={17}/></div><span>Baryon AX</span></div>
@@ -500,8 +548,97 @@ export default function App() {
             <button className="primary" onClick={() => void loadSettings()}><RefreshCw size={16}/>{t.refresh}</button>
           </div>
         </div>
+        <div className="quick-links">
+          <button onClick={() => setView("chat")}><Bot size={15}/>{t.chat}</button>
+          <button onClick={() => setView("knowledge")}><BookOpen size={15}/>{t.knowledge}</button>
+          <button onClick={() => setView("memory")}><Brain size={15}/>{t.memory}</button>
+          <button onClick={() => setView("governance")}><ShieldCheck size={15}/>{t.governance}</button>
+        </div>
         {reindexMessage && <p className="settings-note">{reindexMessage}</p>}
         {settingsError || !settings ? <div className="empty"><Settings size={28}/><h3>{t.adminOnly}</h3><p>{t.settingsFailed}</p></div> : <div className="settings-grid">
+          <section className="setting-card system-card">
+            <h3><HardDrive size={15}/>{t.storageUsage}</h3>
+            <div className="metric-head"><strong>{formatBytes(settings.system.storage.used_bytes)}</strong><span>/ {formatBytes(settings.system.storage.total_bytes)} · {settings.system.storage.percent}%</span></div>
+            <div className="meter"><span style={{ width: `${Math.min(100, settings.system.storage.percent)}%` }}/></div>
+            <dl>
+              <div><dt>{t.total}</dt><dd>{formatBytes(settings.system.storage.total_bytes)}</dd></div>
+              <div><dt>{t.free}</dt><dd>{formatBytes(settings.system.storage.free_bytes)}</dd></div>
+              <div><dt>{t.documentsSize}</dt><dd>{formatBytes(settings.system.storage.documents_bytes)} · {settings.system.storage.documents_count}</dd></div>
+              <div><dt>{t.auditSize}</dt><dd>{formatBytes(settings.system.storage.audit_bytes)}</dd></div>
+              <div><dt>{t.mem0Size}</dt><dd>{formatBytes(settings.system.storage.mem0_bytes)}</dd></div>
+              <div><dt>{t.fastembedSize}</dt><dd>{formatBytes(settings.system.storage.fastembed_bytes)}</dd></div>
+              <div><dt>{t.auditRows}</dt><dd>{settings.system.services.database?.rows ?? "—"}</dd></div>
+              <div><dt>{t.vectorPoints}</dt><dd>{settings.system.services.vector?.points ?? "—"}</dd></div>
+              <div><dt>{t.cacheKeys}</dt><dd>{settings.system.services.cache?.keys ?? "—"}</dd></div>
+              <div><dt>{t.dbSize}</dt><dd>{typeof settings.system.services.database?.size_bytes === "number" ? formatBytes(settings.system.services.database.size_bytes) : "—"}</dd></div>
+            </dl>
+          </section>
+          <section className="setting-card system-card">
+            <h3><Cpu size={15}/>{t.memoryUsage} · {t.processCount}</h3>
+            <div className="metric-head"><strong>{formatBytes(settings.system.memory.used_bytes)}</strong><span>/ {formatBytes(settings.system.memory.total_bytes)} · {settings.system.memory.percent}%</span></div>
+            <div className="meter"><span style={{ width: `${Math.min(100, settings.system.memory.percent)}%` }}/></div>
+            <dl>
+              <div><dt>{t.memoryAvailable}</dt><dd>{formatBytes(settings.system.memory.available_bytes)}</dd></div>
+              <div><dt>{t.processCount}</dt><dd>{settings.system.process.total}</dd></div>
+              <div><dt>{t.apiProcess}</dt><dd>PID {settings.system.process.api_pid} · {settings.system.process.api_threads} {t.threads} · {formatBytes(settings.system.process.api_rss_bytes)}</dd></div>
+              <div><dt>{t.cpuLoad}</dt><dd>{settings.system.cpu.load_1} / {settings.system.cpu.load_5} / {settings.system.cpu.load_15} · {settings.system.cpu.cores} {t.cores}</dd></div>
+              <div><dt>{t.uptime}</dt><dd>{formatUptime(settings.system.host.uptime_seconds)}</dd></div>
+              <div><dt>{t.host}</dt><dd>{settings.system.host.hostname}</dd></div>
+            </dl>
+          </section>
+          <section className="setting-card system-card">
+            <h3><Boxes size={15}/>{t.containers} <span className="badge">{settings.system.containers.platform_running}/{settings.system.containers.platform_total}</span></h3>
+            {!settings.system.containers.available ? <p className="muted">{t.dockerUnavailable}</p> : <>
+              <p className="muted">{t.platformContainers}: {settings.system.containers.platform_running}/{settings.system.containers.platform_total} · {t.allContainers}: {settings.system.containers.running}/{settings.system.containers.total}</p>
+              <div className="container-list">
+                {settings.system.containers.items.map(item => <div className="container-item" key={item.name}>
+                  <span className={`status-dot ${item.status} ${item.health ?? ""}`}/>
+                  <div><strong>{item.name}</strong><small>{item.image} · {item.status}{item.health ? ` / ${item.health}` : ""}</small>{item.ports.length > 0 && <small>{item.ports.join(" · ")}</small>}</div>
+                </div>)}
+              </div>
+            </>}
+          </section>
+          <section className="setting-card system-card">
+            <h3><Server size={15}/>{t.modelProvider}</h3>
+            <dl>
+              <div><dt>{t.providerAdapter}</dt><dd>{settings.model.adapter}</dd></div>
+              <div><dt>{t.providerModel}</dt><dd>{settings.model.name}</dd></div>
+              <div><dt>{t.providerEndpoint}</dt><dd>{settings.model.base_url_configured ? t.connected : t.notConnected}</dd></div>
+              <div><dt>{t.thinking}</dt><dd>{settings.model.thinking_disabled ? t.disabled : t.enabled}</dd></div>
+              <div><dt>{t.promptProfile}</dt><dd>{settings.model.prompt_profile}</dd></div>
+              <div><dt>{t.timeoutLabel}</dt><dd>{settings.model.timeout_seconds}s</dd></div>
+            </dl>
+            <div className="link-row">
+              {settings.links.model_server && <a href={settings.links.model_server} target="_blank" rel="noreferrer"><ExternalLink size={13}/>{t.modelServer}</a>}
+              {settings.links.vllm && <a href={settings.links.vllm} target="_blank" rel="noreferrer"><ExternalLink size={13}/>vLLM {t.docs}</a>}
+              {settings.links.ollama && <a href={settings.links.ollama} target="_blank" rel="noreferrer"><ExternalLink size={13}/>Ollama {t.docs}</a>}
+            </div>
+          </section>
+          <section className="setting-card system-card">
+            <h3><ExternalLink size={15}/>{t.adminLinks}</h3>
+            <div className="link-grid">
+              {[
+                [t.qdrant, settings.links.qdrant],
+                [t.langfuse, settings.links.langfuse],
+                [t.pgadmin, settings.links.pgadmin],
+                [t.redisInsight, settings.links.redis_insight],
+                [t.modelServer, settings.links.model_server],
+              ].filter(([, href]) => Boolean(href)).map(([label, href]) => <a key={label} href={href} target="_blank" rel="noreferrer">{label}<ExternalLink size={13}/></a>)}
+            </div>
+            {![settings.links.qdrant, settings.links.langfuse, settings.links.pgadmin, settings.links.redis_insight, settings.links.model_server].some(Boolean) && <p className="muted">{t.noLink}</p>}
+          </section>
+          <section className="setting-card">
+            <h3>{t.integrations}</h3>
+            <dl>
+              <div><dt>{t.orchestration}</dt>{integrationValue(settings.integrations.orchestration, settings.links.langgraph)}</div>
+              <div><dt>{t.chunking}</dt>{integrationValue(settings.integrations.chunking, settings.links.llamaindex)}</div>
+              <div><dt>{t.vectorStore}</dt>{integrationValue(settings.integrations.vector, settings.links.qdrant)}</div>
+              <div><dt>{t.database}</dt>{integrationValue(settings.integrations.database, settings.links.pgadmin)}</div>
+              <div><dt>{t.cache}</dt>{integrationValue(settings.integrations.cache, settings.links.redis_insight)}</div>
+              <div><dt>{t.tracing}</dt>{integrationValue(settings.integrations.tracing, settings.links.langfuse)}</div>
+              <div><dt>{t.memory}</dt>{integrationValue(settings.integrations.memory, settings.links.mem0)}</div>
+            </dl>
+          </section>
           <section className="setting-card">
             <h3>{t.overview}</h3>
             <dl>
@@ -509,6 +646,7 @@ export default function App() {
               <div><dt>{t.adapterLabel}</dt><dd>{settings.model.adapter}</dd></div>
               <div><dt>{t.documentCount}</dt><dd>{settings.counts.documents}</dd></div>
               <div><dt>{t.auditEventCount}</dt><dd>{settings.counts.audit_events}</dd></div>
+              <div><dt>{t.organizationLabel}</dt><dd>{settings.organization_id}</dd></div>
             </dl>
           </section>
           <section className="setting-card">
@@ -535,18 +673,6 @@ export default function App() {
               <div><dt>{t.documentStore}</dt><dd>{settings.storage.documents === "local-json" ? t.localJson : settings.storage.documents}</dd></div>
               <div><dt>{t.auditStore}</dt><dd>{settings.storage.audit === "jsonl" ? t.jsonl : settings.storage.audit}</dd></div>
               <div><dt>{t.organizationLabel}</dt><dd>{settings.organization_id}</dd></div>
-            </dl>
-          </section>
-          <section className="setting-card">
-            <h3>{t.integrations}</h3>
-            <dl>
-              <div><dt>{t.orchestration}</dt><dd>{settings.integrations.orchestration}</dd></div>
-              <div><dt>{t.chunking}</dt><dd>{settings.integrations.chunking}</dd></div>
-              <div><dt>{t.vectorStore}</dt><dd>{settings.integrations.vector}</dd></div>
-              <div><dt>{t.database}</dt><dd>{settings.integrations.database}</dd></div>
-              <div><dt>{t.cache}</dt><dd>{settings.integrations.cache}</dd></div>
-              <div><dt>{t.tracing}</dt><dd>{settings.integrations.tracing}</dd></div>
-              <div><dt>{t.memory}</dt><dd>{settings.integrations.memory}</dd></div>
             </dl>
           </section>
         </div>}

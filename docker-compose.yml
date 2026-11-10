@@ -15,11 +15,19 @@ services:
       MEM0_ENABLED: "false"
       LANGFUSE_ENABLED: "false"
       QDRANT_REINDEX_ON_START: "false"
+      SYSTEM_METRICS_ENABLED: ${SYSTEM_METRICS_ENABLED:-true}
+      DOCKER_PROJECT: ${DOCKER_PROJECT:-baryon-ax}
+      HOST_PROC: /host/proc
+      HOST_HOSTNAME: ${HOST_HOSTNAME:-}
+    group_add:
+      - "${DOCKER_GID:-0}"
     volumes:
       - documents:/data/documents
       - audit:/data/audit
       - mem0:/data/mem0
       - models:/data/fastembed
+      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
     ports:
       - "${BIND_HOST:-0.0.0.0}:${API_PORT:-8000}:8000"
     healthcheck:

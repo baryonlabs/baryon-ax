@@ -88,7 +88,7 @@ try {
   });
 
   await step("administrator settings show runtime and policy", async () => {
-    await page.getByRole("button", { name: "설정", exact: true }).click();
+    await page.locator("nav").getByRole("button", { name: "설정", exact: true }).click();
     await page.waitForSelector(".setting-card", { timeout: 10000 });
     assert.ok((await page.locator(".setting-card").count()) >= 4);
     const text = await page.locator(".settings-grid").innerText();
@@ -98,9 +98,25 @@ try {
     assert.match(text, /전화번호 마스킹/);
   });
 
+  await step("administrator settings show live system metrics and links", async () => {
+    await page.waitForSelector(".system-card", { timeout: 10000 });
+    assert.ok((await page.locator(".system-card").count()) >= 4);
+    assert.ok((await page.locator(".meter").count()) >= 2);
+    assert.ok((await page.locator(".container-item").count()) >= 1);
+    const text = await page.locator(".settings-grid").innerText();
+    assert.match(text, /저장공간/);
+    assert.match(text, /메모리/);
+    assert.match(text, /프로세스/);
+    assert.match(text, /컨테이너/);
+    const links = page.locator(".link-grid a");
+    assert.ok((await links.count()) >= 1);
+    const href = await links.first().getAttribute("href");
+    assert.match(href ?? "", /^http/);
+  });
+
   if (memoryEnabled) {
     await step("memory layer stores and searches preferences", async () => {
-      await page.getByRole("button", { name: "메모리", exact: true }).click();
+      await page.locator("nav").getByRole("button", { name: "메모리", exact: true }).click();
       await page.locator(".memory-form input").fill("사용자는 Qdrant와 LangGraph를 선호하고 한국어 답변을 원합니다.");
       await page.getByRole("button", { name: "메모리 저장", exact: true }).click();
       await page.waitForFunction(() => document.querySelectorAll(".memory-item").length > 0, null, { timeout: 60000 });
@@ -113,7 +129,7 @@ try {
   }
 
   await step("knowledge library lists the uploaded document", async () => {
-    await page.getByRole("button", { name: "지식", exact: true }).click();
+    await page.locator("nav").getByRole("button", { name: "지식", exact: true }).click();
     await page.waitForFunction(name => document.body.innerText.includes(name), documentName, { timeout: 10000 });
   });
 
@@ -130,7 +146,7 @@ try {
   await step("settings and ACL controls are hidden from members", async () => {
     await page.locator('select[aria-label="역할"]').selectOption("member");
     await page.waitForTimeout(300);
-    assert.equal(await page.getByRole("button", { name: "설정", exact: true }).count(), 0);
+    assert.equal(await page.locator("nav").getByRole("button", { name: "설정", exact: true }).count(), 0);
     assert.equal(await page.locator(".admin-badge").count(), 0);
     assert.equal(await page.locator(".document", { hasText: documentName }).getByRole("button", { name: "권한 편집" }).count(), 0);
   });

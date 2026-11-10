@@ -268,7 +268,10 @@
 | K8s 프로브 | ✅ | readiness / liveness `/health` |
 | K8s 데이터 볼륨 | 🔶 | `emptyDir` 스타터, 운영 시 PVC/관리형 저장소로 교체 필요 |
 | CI | ✅ | API pytest + Web build |
-| E2E 자동화 | ✅ | Playwright 11 checks, 전체 Compose 대상 검증 |
+| E2E 자동화 | ✅ | Playwright 13 checks, 전체 Compose 대상 검증 |
+| 시스템 모니터링 | ✅ | 관리자 설정에서 저장공간·메모리·프로세스·컨테이너·백엔드 상태 표시 |
+| 통합 관리자 링크 | ✅ | Qdrant/Langfuse/모델 서버/pgAdmin/Redis Insight를 설정에서 원클릭 이동 |
+| 모델 프로바이더 설정 | ✅ | 어댑터·모델·엔드포인트·Thinking·프롬프트 프로필 표시 |
 | 전체 스택 스모크 | ✅ | `scripts/smoke_full_stack.py` |
 | 에어갭 가이드 | ✅ | 이미지·모델·패키지 미러링 지침 |
 | 관측성(Langfuse) | ✅ | 셀프호스팅 Langfuse v2 + SDK |
@@ -280,8 +283,8 @@
 
 | 항목 | 상태 | 결과/설명 |
 | --- | --- | --- |
-| API 단위·통합 테스트 | ✅ | **24 passed** |
-| Playwright E2E | ✅ | **12 checks passed** (`npm run test:e2e`, Vite/Compose) |
+| API 단위·통합 테스트 | ✅ | **25 passed** |
+| Playwright E2E | ✅ | **13 checks passed** (`npm run test:e2e`, Vite/Compose) |
 | Web 타입체크·빌드 | ✅ | `tsc -b && vite build` 성공 |
 | 전체 스택 스모크 | ✅ | `scripts/smoke_full_stack.py` — health/upload/search/chat/audit/memory |
 | Docker 이미지 빌드 | ✅ | API/Web 이미지 빌드 성공 |
@@ -328,6 +331,13 @@
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Mem0용 Ollama |
 | `MEM0_HISTORY_DB` | `/tmp/baryon-ax-mem0/history.db` | Mem0 이력 SQLite |
 | `MEM0_TELEMETRY` | `false` | Mem0 텔레메트리 비활성화 |
+| `SYSTEM_METRICS_ENABLED` | `true` | Docker 소켓 기반 컨테이너 지표 수집 |
+| `DOCKER_PROJECT` | `baryon-ax` | 관리자 화면에 표시할 Compose 프로젝트 |
+| `DOCKER_GID` | `0` | Docker 소켓 그룹 ID (B300은 `113`) |
+| `DOCKER_SOCKET` | `/var/run/docker.sock` | 마운트할 Docker 소켓 경로 |
+| `HOST_PROC` | `/host/proc` | 호스트 프로세스 수 계산용 proc 마운트 |
+| `QDRANT_DASHBOARD_URL` / `LANGFUSE_DASHBOARD_URL` | 빈 값 | 설정 화면의 대시보드 링크 |
+| `MODEL_SERVER_URL` / `PGADMIN_URL` / `REDIS_INSIGHT_URL` | 빈 값 | 설정 화면의 관리자 링크 |
 | `POSTGRES_DB` | `baryon` | Compose PostgreSQL DB |
 | `POSTGRES_USER` | `baryon` | Compose PostgreSQL 사용자 |
 | `POSTGRES_PASSWORD` | 예시 값 | Compose PostgreSQL 비밀번호 (변경 필수) |
@@ -376,8 +386,8 @@
 ## 14. 검증 기준
 
 ```text
-API tests           24 passed
-Playwright E2E      12 checks passed (Vite 5173 / Compose 3001)
+API tests           25 passed
+Playwright E2E      13 checks passed (Vite 5173 / Compose 3001)
 Full-stack smoke    health + upload + Qdrant retrieval + chat + audit + Mem0
 Web build           tsc -b && vite build 성공
 Docker build        API/Web 이미지 성공

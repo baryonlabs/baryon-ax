@@ -4,7 +4,9 @@ import asyncio
 import json
 import logging
 import os
+import platform
 import re
+import shutil
 import threading
 import time
 import uuid
@@ -887,6 +889,191 @@ async def lifespan(_: FastAPI):
     yield
 
 
+class SystemMonitor:
+    """Collect host, storage, process, container, and backend health metrics for the admin page."""
+
+    def __init__(self) -> None:
+        self.started = time.time()
+        self.enabled = os.getenv("SYSTEM_METRICS_ENABLED", "true").lower() == "true"
+        self.project = os.getenv("DOCKER_PROJECT", "baryon-ax")
+        self._docker = None
+        self._docker_checked = False
+        self._docker_lock = threading.Lock()
+
+    def _docker_client(self):
+        if not self.enabled:
+            return None
+        if not self._docker_checked:
+            with self._docker_lock:
+                if not self._docker_checked:
+                    self._docker_checked = True
+                    try:
+                        import docker
+                        client = docker.from_env(timeout=2)
+                        client.ping()
+                        self._docker = client
+                    except Exception:
+                        logger.warning("Docker metrics unavailable; check the socket mount and group")
+        return self._docker
+
+    @staticmethod
+    def _size(path: Path) -> int:
+        try:
+            if path.is_file():
+                return path.stat().st_size
+            return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
+        except OSError:
+            return 0
+
+    def _containers(self) -> dict:
+        result = {
+            "available": False, "project": self.project, "total": 0, "running": 0,
+            "platform_total": 0, "platform_running": 0, "items": [],
+        }
+        client = self._docker_client()
+        if not client:
+            return result
+        try:
+            containers = client.containers.list(all=True)
+        except Exception:
+            logger.exception("Could not list Docker containers")
+            return result
+        result["available"] = True
+        items = []
+        for container in containers:
+            attrs = container.attrs
+            labels = attrs.get("Config", {}).get("Labels", {}) or {}
+            project = labels.get("com.docker.compose.project", "")
+            state = attrs.get("State", {}) or {}
+            status = state.get("Status", "unknown")
+            health = (state.get("Health") or {}).get("Status")
+            result["total"] += 1
+            result["running"] += status == "running"
+            if project != self.project:
+                continue
+            result["platform_total"] += 1
+            result["platform_running"] += status == "running"
+            ports = []
+            for container_port, bindings in (attrs.get("NetworkSettings", {}).get("Ports") or {}).items():
+                for binding in bindings or []:
+                    if binding.get("HostPort"):
+                        ports.append(f"{binding['HostPort']}→{container_port}")
+            items.append({
+                "name": attrs.get("Name", "").lstrip("/"),
+                "image": attrs.get("Config", {}).get("Image", ""),
+                "status": status,
+                "health": health,
+                "project": project,
+                "ports": sorted(ports),
+            })
+        result["items"] = sorted(items, key=lambda item: item["name"])
+        return result
+
+    @staticmethod
+    def _services(audit: AuditSink, vector: VectorIndex, limiter: RateLimiter) -> dict:
+        services = {}
+        if audit.db_ready:
+            try:
+                with audit._connect() as connection:
+                    rows = connection.execute("SELECT count(*) FROM audit_events").fetchone()[0]
+                    size = connection.execute("SELECT pg_database_size(current_database())").fetchone()[0]
+                services["database"] = {"available": True, "rows": rows, "size_bytes": size}
+            except Exception:
+                services["database"] = {"available": False}
+        else:
+            services["database"] = {"available": False, "backend": "jsonl"}
+        if vector.enabled and vector.client:
+            try:
+                info = vector.client.get_collection(vector.collection)
+                services["vector"] = {
+                    "available": True, "points": info.points_count,
+                    "vectors": info.vectors_count, "status": str(info.status),
+                }
+            except Exception:
+                services["vector"] = {"available": False}
+        else:
+            services["vector"] = {"available": False, "backend": "lexical"}
+        if limiter.enabled and limiter.client:
+            try:
+                info = limiter.client.info("memory")
+                services["cache"] = {
+                    "available": True, "used_memory_bytes": info.get("used_memory", 0),
+                    "used_memory_human": info.get("used_memory_human", ""), "keys": limiter.client.dbsize(),
+                }
+            except Exception:
+                services["cache"] = {"available": False}
+        else:
+            services["cache"] = {"available": False}
+        return services
+
+    def snapshot(self, documents: DocumentService, audit: AuditSink, vector: VectorIndex, limiter: RateLimiter) -> dict:
+        import psutil
+        data_root = Path(documents.storage_root)
+        disk_root = data_root if data_root.exists() else (Path("/data") if Path("/data").exists() else Path("/"))
+        disk = shutil.disk_usage(disk_root)
+        host_proc = Path(os.getenv("HOST_PROC", "/host/proc"))
+        if host_proc.exists():
+            process_count = sum(1 for item in host_proc.iterdir() if item.name.isdigit())
+        else:
+            process_count = len(psutil.pids())
+        memory = psutil.virtual_memory()
+        process = psutil.Process()
+        try:
+            load1, load5, load15 = os.getloadavg()
+        except OSError:
+            load1 = load5 = load15 = 0.0
+        mem0_path = Path(os.getenv("MEM0_HISTORY_DB", "/tmp/baryon-ax-mem0/history.db"))
+        fastembed_path = Path(os.getenv("FASTEMBED_CACHE_PATH", "/tmp/fastembed_cache"))
+        hostname = os.getenv("HOST_HOSTNAME", "").strip() or platform.node()
+        hostname_file = host_proc / "sys" / "kernel" / "hostname"
+        if not os.getenv("HOST_HOSTNAME") and hostname_file.exists():
+            try:
+                hostname = hostname_file.read_text().strip() or hostname
+            except OSError:
+                pass
+        return {
+            "host": {
+                "hostname": hostname, "platform": platform.platform(),
+                "python": platform.python_version(), "uptime_seconds": round(time.time() - self.started),
+            },
+            "storage": {
+                "total_bytes": disk.total, "used_bytes": disk.used, "free_bytes": disk.free,
+                "percent": round(disk.used / disk.total * 100, 1) if disk.total else 0, "documents_bytes": self._size(Path(documents.storage_root)),
+                "audit_bytes": self._size(Path(audit.storage_path)), "mem0_bytes": self._size(mem0_path),
+                "fastembed_bytes": self._size(fastembed_path), "documents_count": len(documents.documents),
+            },
+            "memory": {
+                "total_bytes": memory.total, "used_bytes": memory.used,
+                "available_bytes": memory.available, "percent": memory.percent,
+            },
+            "process": {
+                "total": process_count, "api_pid": process.pid, "api_threads": process.num_threads(),
+                "api_rss_bytes": process.memory_info().rss, "api_cpu_percent": process.cpu_percent(interval=None),
+            },
+            "cpu": {
+                "cores": psutil.cpu_count(logical=True) or 1,
+                "load_1": round(load1, 2), "load_5": round(load5, 2), "load_15": round(load15, 2),
+            },
+            "containers": self._containers(),
+            "services": self._services(audit, vector, limiter),
+        }
+
+
+def dashboard_links() -> dict:
+    return {
+        "qdrant": os.getenv("QDRANT_DASHBOARD_URL", ""),
+        "langfuse": os.getenv("LANGFUSE_DASHBOARD_URL", ""),
+        "model_server": os.getenv("MODEL_SERVER_URL", ""),
+        "pgadmin": os.getenv("PGADMIN_URL", ""),
+        "redis_insight": os.getenv("REDIS_INSIGHT_URL", ""),
+        "langgraph": "https://github.com/langchain-ai/langgraph",
+        "llamaindex": "https://github.com/run-llama/llama_index",
+        "mem0": "https://github.com/mem0ai/mem0",
+        "vllm": "https://docs.vllm.ai",
+        "ollama": "https://docs.ollama.com",
+    }
+
+
 app = FastAPI(title="Baryon AX API", version=__version__, lifespan=lifespan)
 origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3001,http://localhost:5173").split(",") if origin.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -899,6 +1086,7 @@ rate_limiter = RateLimiter()
 tracer = Tracer()
 memory_service = MemoryService(model_adapter.model)
 pipeline = ChatPipeline()
+monitor = SystemMonitor()
 
 
 def roles_from_header(value: str) -> set[str]:
@@ -1169,6 +1357,8 @@ async def admin_settings(
             "adapter": "openai-compatible" if model_adapter.base_url else "demo-local",
             "base_url_configured": bool(model_adapter.base_url),
             "timeout_seconds": MODEL_TIMEOUT_SECONDS,
+            "thinking_disabled": os.getenv("MODEL_DISABLE_THINKING", "false").lower() == "true",
+            "prompt_profile": os.getenv("MODEL_PROMPT_PROFILE", "auto"),
         },
         "storage": {
             "documents": "local-json",
@@ -1190,6 +1380,8 @@ async def admin_settings(
             "memory": "mem0" if memory_service.enabled else "disabled",
         },
         "counts": {"documents": len(organization_documents), "audit_events": len(organization_events)},
+        "system": monitor.snapshot(documents, audit, vector, rate_limiter),
+        "links": dashboard_links(),
     }
 
 

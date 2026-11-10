@@ -25,6 +25,8 @@ The platform brings a chat workspace, agent execution, grounded knowledge search
 - **PostgreSQL audit events** with JSONL mirroring, **Redis rate limiting**, and **Langfuse tracing**
 - **Mem0 user memory** with Qdrant + Ollama, managed from a dedicated UI tab
 - Administrator settings with runtime, policy, storage, integration, and activity overview
+- Live system cards for storage, memory, CPU load, process count, Compose containers, and backend health
+- One-click admin links for Qdrant, Langfuse, the model server, pgAdmin, and Redis Insight, plus per-integration docs
 - Docker Compose Basic Core profile and a **full-stack override** (`docker-compose.full.yml`)
 - **B300 host deployment**: platform, Langfuse, Mem0, Qdrant, PostgreSQL, and Redis on the B300 server, using GPU 7 vLLM
 - Kubernetes starter manifests and deployment profiles

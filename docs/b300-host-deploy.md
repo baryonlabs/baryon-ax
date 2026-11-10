@@ -104,6 +104,12 @@ ssh b300 'cd /data/baryon-b300/baryon-ax && cp .env.b300.example .env'
 | `MEM0_LLM_PROVIDER` | `openai` |
 | `MEM0_LLM_BASE_URL` | `http://host.docker.internal:8021/v1` |
 | `MEM0_LLM_MODEL` | `baryon-ax-qwen` |
+| `SYSTEM_METRICS_ENABLED` | `true` |
+| `DOCKER_GID` | `113` (B300 docker 그룹) |
+| `DOCKER_PROJECT` | `baryon-ax` |
+| `QDRANT_DASHBOARD_URL` | `http://127.0.0.1:6433/dashboard` |
+| `LANGFUSE_DASHBOARD_URL` | `http://127.0.0.1:3102` |
+| `MODEL_SERVER_URL` | `http://127.0.0.1:8020/docs` |
 
 ## 5. 기존 볼륨에서 `/data`로 이전 (선택)
 
@@ -164,12 +170,18 @@ ssh -N \
   -L 8100:127.0.0.1:8100 \
   -L 3101:127.0.0.1:3101 \
   -L 3102:127.0.0.1:3102 \
+  -L 6433:127.0.0.1:6433 \
+  -L 8020:127.0.0.1:8020 \
   b300
 ```
 
 - UI: `http://127.0.0.1:3101`
 - API: `http://127.0.0.1:8100`
 - Langfuse: `http://127.0.0.1:3102`
+- Qdrant 대시보드: `http://127.0.0.1:6433/dashboard`
+- vLLM 문서: `http://127.0.0.1:8020/docs`
+
+관리자 설정 화면의 링크는 위 터널을 전제로 합니다. 터널이 없으면 카드는 보이지만 링크가 열리지 않습니다.
 
 ## 9. 검증
 
@@ -182,6 +194,8 @@ API_BASE=http://127.0.0.1:8100 REQUIRE_FULL=1 \
 cd apps/web
 E2E_BASE_URL=http://127.0.0.1:3101 npm run test:e2e
 ```
+
+관리자 설정의 시스템 카드는 `/data` 파일시스템 기준 저장공간, 호스트 메모리·프로세스 수(`/host/proc`), Compose 컨테이너 상태를 보여줍니다. 컨테이너 지표가 비어 있으면 API 컨테이너에 `group_add: ["113"]`과 `/var/run/docker.sock:ro` 마운트가 적용됐는지 확인하세요.
 
 정상 `/health`:
 
@@ -251,4 +265,5 @@ ssh b300 'tmux kill-session -t baryon-vllm-proxy'
 - vLLM/API에는 인증이 없습니다. 터널 밖으로 노출하지 마세요.
 - `/data/baryon-b300/baryon-ax-data`에 문서·감사·Mem0·Postgres·Qdrant·FastEmbed 캐시가 있습니다. 백업 대상입니다.
 - Langfuse에는 프롬프트/응답이 저장됩니다. 보존/삭제 정책을 정의하세요.
+- Docker 소켓 마운트는 root에 준하는 권한입니다. 읽기 전용으로만 유지하고, 필요 없으면 `SYSTEM_METRICS_ENABLED=false`로 끄세요.
 - 현재 신원은 개발용 헤더입니다. 프로덕션 전 OIDC/JWT로 교체하세요.
