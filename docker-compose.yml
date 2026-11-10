@@ -6,8 +6,10 @@ services:
     env_file: .env
     environment:
       DOCUMENT_STORE: /data/documents
+      AUDIT_LOG: /data/audit/events.jsonl
     volumes:
       - documents:/data/documents
+      - audit:/data/audit
     ports:
       - "8000:8000"
     depends_on:
@@ -49,5 +51,6 @@ services:
 
 volumes:
   documents:
+  audit:
   postgres:
   qdrant:
