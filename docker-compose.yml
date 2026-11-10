@@ -1,0 +1,53 @@
+name: baryon-ax
+
+services:
+  api:
+    build: ./apps/api
+    env_file: .env
+    environment:
+      DOCUMENT_STORE: /data/documents
+    volumes:
+      - documents:/data/documents
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      qdrant:
+        condition: service_started
+
+  web:
+    build: ./apps/web
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-baryon}
+      POSTGRES_USER: ${POSTGRES_USER:-baryon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-before-production}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.5
+    volumes:
+      - qdrant:/qdrant/storage
+
+volumes:
+  documents:
+  postgres:
+  qdrant:
