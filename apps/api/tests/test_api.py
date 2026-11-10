@@ -138,12 +138,13 @@ def test_streaming_chat_returns_tokens_and_citations() -> None:
                            headers=headers(organization="stream-org"))
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
+    trace_id = response.headers["x-trace-id"]
     frames = [frame for frame in response.text.split("\n\n") if frame]
     assert frames[-1] == "data: [DONE]"
     payloads = [json.loads(frame.removeprefix("data: ")) for frame in frames[:-1]]
     assert any(item["type"] == "token" and item["content"] for item in payloads)
     citations = [item for item in payloads if item["type"] == "citations"]
-    assert len(citations) == 1 and citations[0]["trace_id"]
+    assert len(citations) == 1 and citations[0]["trace_id"] == trace_id
 
 
 def test_pii_masking_spans_stream_chunks() -> None:

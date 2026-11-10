@@ -420,11 +420,11 @@ async def chat(
     audit.emit("chat.started", principal, trace_id, thread_id=request.thread_id, model=request.model, retrieval_count=len(citations))
     if request.stream:
         return StreamingResponse(stream_chat(request, principal, trace_id, started, citations), media_type="text/event-stream",
-                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Trace-Id": trace_id})
     try:
         answer = policy.mask_output(await model_adapter.complete(request, citations))
     except httpx.HTTPError as error:
-        audit.emit("chat.failed", principal, trace_id, thread_id=request.thread_id, model=request.model, reason=str(error), streamed=False)
+        audit.emit("chat.failed", principal, trace_id, thread_id=request.thread_id, model=request.model, reason=type(error).__name__, streamed=False)
         raise HTTPException(502, "Configured model endpoint could not complete the request") from error
     audit.emit("chat.completed", principal, trace_id, thread_id=request.thread_id, model=request.model,
                latency_ms=round((time.perf_counter() - started) * 1000),
