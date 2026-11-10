@@ -89,6 +89,18 @@ npm install
 npm run build
 ```
 
+### End-to-end test
+
+Start the API on port 8000 and the web dev server on port 5173, then:
+
+```bash
+cd apps/web
+npx playwright install chromium   # first run only
+npm run test:e2e
+```
+
+Set `E2E_BASE_URL` to test another deployment (for example the Compose web service), and `E2E_SCREENSHOT=/tmp/baryon-ax.png` to capture a full-page screenshot.
+
 ## Security status
 
 This is a reference implementation, not a security certification. The default identity headers, local document store, lexical retrieval, and JSON audit sink are development conveniences. Follow [docs/security.md](docs/security.md) before exposing a deployment to users or confidential data.
