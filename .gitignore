@@ -1,0 +1,13 @@
+.env
+.DS_Store
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.tsbuildinfo
+.pytest_cache/
+.venv/
+node_modules/
+dist/
+coverage/
+data/
+graphify-out/
