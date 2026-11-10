@@ -9,7 +9,7 @@ os.environ["AUDIT_LOG"] = str(TEST_ROOT / "audit" / "events.jsonl")
 
 from fastapi.testclient import TestClient
 
-from baryon.main import AuditSink, DocumentService, PolicyEngine, Principal, app
+from baryon.main import AuditSink, ChatRequest, DocumentService, Message, ModelAdapter, PolicyEngine, Principal, app
 
 client = TestClient(app)
 
@@ -177,6 +177,15 @@ def test_memory_endpoints_are_disabled_without_mem0() -> None:
     assert client.post("/v1/memories", json={"text": "remember this"}, headers=headers()).status_code == 503
     assert client.get("/v1/memories", headers=headers()).status_code == 503
     assert client.get("/v1/memories/search", params={"q": "remember"}, headers=headers()).status_code == 503
+
+
+def test_model_adapter_can_disable_qwen_thinking(monkeypatch) -> None:
+    monkeypatch.setenv("MODEL_DISABLE_THINKING", "true")
+    monkeypatch.delenv("MODEL_CHAT_TEMPLATE_KWARGS", raising=False)
+    adapter = ModelAdapter()
+    request = ChatRequest(messages=[Message(role="user", content="hello")])
+    payload = adapter.payload(request, [], False)
+    assert payload["chat_template_kwargs"] == {"enable_thinking": False}
 
 
 def test_streaming_chat_returns_tokens_and_citations() -> None:

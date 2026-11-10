@@ -621,7 +621,16 @@ class ModelAdapter:
         if context:
             instruction = "관련된 경우 다음 검색 문서를 근거로 답변하고, 한국어로 답변하세요:\n" if request.locale == "ko" else "Answer using this retrieved context when relevant:\n"
             messages.insert(0, {"role": "system", "content": instruction + "\n".join(item["content"] for item in context)})
-        return {"model": self.resolved_model(request), "messages": messages, "stream": stream}
+        payload = {"model": self.resolved_model(request), "messages": messages, "stream": stream}
+        template_kwargs = os.getenv("MODEL_CHAT_TEMPLATE_KWARGS", "")
+        if template_kwargs:
+            try:
+                payload["chat_template_kwargs"] = json.loads(template_kwargs)
+            except json.JSONDecodeError:
+                logger.warning("MODEL_CHAT_TEMPLATE_KWARGS is not valid JSON; ignoring")
+        elif os.getenv("MODEL_DISABLE_THINKING", "false").lower() == "true":
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+        return payload
 
     def headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
