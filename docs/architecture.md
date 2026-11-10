@@ -27,8 +27,8 @@ The overview image is a **target production architecture**, not a one-to-one con
 | Redis | L2 | `redis` (`deps`) fixed-window limiter | ✅ |
 | Mem0 | L2 | in-process Mem0 + Qdrant + Ollama | ✅ |
 | PostgreSQL | L1 | `postgres` (`deps`) audit table | ✅ |
-| Ollama / model serving | L1 | host Ollama OpenAI-compatible endpoint | ✅ |
-| vLLM / SGLang | L1 | — | ⛔ Linux/GPU alternative |
+| Ollama / model serving | L1 | host Ollama + B300 GPU 7 vLLM | ✅ |
+| vLLM / SGLang | L1 | vLLM on B300 GPU 7; SGLang alternative | ✅ vLLM / ⛔ SGLang |
 | Docker | L1 | `api`, `web`, data services | ✅ |
 | Kubernetes | L1 | `deploy/kubernetes` (API only) | 🔶 starter manifests |
 

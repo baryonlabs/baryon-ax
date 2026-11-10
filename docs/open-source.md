@@ -65,7 +65,7 @@
 | Redis | L2 세션 | 캐시·세션·메모리 | 버전별 상이 (아래 참고) | ✅ 적용 | `deps` 프로필, 채팅 레이트 리밋 |
 | Mem0 | L2 세션 | 에이전트 장기 메모리 | Apache-2.0 | ✅ 적용 | Qdrant + FastEmbed + Ollama |
 | PostgreSQL | L1 인프라 | 메타데이터·스레드·감사 저장 | PostgreSQL License | ✅ 적용 | `deps` 프로필, 감사 이벤트 |
-| vLLM | L1 모델 | GPU LLM 서빙 | Apache-2.0 | ⛔ 미적용 | Linux/GPU 대안 |
+| vLLM | L1 모델 | GPU LLM 서빙 | Apache-2.0 | ✅ 적용 | B300 GPU 7, Qwen3.5-27B |
 | SGLang | L1 모델 | 고속 LLM 서빙 | Apache-2.0 | ⛔ 미적용 | Linux/GPU 대안 |
 | Ollama | L1 모델 | 로컬 모델 실행 | MIT | ✅ 적용 | `qwen2.5:7b` |
 | LiteLLM | L1 모델 | 모델 게이트웨이 | MIT | ⛔ 미적용 | OpenAI 호환 게이트웨이 후보 |
@@ -136,7 +136,7 @@ Redis 라이선스는 **버전에 따라 다릅니다.**
 | 3 | Guardrails (NeMo/Guardrails AI) | 정교한 정책·안전성 검사 |
 | 4 | 런타임 설정·사용자 관리 | 모델/정책/검색 limit, 조직 사용자 역할 |
 | 5 | 감사 무결성/보존 | 서명·WORM·삭제 정책 |
-| 6 | Milvus/vLLM/SGLang/LiteLLM | 대안 스택 평가와 프로필 추가 |
+| 6 | Milvus/SGLang/LiteLLM | 대안 스택 평가와 프로필 추가 (vLLM은 B300에서 검증) |
 
 ---
 

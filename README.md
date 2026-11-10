@@ -17,7 +17,7 @@ The platform brings a chat workspace, agent execution, grounded knowledge search
 - Chat UI with model selection and token streaming
 - Keyboard-first composer: `Shift+Enter` sends, `Enter` starts a new line
 - Korean-first bilingual UI (한국어 / English), with browser-language detection and persisted preference
-- OpenAI-compatible model adapter, verified with **Ollama `qwen2.5:7b`**, with a safe local demo fallback
+- OpenAI-compatible model adapter, verified with **Ollama `qwen2.5:7b`** and **vLLM `Qwen3.5-27B` on B300 GPU 7**, with a safe local demo fallback
 - Input/output policy checks and basic PII masking, including chunk-boundary-safe streaming masks
 - Durable document upload, **LlamaIndex sentence chunking**, **Qdrant vector retrieval** with lexical fallback, and source citations
 - **LangGraph** policy/retrieval orchestration, **FastEmbed** multilingual embeddings
@@ -58,6 +58,7 @@ OLLAMA_HOST_URL=http://host.docker.internal:11435 \
 | --- | --- | --- |
 | `MODEL_BASE_URL` | empty | OpenAI-compatible endpoint; empty selects `demo-local` |
 | `MODEL_NAME` | `qwen2.5:7b` | Model ID (full stack) |
+| `MODEL_DISABLE_THINKING` | `false` | Send `enable_thinking=false` for Qwen3.5/vLLM |
 | `MODEL_TIMEOUT_SECONDS` | `180` | Upstream connect/read timeout |
 | `DATABASE_URL` | empty | PostgreSQL audit store (empty = JSONL only) |
 | `REDIS_URL` | empty | Redis rate limiter (empty = disabled) |
@@ -82,7 +83,7 @@ Browser UI ──> FastAPI gateway ──> LangGraph policy/retrieval ──> mo
                         └──> Langfuse traces
 ```
 
-See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/features.md](docs/features.md) for the complete feature inventory, [docs/open-source.md](docs/open-source.md) for the open-source component and license inventory, and [docs/architecture.md](docs/architecture.md), [docs/operations.md](docs/operations.md), and [docs/security.md](docs/security.md) for the intended production integration boundaries.
+See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/b300-vllm.md](docs/b300-vllm.md) for the remote B300 GPU 7 vLLM test, [docs/features.md](docs/features.md) for the complete feature inventory, [docs/open-source.md](docs/open-source.md) for the open-source component and license inventory, and [docs/architecture.md](docs/architecture.md), [docs/operations.md](docs/operations.md), and [docs/security.md](docs/security.md) for the intended production integration boundaries.
 
 ## API highlights
 

@@ -57,7 +57,8 @@
 | SSE 토큰 스트리밍 | ✅ | `text/event-stream`으로 토큰 단위 전송 |
 | 실제 업스트림 스트리밍 | ✅ | OpenAI 호환 `stream: true` 응답을 중계 |
 | `demo-local` 폴백 | ✅ | `MODEL_BASE_URL` 미설정 시 키 없이 동작하는 데모 응답 |
-| OpenAI 호환 모델 어댑터 | ✅ | Ollama `qwen2.5:7b` 검증, vLLM/SGLang/LiteLLM 호환 |
+| OpenAI 호환 모델 어댑터 | ✅ | Ollama `qwen2.5:7b`, B300 GPU 7 vLLM `Qwen3.5-27B` 검증 |
+| 원격 vLLM 서빙 | ✅ | B300 GPU 7, SSH 터널, `MODEL_DISABLE_THINKING` |
 | LangGraph 오케스트레이션 | ✅ | 정책 검사 + 검색 단계를 그래프로 실행 |
 | Langfuse 트레이싱 | ✅ | trace/generation, 사용자·조직·모델 메타데이터 |
 | Redis 레이트 리밋 | ✅ | 사용자·조직당 분당 요청 제한 (fixed window) |
@@ -274,7 +275,7 @@
 
 | 항목 | 상태 | 결과/설명 |
 | --- | --- | --- |
-| API 단위·통합 테스트 | ✅ | **20 passed** |
+| API 단위·통합 테스트 | ✅ | **21 passed** |
 | Playwright E2E | ✅ | **11 checks passed** (`npm run test:e2e`, Vite/Compose) |
 | Web 타입체크·빌드 | ✅ | `tsc -b && vite build` 성공 |
 | 전체 스택 스모크 | ✅ | `scripts/smoke_full_stack.py` — health/upload/search/chat/audit/memory |
@@ -297,6 +298,8 @@
 | `MODEL_BASE_URL` | 빈 값 | OpenAI 호환 엔드포인트 (빈 값이면 데모) |
 | `MODEL_API_KEY` | 빈 값 | 모델 서버 인증 키 |
 | `MODEL_TIMEOUT_SECONDS` | `180` | 업스트림 타임아웃 |
+| `MODEL_DISABLE_THINKING` | `false` | Qwen3.5 vLLM thinking 비활성화 |
+| `MODEL_CHAT_TEMPLATE_KWARGS` | 빈 값 | vLLM `chat_template_kwargs` JSON |
 | `ALLOWED_ORIGINS` | `http://localhost:3001,http://localhost:5173` | CORS 허용 오리진 |
 | `DOCUMENT_STORE` | `/tmp/baryon-ax-documents` | 문서 JSON 저장 경로 |
 | `AUDIT_LOG` | `/tmp/baryon-ax-audit/events.jsonl` | 감사 JSONL 경로 |
@@ -321,6 +324,7 @@
 | `POSTGRES_USER` | `baryon` | Compose PostgreSQL 사용자 |
 | `POSTGRES_PASSWORD` | 예시 값 | Compose PostgreSQL 비밀번호 (변경 필수) |
 | `WEB_PORT` | `3001` | Compose Web 포트 |
+| `MODEL_HOST_URL` | 빈 값 | full-stack Compose 원격 모델 호스트 (예: B300 vLLM) |
 
 ---
 
@@ -355,7 +359,7 @@
 | 중간 | 문서 파싱 확장 | PDF/Word/HTML, 재색인 |
 | 중간 | 채팅 메모리 자동 주입 | Mem0 검색 결과를 채팅 컨텍스트에 자동 포함 |
 | 낮음 | 툴/에이전트 실행 | LangGraph 체크포인트 기반 승인·재시도·중단 |
-| 낮음 | Milvus/vLLM/SGLang/LiteLLM | 대안 스택 평가·프로필 추가 |
+| 낮음 | Milvus/SGLang/LiteLLM | 대안 스택 평가·프로필 추가 (vLLM은 B300 GPU 7에서 검증) |
 | 낮음 | Kubernetes 런타임 | 매니페스트를 실제 클러스터에서 검증 |
 | 낮음 | CI E2E/보안 스캔 | Playwright 잡, Trivy/Semgrep |
 
@@ -364,7 +368,7 @@
 ## 14. 검증 기준
 
 ```text
-API tests           20 passed
+API tests           21 passed
 Playwright E2E      11 checks passed (Vite 5173 / Compose 3001)
 Full-stack smoke    health + upload + Qdrant retrieval + chat + audit + Mem0
 Web build           tsc -b && vite build 성공

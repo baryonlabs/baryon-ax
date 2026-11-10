@@ -30,6 +30,22 @@
 
 Ports: web `3001`, API `8000`, Langfuse `3000`, PostgreSQL `5433`, Redis `6379`, Qdrant `6333/6334`, Ollama `11434`, Ollama proxy `11435`.
 
+### Remote vLLM (B300 GPU 7)
+
+For a remote inference server, start vLLM on the B300 GPU 7 and forward its loopback port:
+
+```bash
+scripts/b300_vllm_tunnel.sh &
+OLLAMA_HOST_URL=http://host.docker.internal:11435 \
+MODEL_HOST_URL=http://host.docker.internal:8020 \
+MODEL_NAME=baryon-ax-qwen \
+MODEL_DISABLE_THINKING=true \
+MEM0_LLM_MODEL=qwen2.5:7b \
+  docker compose -f docker-compose.yml -f docker-compose.full.yml --profile deps up -d --build
+```
+
+The tunnel binds `0.0.0.0:8020` for Docker Desktop. Use it only on a trusted network and stop it after the test. See [b300-vllm.md](b300-vllm.md) for vLLM start/stop and verification.
+
 ## Backups
 
 Back up PostgreSQL audit events, Qdrant storage, the original document/object store, Mem0 history, and the JSONL audit mirror (`AUDIT_LOG`, `/data/audit/events.jsonl` in Compose) as a coordinated set. The full stack adds the `postgres`, `qdrant`, `mem0`, and `models` volumes. Test restore procedures with an isolated environment. Conversation/audit data and vector indexes have different recovery characteristics; do not treat a vector snapshot as the system of record for original documents.

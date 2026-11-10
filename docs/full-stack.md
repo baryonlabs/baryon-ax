@@ -133,6 +133,22 @@ uvicorn baryon.main:app --app-dir apps/api/src --host 127.0.0.1 --port 8000 --en
 npm --prefix apps/web run dev -- --host 127.0.0.1 --port 5173
 ```
 
+### C. B300 GPU 7 원격 vLLM
+
+B300의 마지막 GPU(GPU 7)에서 vLLM을 서빙하고, SSH 터널로 플랫폼에 연결할 수 있습니다.
+
+```bash
+scripts/b300_vllm_tunnel.sh &
+OLLAMA_HOST_URL=http://host.docker.internal:11435 \
+MODEL_HOST_URL=http://host.docker.internal:8020 \
+MODEL_NAME=baryon-ax-qwen \
+MODEL_DISABLE_THINKING=true \
+MEM0_LLM_MODEL=qwen2.5:7b \
+  docker compose -f docker-compose.yml -f docker-compose.full.yml --profile deps up -d --build
+```
+
+Qwen3.5는 thinking 출력을 끄기 위해 `MODEL_DISABLE_THINKING=true`를 사용합니다. vLLM 시작·종료·검증 상세는 [b300-vllm.md](b300-vllm.md)를 참고하세요.
+
 ## 5. 검증
 
 ```bash
