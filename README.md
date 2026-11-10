@@ -54,7 +54,7 @@ Browser UI ──> FastAPI gateway ──> policy gate ──> model adapter ─
                        └──> PostgreSQL / Redis / Qdrant (deployment services)
 ```
 
-See [docs/architecture.md](docs/architecture.md), [docs/operations.md](docs/operations.md), and [docs/security.md](docs/security.md) for the intended production integration boundaries.
+See [docs/features.md](docs/features.md) for the complete feature inventory, and [docs/architecture.md](docs/architecture.md), [docs/operations.md](docs/operations.md), and [docs/security.md](docs/security.md) for the intended production integration boundaries.
 
 ## API highlights
 
@@ -79,7 +79,7 @@ For local development, callers can send `X-User-Id`, `X-Organization-Id`, and `X
 apps/api/       FastAPI control plane and API
 apps/web/       React + Vite chat UI
 deploy/         Compose and Kubernetes deployment assets
-docs/           Architecture, operations, and security guidance
+docs/           Architecture, operations, security, and feature inventory
 ```
 
 ## Development
