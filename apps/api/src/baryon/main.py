@@ -1,0 +1,292 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import re
+import time
+import uuid
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import AsyncIterator, Literal
+
+import httpx
+from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+@dataclass
+class Principal:
+    user_id: str
+    organization_id: str
+    roles: set[str]
+
+
+@dataclass
+class Document:
+    id: str
+    organization_id: str
+    owner_id: str
+    title: str
+    content: str
+    allowed_roles: set[str]
+    created_at: str = field(default_factory=now)
+
+
+class Message(BaseModel):
+    role: Literal["system", "user", "assistant"]
+    content: str = Field(min_length=1, max_length=100_000)
+
+
+class ChatRequest(BaseModel):
+    model: str = "demo-local"
+    messages: list[Message] = Field(min_length=1)
+    stream: bool = True
+    use_retrieval: bool = True
+    thread_id: str | None = None
+    locale: Literal["ko", "en"] = "ko"
+
+
+class AuditSink:
+    """Append-only local sink; production adapters can forward the same schema to Postgres/Langfuse."""
+
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+
+    def emit(self, event_type: str, principal: Principal, trace_id: str, **payload: object) -> None:
+        self.events.append({
+            "id": str(uuid.uuid4()), "at": now(), "type": event_type, "trace_id": trace_id,
+            "organization_id": principal.organization_id, "user_id": principal.user_id, **payload,
+        })
+
+
+class PolicyEngine:
+    blocked_patterns = (re.compile(r"\b(?:how to make a bomb|credit card dump)\b", re.I),)
+    pii_pattern = re.compile(r"\b\d{3}[- ]?\d{2,4}[- ]?\d{4}\b")
+
+    def check_input(self, text: str) -> None:
+        if any(pattern.search(text) for pattern in self.blocked_patterns):
+            raise HTTPException(status_code=422, detail="Request blocked by configured content policy")
+
+    def mask_output(self, text: str) -> str:
+        return self.pii_pattern.sub("[REDACTED-PHONE]", text)
+
+
+class DocumentService:
+    """Local durable document store used by the basic deployment profile.
+
+    The file format deliberately mirrors the metadata an eventual Qdrant/LlamaIndex
+    adapter must preserve: organization scope, role ACL, source title, and content.
+    """
+
+    def __init__(self, storage_root: Path | None = None) -> None:
+        self.storage_root = storage_root or Path(os.getenv("DOCUMENT_STORE", "/tmp/baryon-ax-documents"))
+        self.documents: dict[str, Document] = {}
+        self._load()
+
+    def _load(self) -> None:
+        if not self.storage_root.exists():
+            return
+        for file_path in self.storage_root.glob("*.json"):
+            try:
+                payload = json.loads(file_path.read_text(encoding="utf-8"))
+                document = Document(
+                    id=payload["id"], organization_id=payload["organization_id"], owner_id=payload.get("owner_id", "unknown"), title=payload["title"],
+                    content=payload["content"], allowed_roles=set(payload["allowed_roles"]), created_at=payload["created_at"],
+                )
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                continue
+            self.documents[document.id] = document
+
+    def _persist(self, document: Document) -> None:
+        self.storage_root.mkdir(parents=True, exist_ok=True)
+        target = self.storage_root / f"{document.id}.json"
+        temporary = target.with_suffix(".tmp")
+        temporary.write_text(json.dumps(asdict(document), ensure_ascii=False, default=list), encoding="utf-8")
+        temporary.replace(target)
+
+    def create(self, principal: Principal, title: str, content: str, allowed_roles: set[str]) -> Document:
+        document = Document(str(uuid.uuid4()), principal.organization_id, principal.user_id, title, content, allowed_roles)
+        self.documents[document.id] = document
+        self._persist(document)
+        return document
+
+    def list_for(self, principal: Principal) -> list[dict]:
+        return [
+            {"id": document.id, "title": document.title, "owner_id": document.owner_id,
+             "allowed_roles": sorted(document.allowed_roles), "created_at": document.created_at,
+             "chunks": len(chunk_text(document.content))}
+            for document in self.documents.values()
+            if document.organization_id == principal.organization_id
+            and (document.allowed_roles.intersection(principal.roles) or document.owner_id == principal.user_id or "admin" in principal.roles)
+        ]
+
+    def delete(self, principal: Principal, document_id: str) -> bool:
+        document = self.documents.get(document_id)
+        if not document or document.organization_id != principal.organization_id:
+            return False
+        if document.owner_id != principal.user_id and "admin" not in principal.roles:
+            raise PermissionError("Only the uploader or an administrator can delete this document")
+        self.documents.pop(document_id)
+        (self.storage_root / f"{document_id}.json").unlink(missing_ok=True)
+        return True
+
+    def search(self, principal: Principal, query: str, limit: int = 4) -> list[dict]:
+        terms = {term.lower() for term in re.findall(r"[\w가-힣]{2,}", query)}
+        matches = []
+        for document in self.documents.values():
+            if document.organization_id != principal.organization_id:
+                continue
+            if document.allowed_roles and not document.allowed_roles.intersection(principal.roles):
+                continue
+            for number, chunk in enumerate(chunk_text(document.content)):
+                score = sum(term in chunk.lower() for term in terms)
+                if score:
+                    matches.append({"document_id": document.id, "title": document.title, "chunk": number + 1,
+                                    "content": chunk, "score": score})
+        return sorted(matches, key=lambda item: item["score"], reverse=True)[:limit]
+
+
+def chunk_text(text: str, size: int = 900) -> list[str]:
+    return [text[index:index + size] for index in range(0, len(text), size)] or [""]
+
+
+class ModelAdapter:
+    def __init__(self) -> None:
+        self.model = os.getenv("MODEL_NAME", "demo-local")
+        self.base_url = os.getenv("MODEL_BASE_URL", "").rstrip("/")
+        self.api_key = os.getenv("MODEL_API_KEY", "")
+
+    async def complete(self, request: ChatRequest, context: list[dict]) -> str:
+        prompt = request.messages[-1].content
+        if not self.base_url:
+            sources = "\n".join(f"- {item['title']}: {item['content'][:180]}" for item in context)
+            if request.locale == "ko":
+                suffix = f"\n\n검색된 근거:\n{sources}" if sources else ""
+                return f"[demo-local] 요청을 받았습니다: {prompt}{suffix}\n\n실제 온프레미스 모델을 사용하려면 MODEL_BASE_URL을 설정하세요."
+            suffix = f"\n\nRetrieved context:\n{sources}" if sources else ""
+            return f"[demo-local] I received: {prompt}{suffix}\n\nConfigure MODEL_BASE_URL to use your on-premises model."
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        messages = [message.model_dump() for message in request.messages]
+        if context:
+            instruction = "관련된 경우 다음 검색 문서를 근거로 답변하고, 한국어로 답변하세요:\n" if request.locale == "ko" else "Answer using this retrieved context when relevant:\n"
+            messages.insert(0, {"role": "system", "content": instruction + "\n".join(item["content"] for item in context)})
+        async with httpx.AsyncClient(timeout=90) as client:
+            response = await client.post(f"{self.base_url}/chat/completions", headers=headers,
+                json={"model": request.model, "messages": messages, "stream": False})
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+
+
+app = FastAPI(title="Baryon AX API", version="0.1.0")
+origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+documents, policy, audit, model_adapter = DocumentService(), PolicyEngine(), AuditSink(), ModelAdapter()
+
+
+def principal_from_headers(user_id: str | None, organization_id: str | None, roles: str | None) -> Principal:
+    return Principal(user_id or "local-user", organization_id or "local-org", {role.strip() for role in (roles or "member").split(",") if role.strip()})
+
+
+@app.get("/health")
+async def health() -> dict:
+    return {"status": "ok", "model_adapter": "openai-compatible" if model_adapter.base_url else "demo-local", "time": now()}
+
+
+@app.get("/v1/models")
+async def models() -> dict:
+    return {"object": "list", "data": [{"id": model_adapter.model, "object": "model", "owned_by": "baryon"}]}
+
+
+@app.post("/v1/documents")
+async def upload_document(
+    file: UploadFile = File(...), allowed_roles: str = "member,admin",
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if not file.filename or Path(file.filename).suffix.lower() not in {".txt", ".md"}:
+        raise HTTPException(415, "Only UTF-8 .txt and .md files are supported by the basic parser")
+    content = (await file.read()).decode("utf-8", errors="strict")
+    if not content.strip():
+        raise HTTPException(422, "Document is empty")
+    document = documents.create(principal, file.filename, content, {role.strip() for role in allowed_roles.split(",") if role.strip()})
+    trace_id = str(uuid.uuid4())
+    audit.emit("document.ingested", principal, trace_id, document_id=document.id, title=document.title)
+    return {"id": document.id, "title": document.title, "chunks": len(chunk_text(content)), "trace_id": trace_id}
+
+
+@app.get("/v1/documents/search")
+async def search_documents(
+    q: str = Query(min_length=2), x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    return {"data": documents.search(principal, q)}
+
+
+@app.get("/v1/documents")
+async def list_documents(
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    return {"data": documents.list_for(principal)}
+
+
+@app.delete("/v1/documents/{document_id}")
+async def delete_document(
+    document_id: str, x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    try:
+        deleted = documents.delete(principal, document_id)
+    except PermissionError as error:
+        raise HTTPException(403, str(error)) from error
+    if not deleted:
+        raise HTTPException(404, "Document not found")
+    trace_id = str(uuid.uuid4())
+    audit.emit("document.deleted", principal, trace_id, document_id=document_id)
+    return {"id": document_id, "deleted": True, "trace_id": trace_id}
+
+
+async def stream_sse(text: str, trace_id: str, citations: list[dict]) -> AsyncIterator[str]:
+    for token in re.findall(r"\S+\s*", text):
+        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+        await asyncio.sleep(0.01)
+    yield f"data: {json.dumps({'type': 'citations', 'data': citations, 'trace_id': trace_id})}\n\n"
+    yield "data: [DONE]\n\n"
+
+
+@app.post("/v1/chat/completions")
+async def chat(
+    request: ChatRequest, x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+):
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    latest = request.messages[-1].content
+    policy.check_input(latest)
+    trace_id, started = str(uuid.uuid4()), time.perf_counter()
+    citations = documents.search(principal, latest) if request.use_retrieval else []
+    audit.emit("chat.started", principal, trace_id, thread_id=request.thread_id, model=request.model, retrieval_count=len(citations))
+    try:
+        answer = policy.mask_output(await model_adapter.complete(request, citations))
+    except httpx.HTTPError as error:
+        audit.emit("chat.failed", principal, trace_id, reason=str(error))
+        raise HTTPException(502, "Configured model endpoint could not complete the request") from error
+    audit.emit("chat.completed", principal, trace_id, latency_ms=round((time.perf_counter() - started) * 1000), citations=[item["document_id"] for item in citations])
+    if request.stream:
+        return StreamingResponse(stream_sse(answer, trace_id, citations), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+    return {"id": trace_id, "object": "chat.completion", "model": request.model,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": answer}, "finish_reason": "stop"}],
+            "citations": citations}
+
+
+@app.get("/v1/audit-events")
+async def audit_events(x_roles: str | None = Header(None)) -> dict:
+    if "admin" not in (x_roles or "").split(","):
+        raise HTTPException(403, "Administrator role required")
+    return {"data": audit.events[-100:]}
