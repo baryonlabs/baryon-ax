@@ -17,13 +17,6 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-      qdrant:
-        condition: service_started
 
   web:
     build: ./apps/web
@@ -33,7 +26,10 @@ services:
       api:
         condition: service_healthy
 
+  # Optional integration placeholders. The Basic Core does not use these yet.
+  # Start them with: docker compose --profile deps up -d
   postgres:
+    profiles: ["deps"]
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-baryon}
@@ -48,9 +44,11 @@ services:
       retries: 10
 
   redis:
+    profiles: ["deps"]
     image: redis:7-alpine
 
   qdrant:
+    profiles: ["deps"]
     image: qdrant/qdrant:v1.12.5
     volumes:
       - qdrant:/qdrant/storage
