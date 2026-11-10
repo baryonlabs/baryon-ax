@@ -29,7 +29,7 @@ The overview image is a **target production architecture**, not a one-to-one con
 | Docker | L1 | `api`, `web` | ✅ |
 | Kubernetes | L1 | `deploy/kubernetes` (API only) | 🔶 starter manifests |
 
-The default Compose profile starts only `api` and `web`. PostgreSQL, Redis, and Qdrant are opt-in integration placeholders:
+The default Compose profile starts only `api` and `web`. PostgreSQL, Redis, and Qdrant are opt-in integration placeholders. See [open-source.md](open-source.md) for the component and license inventory behind this mapping.
 
 ```bash
 docker compose up --build                 # Basic Core: API + UI

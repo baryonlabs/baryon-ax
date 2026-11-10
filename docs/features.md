@@ -326,6 +326,7 @@ pip check           깨진 요구사항 없음
 ## 관련 문서
 
 - [아키텍처](architecture.md)
+- [오픈소스 구성 요소](open-source.md)
 - [운영 가이드](operations.md)
 - [보안 베이스라인](security.md)
 - [README](../README.md)
