@@ -1,5 +1,8 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import { BookOpen, Bot, Brain, ChevronRight, FileUp, Globe2, Plus, RefreshCw, Save, Search, Send, Settings, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
+import remarkGfm from "remark-gfm";
 
 export type Locale = "ko" | "en";
 type Role = "member" | "admin";
@@ -406,7 +409,14 @@ export default function App() {
           {messages.map((message, index) => <article className={`message ${message.role}`} key={index}>
             <div className="avatar">{message.role === "user" ? "U" : <Sparkles size={15}/>}</div>
             <div className="message-body">
-              <p>{message.content || <span className="cursor"/>}</p>
+              <div className="markdown">
+                {message.content
+                  ? <ReactMarkdown
+                      remarkPlugins={[remarkGfm, remarkBreaks]}
+                      components={{ a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer"/> }}
+                    >{message.content}</ReactMarkdown>
+                  : <span className="cursor"/>}
+              </div>
               {message.citations && message.citations.length > 0 && <div className="sources"><span>{t.sources}</span>{message.citations.map(citation => <button key={`${citation.document_id}-${citation.chunk}`}><BookOpen size={13}/>{citation.title}<ChevronRight size={13}/></button>)}</div>}
             </div>
           </article>)}
