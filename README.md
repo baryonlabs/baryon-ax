@@ -15,6 +15,7 @@ The platform brings a chat workspace, agent execution, grounded knowledge search
 ## What works today
 
 - Chat UI with model selection and token streaming
+- Keyboard-first composer: `Shift+Enter` sends, `Enter` starts a new line
 - Korean-first bilingual UI (한국어 / English), with browser-language detection and persisted preference
 - OpenAI-compatible model adapter (`MODEL_BASE_URL`) with end-to-end token streaming and a safe local demo fallback
 - Input/output policy checks and basic PII masking, including chunk-boundary-safe streaming masks
