@@ -701,6 +701,26 @@ class MemoryService:
                 qdrant_url = urlparse(os.getenv("QDRANT_URL", "http://127.0.0.1:6333"))
                 history_path = Path(os.getenv("MEM0_HISTORY_DB", "/tmp/baryon-ax-mem0/history.db"))
                 history_path.parent.mkdir(parents=True, exist_ok=True)
+                provider = os.getenv("MEM0_LLM_PROVIDER", "ollama").lower()
+                if provider == "openai":
+                    llm_config = {
+                        "provider": "openai",
+                        "config": {
+                            "model": os.getenv("MEM0_LLM_MODEL", self.default_model),
+                            "openai_base_url": os.getenv("MEM0_LLM_BASE_URL", "http://127.0.0.1:11434/v1"),
+                            "api_key": os.getenv("MEM0_LLM_API_KEY", "none"),
+                            "max_tokens": 500,
+                        },
+                    }
+                else:
+                    llm_config = {
+                        "provider": "ollama",
+                        "config": {
+                            "model": os.getenv("MEM0_LLM_MODEL", self.default_model),
+                            "ollama_base_url": os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
+                            "max_tokens": 500,
+                        },
+                    }
                 config = {
                     "vector_store": {
                         "provider": "qdrant",
@@ -711,14 +731,7 @@ class MemoryService:
                             "embedding_model_dims": int(os.getenv("EMBEDDING_DIMENSION", "384")),
                         },
                     },
-                    "llm": {
-                        "provider": "ollama",
-                        "config": {
-                            "model": os.getenv("MEM0_LLM_MODEL", self.default_model),
-                            "ollama_base_url": os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
-                            "max_tokens": 500,
-                        },
-                    },
+                    "llm": llm_config,
                     "embedder": {
                         "provider": "fastembed",
                         "config": {
