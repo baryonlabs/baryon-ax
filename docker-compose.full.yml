@@ -1,0 +1,33 @@
+# Full-stack override: API in Compose talks to the deps profile and to
+# host services (Ollama for inference, Langfuse for tracing).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.full.yml --profile deps up -d --build
+services:
+  api:
+    build:
+      context: ./apps/api
+      args:
+        PRELOAD_EMBEDDINGS: "true"
+        EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-baryon}:${POSTGRES_PASSWORD:-baryon}@postgres:5432/${POSTGRES_DB:-baryon}
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      MODEL_BASE_URL: ${OLLAMA_HOST_URL:-http://host.docker.internal:11434}/v1
+      MODEL_NAME: ${MODEL_NAME:-qwen2.5:7b}
+      MODEL_API_KEY: ${MODEL_API_KEY:-ollama}
+      MEM0_ENABLED: "true"
+      MEM0_LLM_MODEL: ${MODEL_NAME:-qwen2.5:7b}
+      OLLAMA_BASE_URL: ${OLLAMA_HOST_URL:-http://host.docker.internal:11434}
+      MEM0_HISTORY_DB: /data/mem0/history.db
+      LANGFUSE_ENABLED: "true"
+      LANGFUSE_HOST: http://host.docker.internal:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      qdrant:
+        condition: service_started
