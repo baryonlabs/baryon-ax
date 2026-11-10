@@ -1,0 +1,50 @@
+# B300 host deployment: platform + data services + Langfuse, with persistent /data volumes.
+# Use after creating the langfuse database and the data directories:
+#   docker exec baryon-ax-postgres-1 psql -U baryon -d postgres -c 'CREATE DATABASE langfuse;'
+services:
+  api:
+    volumes: !override
+      - /data/baryon-b300/baryon-ax-data/documents:/data/documents
+      - /data/baryon-b300/baryon-ax-data/audit:/data/audit
+      - /data/baryon-b300/baryon-ax-data/mem0:/data/mem0
+      - /data/baryon-b300/baryon-ax-data/fastembed:/data/fastembed
+    environment:
+      LANGFUSE_ENABLED: "true"
+      LANGFUSE_HOST: http://langfuse:3000
+    depends_on:
+      langfuse:
+        condition: service_healthy
+
+  postgres:
+    volumes: !override
+      - /data/baryon-b300/baryon-ax-data/postgres:/var/lib/postgresql/data
+
+  qdrant:
+    volumes: !override
+      - /data/baryon-b300/baryon-ax-data/qdrant:/qdrant/storage
+
+  langfuse:
+    image: langfuse/langfuse:2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-baryon}:${POSTGRES_PASSWORD}@postgres:5432/langfuse
+      NEXTAUTH_URL: http://127.0.0.1:3102
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
+      SALT: ${LANGFUSE_SALT}
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_INIT_ORG_ID: baryon-ax-b300
+      LANGFUSE_INIT_ORG_NAME: Baryon AX B300
+      LANGFUSE_INIT_PROJECT_ID: baryon-ax-b300-project
+      LANGFUSE_INIT_PROJECT_NAME: baryon-ax-b300
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+      LANGFUSE_INIT_USER_EMAIL: b300@baryon.local
+    ports:
+      - "127.0.0.1:3102:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://'+require('os').hostname()+':3000/api/public/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 30

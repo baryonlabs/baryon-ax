@@ -18,13 +18,13 @@ services:
       MODEL_API_KEY: ${MODEL_API_KEY:-ollama}
       MODEL_DISABLE_THINKING: ${MODEL_DISABLE_THINKING:-false}
       MODEL_CHAT_TEMPLATE_KWARGS: ${MODEL_CHAT_TEMPLATE_KWARGS:-}
-      MEM0_ENABLED: "true"
+      MEM0_ENABLED: ${MEM0_ENABLED:-true}
       MEM0_LLM_MODEL: ${MEM0_LLM_MODEL:-qwen2.5:7b}
-      MEM0_TELEMETRY: "false"
+      MEM0_TELEMETRY: ${MEM0_TELEMETRY:-false}
       OLLAMA_BASE_URL: ${OLLAMA_HOST_URL:-http://host.docker.internal:11434}
       MEM0_HISTORY_DB: /data/mem0/history.db
-      LANGFUSE_ENABLED: "true"
-      LANGFUSE_HOST: http://host.docker.internal:3000
+      LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-true}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-http://host.docker.internal:3000}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
