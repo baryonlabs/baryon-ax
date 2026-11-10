@@ -179,6 +179,26 @@ def test_memory_endpoints_are_disabled_without_mem0() -> None:
     assert client.get("/v1/memories/search", params={"q": "remember"}, headers=headers()).status_code == 503
 
 
+def test_system_prompt_enforces_korean_and_grounding(monkeypatch) -> None:
+    monkeypatch.setenv("MODEL_PROMPT_PROFILE", "auto")
+    adapter = ModelAdapter()
+    request = ChatRequest(messages=[Message(role="user", content="우리 조직은?")], locale="ko")
+    prompt = adapter.system_prompt(request, Principal("user", "local-org", {"member"}), [])
+    assert "한국어로만" in prompt
+    assert "지어내지 마세요" in prompt
+    assert "제공된 문서에서" in prompt
+    assert "local-org" in prompt
+    assert "없음" in prompt
+
+
+def test_qwen35_prompt_profile_is_selected(monkeypatch) -> None:
+    monkeypatch.setenv("MODEL_PROMPT_PROFILE", "qwen35")
+    adapter = ModelAdapter()
+    request = ChatRequest(messages=[Message(role="user", content="hello")], locale="ko")
+    prompt = adapter.system_prompt(request, None, [])
+    assert "사고 과정" in prompt
+
+
 def test_model_adapter_can_disable_qwen_thinking(monkeypatch) -> None:
     monkeypatch.setenv("MODEL_DISABLE_THINKING", "true")
     monkeypatch.delenv("MODEL_CHAT_TEMPLATE_KWARGS", raising=False)
@@ -213,6 +233,12 @@ def test_citations_do_not_expose_document_content() -> None:
     assert "010-9876-5432" not in response.text
     assert "[REDACTED-PHONE]" in response.text
     assert all("content" not in citation for citation in response.json()["citations"])
+
+
+def test_pii_masking_does_not_redact_timestamps() -> None:
+    engine = PolicyEngine()
+    assert engine.mask_output("stack-1794334691.md") == "stack-1794334691.md"
+    assert engine.mask_output("연락처는 010-1234-5678입니다.") == "연락처는 [REDACTED-PHONE]입니다."
 
 
 def test_pii_masking_spans_stream_chunks() -> None:
