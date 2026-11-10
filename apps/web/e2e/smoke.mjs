@@ -67,6 +67,14 @@ try {
     assert.ok((await page.locator(".sources button").count()) >= 1);
   });
 
+  await step("markdown renders in user messages", async () => {
+    await page.locator("textarea").fill("**Markdown bold** 확인");
+    await page.locator("textarea").press("Shift+Enter");
+    await page.waitForFunction(() => {
+      return [...document.querySelectorAll("article.user .markdown strong")].some(element => element.textContent === "Markdown bold");
+    }, null, { timeout: 20000 });
+  });
+
   await step("member role is blocked from the audit log", async () => {
     await page.getByRole("button", { name: "거버넌스", exact: true }).click();
     await page.waitForFunction(() => document.body.innerText.includes("관리자 역할이 필요합니다"), null, { timeout: 10000 });
