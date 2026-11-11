@@ -32,6 +32,7 @@ from .ingest.mime import sniff_mime
 from .ingest.parsers import ParseError
 from .ingest.pipeline import PipelineConfig, PermanentError, run_pipeline
 from .gaps import GapStore, PackStore, build_pack, cluster_gaps, verify_pack
+from .tacit import TacitStore, suggest_questions
 
 logger = logging.getLogger("baryon.ax")
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
@@ -87,6 +88,19 @@ class ChatRequest(BaseModel):
 class OntologyPackRequest(BaseModel):
     gap_ids: list[str] = Field(min_length=1, max_length=100)
     name: str = Field(default="", max_length=120)
+
+
+class TacitEntryCreate(BaseModel):
+    question: str = Field(min_length=2, max_length=500)
+    answer: str = Field(min_length=1, max_length=20000)
+    attachment_ids: list[str] = Field(default_factory=list, max_length=10)
+    gap_id: str | None = None
+    source: str = Field(default="template", max_length=20)
+
+
+class TacitEntryUpdate(BaseModel):
+    answer: str | None = Field(default=None, max_length=20000)
+    attachment_ids: list[str] | None = Field(default=None, max_length=10)
 
 
 class DocumentUpdate(BaseModel):
@@ -1287,6 +1301,7 @@ JOBS: dict[str, IngestJob] = {}
 JOBS_LOCK = threading.Lock()
 gap_store = GapStore()
 pack_store = PackStore()
+tacit_store = TacitStore()
 ONTOLOGY_COVERAGE_THRESHOLD = float(os.getenv("ONTOLOGY_COVERAGE_THRESHOLD", "0.8"))
 INGEST_PIPELINE_CONFIG = PipelineConfig(
     queue_maxsize=int(os.getenv("INGEST_QUEUE_MAXSIZE", "32")),
@@ -1712,6 +1727,32 @@ def citation_payload(citations: list[dict]) -> list[dict]:
     return [{"document_id": item["document_id"], "title": item["title"], "chunk": item["chunk"]} for item in citations]
 
 
+def resolve_attachments(principal: Principal, ids: list[str]) -> list[dict[str, str]]:
+    attachments: list[dict[str, str]] = []
+    for document_id in ids[:10]:
+        document = documents.documents.get(document_id)
+        if not document or document.organization_id != principal.organization_id:
+            continue
+        if not documents.can_view(principal, document):
+            continue
+        attachments.append({"document_id": document.id, "title": document.title})
+    return attachments
+
+
+def render_tacit_answer(entry) -> str:
+    lines = [
+        f"# 암묵지: {entry.question}",
+        "",
+        f"> 답변자: {entry.author_id}",
+        f"> 작성일: {entry.created_at}",
+        "",
+        entry.answer,
+    ]
+    if entry.attachments:
+        lines.extend(["", "## 첨부", *[f"- {item.get('title', '')}" for item in entry.attachments]])
+    return "\n".join(lines)
+
+
 def record_knowledge_gap(principal: Principal, request: ChatRequest, answer: str, citations: list[dict], trace_id: str) -> None:
     """Record an ungrounded exchange and emit an audit event.
 
@@ -1842,6 +1883,118 @@ async def chat(
             "choices": [{"index": 0, "message": {"role": "assistant", "content": answer}, "finish_reason": "stop"}],
             "citations": citation_payload(citations),
             "trace": _finish_trace(trace_payload, model_ms, audit_ms, started, trace_id)}
+
+
+@app.get("/v1/tacit/questions")
+async def tacit_questions(
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    questions = suggest_questions(
+        organization_id=principal.organization_id,
+        user_id=principal.user_id,
+        is_admin="admin" in principal.roles,
+        gap_store=gap_store,
+    )
+    return {
+        "data": questions,
+        "summary": tacit_store.summary(principal.organization_id),
+        "open_gaps": gap_store.summary(principal.organization_id)["open"],
+    }
+
+
+@app.get("/v1/tacit/entries")
+async def tacit_entries(
+    scope: str = Query("mine"), status: str | None = Query(None), limit: int = Query(100, ge=1, le=300),
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    author_id = None if (scope == "all" and "admin" in principal.roles) else principal.user_id
+    entries = tacit_store.list(principal.organization_id, author_id=author_id, status=status, limit=limit)
+    return {"data": [entry.as_dict() for entry in entries], "summary": tacit_store.summary(principal.organization_id)}
+
+
+@app.post("/v1/tacit/entries")
+async def create_tacit_entry(
+    payload: TacitEntryCreate,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    attachments = resolve_attachments(principal, payload.attachment_ids)
+    entry = tacit_store.create(
+        organization_id=principal.organization_id,
+        author_id=principal.user_id,
+        question=payload.question,
+        answer=payload.answer,
+        attachments=attachments,
+        gap_id=payload.gap_id,
+        source=payload.source,
+    )
+    trace_id = str(uuid.uuid4())
+    audit.emit(
+        "tacit.recorded", principal, trace_id,
+        entry_id=entry.id, question=entry.question[:200], attachments=len(attachments), gap_id=entry.gap_id,
+    )
+    return entry.as_dict()
+
+
+@app.patch("/v1/tacit/entries/{entry_id}")
+async def update_tacit_entry(
+    entry_id: str, payload: TacitEntryUpdate,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    attachments = resolve_attachments(principal, payload.attachment_ids) if payload.attachment_ids is not None else None
+    try:
+        entry = tacit_store.update(
+            principal.organization_id, entry_id,
+            answer=payload.answer, attachments=attachments,
+            actor_id=principal.user_id, is_admin="admin" in principal.roles,
+        )
+    except PermissionError as error:
+        raise HTTPException(403, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
+    if not entry:
+        raise HTTPException(404, "Answer not found")
+    return entry.as_dict()
+
+
+@app.post("/v1/tacit/entries/{entry_id}/publish")
+async def publish_tacit_entry(
+    entry_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    entry = tacit_store.get(principal.organization_id, entry_id)
+    if not entry:
+        raise HTTPException(404, "Answer not found")
+    if entry.author_id != principal.user_id and "admin" not in principal.roles:
+        raise HTTPException(403, "Only the author or an administrator can publish this answer")
+    if entry.status == "published":
+        return entry.as_dict()
+
+    trace_id = str(uuid.uuid4())
+    filename = f"tacit-{entry.id}.md"
+    document = await ingest_upload(
+        principal, filename, render_tacit_answer(entry).encode("utf-8"),
+        {"member", "admin"}, trace_id, mime="text/markdown",
+    )
+    published = tacit_store.mark_published(principal.organization_id, entry.id, document.id)
+    if entry.gap_id:
+        gap = gap_store.get(principal.organization_id, entry.gap_id)
+        if gap and gap.status == "open":
+            gap_store.mark_resolved(principal.organization_id, [entry.gap_id], "")
+            audit.emit(
+                "knowledge.gap_resolved", principal, trace_id,
+                gap_id=entry.gap_id, question=gap.question[:200], trigger="tacit",
+            )
+    audit.emit(
+        "tacit.published", principal, trace_id,
+        entry_id=entry.id, document_id=document.id, question=entry.question[:200],
+        attachments=len(entry.attachments), gap_id=entry.gap_id,
+    )
+    return (published or entry).as_dict()
 
 
 @app.get("/v1/audit-events")

@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir . \
     && mkdir -p /data/fastembed \
     && if [ "$PRELOAD_EMBEDDINGS" = "true" ]; then python -c "from fastembed import TextEmbedding; model = TextEmbedding('$EMBEDDING_MODEL'); list(model.embed(['warmup']))"; fi \
     && useradd --create-home --uid 10001 baryon \
-    && mkdir -p /data/documents /data/audit /data/mem0 /data/gaps /data/ontology \
+    && mkdir -p /data/documents /data/audit /data/mem0 /data/gaps /data/ontology /data/tacit \
     && chown -R baryon:baryon /data
 USER baryon
 EXPOSE 8000

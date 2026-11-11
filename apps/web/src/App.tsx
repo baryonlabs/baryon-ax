@@ -1,12 +1,12 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, Bot, Boxes, Brain, ChevronRight, Cpu, ExternalLink, FileCode, FileImage, FileSpreadsheet, FileText, FileType, FileUp, Globe2, HardDrive, Network, Plus, RefreshCw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Trash2, UploadCloud, X } from "lucide-react";
+import { BookOpen, Bot, Boxes, Brain, ChevronRight, Cpu, ExternalLink, FileCode, FileImage, FileSpreadsheet, FileText, FileType, FileUp, Globe2, HardDrive, MessagesSquare, Network, Paperclip, Plus, RefreshCw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Trash2, UploadCloud, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
 export type Locale = "ko" | "en";
 type Role = "member" | "admin";
-type View = "chat" | "knowledge" | "memory" | "governance" | "gaps" | "settings";
+type View = "chat" | "knowledge" | "memory" | "governance" | "gaps" | "tacit" | "settings";
 type TraceStep = { step: string; status: string; ms: number; detail?: string };
 type ChatTrace = { trace_id?: string; steps: TraceStep[]; total_ms?: number | null; memory_count?: number; retrieval_count?: number };
 type ChatMessage = { role: "user" | "assistant"; content: string; citations?: Citation[]; trace?: ChatTrace };
@@ -42,6 +42,14 @@ type OntologyPack = {
   entities: { name: string; type: string }[]; relations: { from: string; type: string; to: string }[];
   required_sources: { kind: string; hint: string }[]; acceptance_questions: string[]; source_gap_ids: string[];
   verification?: PackVerification;
+};
+type TacitQuestion = {
+  id: string; question: string; source: string; gap_id?: string; category?: string;
+  occurrences: number; reasons: string[]; terms: string[];
+};
+type TacitEntry = {
+  id: string; question: string; answer: string; attachments: { document_id: string; title: string }[];
+  status: string; source: string; gap_id?: string | null; created_at: string; published_document_id?: string | null;
 };
 type ContainerInfo = { name: string; image: string; status: string; health?: string | null; project?: string; ports: string[] };
 type SystemInfo = {
@@ -198,6 +206,14 @@ const copy = {
     approvePack: "승인", verifyPack: "재검증", verifying: "검증 중…", coverage: "커버리지", resolved: "해결",
     statusReviewed: "검토됨", statusActive: "활성", packVerified: (name: string, coverage: number) => `${name} 커버리지 ${Math.round(coverage * 100)}%`,
     verifyFailed: "재검증에 실패했습니다.", missingTerms: "부족한 용어",
+    tacit: "암묵지", tacitBody: "문서에 없는 판단 기준·예외·용어를 질문으로 끌어내고, 답변을 검색 가능한 지식으로 게시합니다.",
+    tacitQuestions: "질문", tacitMyAnswers: "내 답변", tacitAllAnswers: "전체 답변", answerThis: "답하기",
+    tacitPlaceholder: "경험에서 나온 판단 기준과 이유를 적어 주세요…", attach: "첨부", submitAnswer: "답변 저장",
+    tacitSaved: "답변을 저장했습니다.", publishAnswer: "지식으로 게시", tacitDraft: "작성됨", tacitPublished: "게시됨",
+    tacitPublishedMessage: (title: string) => `${title} 문서로 게시했습니다. 이제 검색과 답변에 사용됩니다.`,
+    tacitFailed: "답변을 저장할 수 없습니다.", noTacit: "아직 답변이 없습니다",
+    noTacitBody: "질문에 답하면 여기에 쌓이고, 게시하면 검색 가능한 지식이 됩니다.",
+    fromGap: "미해결 질문", fromTemplate: "템플릿", scopeMine: "내 답변", scopeAll: "전체 답변",
   },
   en: {
     welcome: "Baryon AX is ready. Ask a question or upload a Markdown document to ground the conversation.",
@@ -257,6 +273,14 @@ const copy = {
     approvePack: "Approve", verifyPack: "Re-verify", verifying: "Verifying…", coverage: "Coverage", resolved: "Resolved",
     statusReviewed: "Reviewed", statusActive: "Active", packVerified: (name: string, coverage: number) => `${name} coverage ${Math.round(coverage * 100)}%`,
     verifyFailed: "Re-verification failed.", missingTerms: "Missing terms",
+    tacit: "Tacit knowledge", tacitBody: "Elicit judgement rules, exceptions, and local vocabulary, then publish answers as searchable knowledge.",
+    tacitQuestions: "Questions", tacitMyAnswers: "My answers", tacitAllAnswers: "All answers", answerThis: "Answer",
+    tacitPlaceholder: "Describe the judgement rule and why it matters…", attach: "Attach", submitAnswer: "Save answer",
+    tacitSaved: "Answer saved.", publishAnswer: "Publish as knowledge", tacitDraft: "Draft", tacitPublished: "Published",
+    tacitPublishedMessage: (title: string) => `Published as ${title}. It is now searchable and used in answers.`,
+    tacitFailed: "Could not save the answer.", noTacit: "No answers yet",
+    noTacitBody: "Answers appear here; publishing makes them searchable knowledge.",
+    fromGap: "Open gap", fromTemplate: "Template", scopeMine: "Mine", scopeAll: "All",
   },
 } as const;
 
@@ -307,6 +331,16 @@ export default function App() {
   const [gapsError, setGapsError] = useState<"forbidden" | "failed" | null>(null);
   const [gapBusy, setGapBusy] = useState(false);
   const [gapMessage, setGapMessage] = useState("");
+  const [tacitQuestions, setTacitQuestions] = useState<TacitQuestion[]>([]);
+  const [tacitEntries, setTacitEntries] = useState<TacitEntry[]>([]);
+  const [tacitSelected, setTacitSelected] = useState<TacitQuestion | null>(null);
+  const [tacitAnswer, setTacitAnswer] = useState("");
+  const [tacitAttachments, setTacitAttachments] = useState<KnowledgeDocument[]>([]);
+  const [tacitBusy, setTacitBusy] = useState(false);
+  const [tacitMessage, setTacitMessage] = useState("");
+  const [tacitError, setTacitError] = useState<"failed" | null>(null);
+  const [tacitScope, setTacitScope] = useState<"mine" | "all">("mine");
+  const tacitFileInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => { fetch(`${API}/v1/models`).then(response => response.json()).then(result => result.data?.[0] && setModel(result.data[0].id)).catch(() => undefined); }, []);
@@ -447,7 +481,86 @@ export default function App() {
     }
   }, [gapBusy, role, loadGaps, t]);
 
+  const loadTacit = useCallback(async () => {
+    try {
+      const [questionResponse, entryResponse] = await Promise.all([
+        fetch(`${API}/v1/tacit/questions`, { headers: identity(role) }),
+        fetch(`${API}/v1/tacit/entries?scope=${tacitScope}`, { headers: identity(role) }),
+      ]);
+      if (!questionResponse.ok || !entryResponse.ok) throw new Error("Tacit load failed");
+      setTacitQuestions((await questionResponse.json()).data);
+      setTacitEntries((await entryResponse.json()).data);
+      setTacitError(null);
+    } catch {
+      setTacitError("failed");
+    }
+  }, [role, tacitScope]);
+
+  const uploadTacitAttachment = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setTacitBusy(true);
+    try {
+      for (const file of Array.from(files)) {
+        const data = new FormData(); data.append("file", file);
+        const response = await fetch(`${API}/v1/documents`, { method: "POST", body: data, headers: identity(role) });
+        if (!response.ok) throw new Error("Attachment upload failed");
+        const uploaded = await response.json();
+        setTacitAttachments(previous => [...previous, {
+          id: uploaded.id, title: uploaded.title, owner_id: "", allowed_roles: [], created_at: "", chunks: uploaded.chunks,
+        }]);
+      }
+    } catch {
+      setTacitMessage(t.tacitFailed);
+    } finally {
+      setTacitBusy(false);
+      if (tacitFileInput.current) tacitFileInput.current.value = "";
+    }
+  }, [role, t]);
+
+  const submitTacit = useCallback(async () => {
+    if (!tacitSelected || !tacitAnswer.trim() || tacitBusy) return;
+    setTacitBusy(true); setTacitMessage("");
+    try {
+      const response = await fetch(`${API}/v1/tacit/entries`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...identity(role) },
+        body: JSON.stringify({
+          question: tacitSelected.question,
+          answer: tacitAnswer,
+          attachment_ids: tacitAttachments.map(item => item.id),
+          gap_id: tacitSelected.gap_id ?? null,
+          source: tacitSelected.source,
+        }),
+      });
+      if (!response.ok) throw new Error("Tacit save failed");
+      setTacitMessage(t.tacitSaved);
+      setTacitSelected(null); setTacitAnswer(""); setTacitAttachments([]);
+      await loadTacit();
+    } catch {
+      setTacitMessage(t.tacitFailed);
+    } finally {
+      setTacitBusy(false);
+    }
+  }, [tacitSelected, tacitAnswer, tacitAttachments, tacitBusy, role, loadTacit, t]);
+
+  const publishTacit = useCallback(async (entry: TacitEntry) => {
+    if (tacitBusy) return;
+    setTacitBusy(true); setTacitMessage("");
+    try {
+      const response = await fetch(`${API}/v1/tacit/entries/${entry.id}/publish`, { method: "POST", headers: identity(role) });
+      if (!response.ok) throw new Error("Publish failed");
+      const published = await response.json();
+      setTacitMessage(t.tacitPublishedMessage(published.published_document_id ?? entry.question));
+      await loadTacit();
+    } catch {
+      setTacitMessage(t.tacitFailed);
+    } finally {
+      setTacitBusy(false);
+    }
+  }, [tacitBusy, role, loadTacit, t]);
+
   useEffect(() => { if (view === "knowledge") void loadKnowledge(); }, [view, loadKnowledge]);
+  useEffect(() => { if (view === "tacit") void loadTacit(); }, [view, loadTacit]);
   useEffect(() => { if (view === "memory") void loadMemories(); }, [view, loadMemories]);
   useEffect(() => { if (view === "governance") void loadAudit(); }, [view, loadAudit]);
   useEffect(() => { if (view === "gaps") void loadGaps(); }, [view, loadGaps]);
@@ -681,6 +794,7 @@ export default function App() {
     if (view === "memory") return t.memory;
     if (view === "governance") return t.auditLog;
     if (view === "gaps") return t.gaps;
+    if (view === "tacit") return t.tacit;
     if (view === "settings") return t.adminSettings;
     return t.groundedChat;
   }
@@ -704,6 +818,7 @@ export default function App() {
       <nav>
         <button className={view === "chat" ? "active" : ""} onClick={() => setView("chat")}><Bot size={16}/>{t.chat}</button>
         <button className={view === "knowledge" ? "active" : ""} onClick={() => setView("knowledge")}><BookOpen size={16}/>{t.knowledge}</button>
+        <button className={view === "tacit" ? "active" : ""} onClick={() => setView("tacit")}><MessagesSquare size={16}/>{t.tacit}</button>
         <button className={view === "memory" ? "active" : ""} onClick={() => setView("memory")}><Brain size={16}/>{t.memory}</button>
         <button className={view === "governance" ? "active" : ""} onClick={() => setView("governance")}><ShieldCheck size={16}/>{t.governance}</button>
         {role === "admin" && <button className={view === "gaps" ? "active" : ""} onClick={() => setView("gaps")}><Network size={16}/>{t.gaps}</button>}
@@ -855,6 +970,53 @@ export default function App() {
             <code title={event.trace_id}>{event.trace_id}</code>
           </div>)}
         </div>}
+      </div>}
+      {view === "tacit" && <div className="knowledge">
+        <div className="knowledge-top">
+          <div><h2>{t.tacit}</h2><p>{t.tacitBody}</p></div>
+          <button className="primary" onClick={() => void loadTacit()}><RefreshCw size={16}/>{t.refresh}</button>
+        </div>
+        {tacitError ? <div className="empty"><MessagesSquare size={28}/><h3>{t.failed}</h3><p>{t.scope}</p></div> : <>
+          <h3 className="section-label">{t.tacitQuestions}</h3>
+          {tacitQuestions.length === 0 ? <div className="empty"><MessagesSquare size={28}/><h3>{t.noTacit}</h3><p>{t.noTacitBody}</p></div> : <div className="cluster-grid">
+            {tacitQuestions.map(question => <article className={`cluster-card tacit-question ${tacitSelected?.id === question.id ? "selected" : ""}`} key={question.id}>
+              <header><strong>{question.question}</strong><span className="badge">{question.source === "gap" ? t.fromGap : t.fromTemplate}</span></header>
+              {question.category && <p className="muted">{question.category}{question.occurrences > 1 ? ` · ${t.occurrences} ${question.occurrences}` : ""}</p>}
+              <button className="primary" onClick={() => { setTacitSelected(question); setTacitAnswer(""); setTacitAttachments([]); setTacitMessage(""); }}><MessagesSquare size={15}/>{t.answerThis}</button>
+            </article>)}
+          </div>}
+          {tacitSelected && <section className="tacit-form">
+            <h3>{tacitSelected.question}</h3>
+            <textarea value={tacitAnswer} onChange={event => setTacitAnswer(event.target.value)} placeholder={t.tacitPlaceholder} rows={6}/>
+            <div className="tacit-attachments">
+              <input ref={tacitFileInput} type="file" multiple hidden onChange={event => void uploadTacitAttachment(event.target.files)}/>
+              <button className="ghost" disabled={tacitBusy} onClick={() => tacitFileInput.current?.click()}><Paperclip size={15}/>{t.attach}</button>
+              {tacitAttachments.map(item => <span className="chip" key={item.id}>{item.title}<button aria-label={t.cancel} onClick={() => setTacitAttachments(previous => previous.filter(item2 => item2.id !== item.id))}><X size={12}/></button></span>)}
+            </div>
+            <div className="tacit-actions">
+              <button className="primary" disabled={tacitBusy || !tacitAnswer.trim()} onClick={() => void submitTacit()}><Send size={15}/>{t.submitAnswer}</button>
+              <button className="ghost" onClick={() => { setTacitSelected(null); setTacitAnswer(""); setTacitAttachments([]); }}>{t.cancel}</button>
+            </div>
+            {tacitMessage && <p className="settings-note">{tacitMessage}</p>}
+          </section>}
+          <div className="knowledge-top tacit-entries-head">
+            <h3 className="section-label">{role === "admin" && tacitScope === "all" ? t.tacitAllAnswers : t.tacitMyAnswers}</h3>
+            {role === "admin" && <div className="scope-toggle">
+              <button className={tacitScope === "mine" ? "active" : ""} onClick={() => setTacitScope("mine")}>{t.scopeMine}</button>
+              <button className={tacitScope === "all" ? "active" : ""} onClick={() => setTacitScope("all")}>{t.scopeAll}</button>
+            </div>}
+          </div>
+          {tacitEntries.length === 0 ? <div className="empty"><MessagesSquare size={28}/><h3>{t.noTacit}</h3><p>{t.noTacitBody}</p></div> : <div className="pack-list">
+            {tacitEntries.map(entry => <article className="pack" key={entry.id}>
+              <header><strong>{entry.question}</strong><span className="badge">{entry.status === "published" ? t.tacitPublished : t.tacitDraft}</span></header>
+              <p>{entry.answer.slice(0, 280)}</p>
+              {entry.attachments.length > 0 && <div className="chips">{entry.attachments.map(item => <span className="chip" key={item.document_id}>{item.title}</span>)}</div>}
+              {entry.status !== "published" && <div className="pack-actions">
+                <button className="primary" disabled={tacitBusy} onClick={() => void publishTacit(entry)}><Sparkles size={15}/>{t.publishAnswer}</button>
+              </div>}
+            </article>)}
+          </div>}
+        </>}
       </div>}
       {view === "gaps" && <div className="knowledge">
         <div className="knowledge-top">

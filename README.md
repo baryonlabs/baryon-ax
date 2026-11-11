@@ -29,6 +29,7 @@ Seven captured screens cover grounded chat, the source viewer, knowledge upload,
 - Durable document upload with **MIME-based parser routing** (HWP/HWPX/PDF/Office/images via kordoc/docling/Tika sidecars), **structure-aware chunking** (heading paths, table headers), **Qdrant vector retrieval** with lexical fallback, and source citations
 - **LangGraph** policy/retrieval orchestration, **FastEmbed** multilingual embeddings
 - Role-aware document ACLs, inline administrator editing, and organization isolation
+- **Tacit knowledge capture**: question-and-answer sessions (from open gaps or curated prompts) with file attachments; publishing an answer indexes it as searchable knowledge
 - **Knowledge-gap capture**: ungrounded or vague answers are clustered into admin-reviewed **ontology pack drafts** (entities, relations, required sources)
 - **PostgreSQL audit events** with JSONL mirroring, **Redis rate limiting**, and **Langfuse tracing**
 - **Mem0 user memory** with Qdrant + Ollama, managed from a dedicated UI tab and **injected into chat answers**
@@ -140,6 +141,9 @@ See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/b300-v
 | `GET /v1/memories/search` | Semantic memory search |
 | `DELETE /v1/memories/{id}` | Delete the caller's memory |
 | `GET /v1/audit-events` | Recent audit events for administrators |
+| `GET /v1/tacit/questions` | Suggested questions from open gaps and templates |
+| `POST /v1/tacit/entries` | Save an answer with attachment document ids |
+| `POST /v1/tacit/entries/{id}/publish` | Index the answer as a searchable document |
 | `GET /v1/admin/gaps` | Ungrounded questions with reasons and occurrence counts (admin) |
 | `GET /v1/admin/gaps/clusters` | Proposed ontology clusters (admin) |
 | `POST /v1/admin/ontology-packs` | Create a draft ontology pack from selected gaps (admin) |

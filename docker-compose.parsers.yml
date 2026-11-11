@@ -80,9 +80,11 @@ services:
       PARSER_TIMEOUT_SECONDS: ${PARSER_TIMEOUT_SECONDS:-180}
       GAP_STORE: /data/gaps/gaps.jsonl
       ONTOLOGY_STORE: /data/ontology
+      TACIT_STORE: /data/tacit/tacit.jsonl
     volumes:
       - gaps:/data/gaps
       - ontology:/data/ontology
+      - tacit:/data/tacit
     # No depends_on here on purpose: declaring it makes `up api` build/start
     # every parser even when only the API is wanted. Start parsers explicitly
     # with the same profile; the API degrades gracefully when they are absent.
@@ -91,3 +93,4 @@ volumes:
   docling-models:
   gaps:
   ontology:
+  tacit:

@@ -13,6 +13,7 @@ Before production use, implement these controls:
 - PostgreSQL audit events and the JSONL mirror are applied, but neither provides tamper evidence or a retention policy. Add append-only/WORM storage, signing, and organization-level retention before production.
 - A Redis fixed-window rate limit is applied per user and organization. Add CSRF strategy where cookie authentication is used, security headers, dependency scanning, distributed rate limits, and regular restore tests.
 - Remote vLLM is bound to the B300 loopback and reached through an SSH tunnel. Keep the tunnel on a trusted network, restrict `0.0.0.0:8020`, and terminate it after testing.
+- `TACIT_STORE` (tacit answers) contains free-text answers that may include operational detail or PII, plus attachment links. Treat it as confidential organizational knowledge: restrict access to the owning organization, apply retention, and review before publishing.
 - `GAP_STORE` (knowledge gaps) and `ONTOLOGY_STORE` (pack drafts) contain question text, answer excerpts, and inferred entities. Apply the same retention, redaction, and access rules as audit records; both files are administrator-readable API surfaces.
 - Langfuse traces, Mem0 memories, Qdrant payloads, and audit records may contain prompts or PII. Configure redaction, retention, deletion, and encryption for each store.
 - Chat Markdown is rendered with `react-markdown` without raw HTML (`rehype-raw` disabled), and links open with `rel="noreferrer"`. Do not enable raw HTML without sanitization.
