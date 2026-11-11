@@ -43,6 +43,15 @@ docker compose up --build
 
 Open `http://localhost:3001`. The default `demo-local` model works without an API key.
 
+To use a real model from the container stack, expose the host's loopback Ollama (it binds `127.0.0.1` by default) and let Compose reach it:
+
+```bash
+python3 scripts/ollama_proxy.py --listen-port 11435 &   # host -> 127.0.0.1:11434
+docker compose -f docker-compose.yml -f docker-compose.parsers.yml --profile parsers up -d api
+```
+
+Compose reads `MODEL_BASE_URL_DOCKER` (default `http://host.docker.internal:11435/v1`) and `MODEL_NAME` (default `qwen2.5:7b`). `/health` reports `model_adapter: openai-compatible` when connected. For remote vLLM, point `MODEL_BASE_URL_DOCKER` at the tunnel and set `MODEL_NAME` accordingly.
+
 To accept HWP/HWPX/PDF/Office/images, add the parser sidecars:
 
 ```bash

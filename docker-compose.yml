@@ -7,8 +7,9 @@ services:
     environment:
       DOCUMENT_STORE: /data/documents
       AUDIT_LOG: /data/audit/events.jsonl
-      MODEL_NAME: demo-local
-      MODEL_BASE_URL: ""
+      MODEL_NAME: ${MODEL_NAME:-qwen2.5:7b}
+      MODEL_BASE_URL: ${MODEL_BASE_URL_DOCKER:-http://host.docker.internal:11435/v1}
+      MODEL_API_KEY: ${MODEL_API_KEY:-ollama}
       QDRANT_URL: ""
       DATABASE_URL: ""
       REDIS_URL: ""
@@ -19,6 +20,8 @@ services:
       DOCKER_PROJECT: ${DOCKER_PROJECT:-baryon-ax}
       HOST_PROC: /host/proc
       HOST_HOSTNAME: ${HOST_HOSTNAME:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     group_add:
       - "${DOCKER_GID:-0}"
     volumes:

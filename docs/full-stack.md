@@ -28,6 +28,14 @@
 
 ### Docker Desktop
 
+호스트 Ollama는 기본적으로 `127.0.0.1:11434`에만 바인딩되므로 컨테이너에서 직접 닿지 않습니다. Compose로 띄울 때는 프록시를 함께 실행합니다.
+
+```bash
+python3 scripts/ollama_proxy.py --listen-port 11435 &
+```
+
+프록시가 없으면 API는 `demo-local` 폴백으로 동작합니다.
+
 - Docker Engine 29+, Compose v2 이상
 - 메모리 24GB 이상 권장 (Ollama 7B 모델 + Qdrant + Langfuse)
 
@@ -75,6 +83,7 @@ cp .env.example .env
 | --- | --- | --- |
 | `MODEL_BASE_URL` | `http://127.0.0.1:11434/v1` | 호스트 실행 시 Ollama OpenAI 호환 URL |
 | `MODEL_NAME` | `qwen2.5:7b` | 모델 ID |
+| `MODEL_BASE_URL_DOCKER` | `http://host.docker.internal:11435/v1` | Compose 컨테이너에서 보는 모델 URL |
 | `MODEL_TIMEOUT_SECONDS` | `180` | 모델 응답 대기 |
 | `MODEL_PROMPT_PROFILE` | `qwen35` | Qwen3.5용 시스템 프롬프트 (B300) |
 | `RETRIEVAL_MIN_SCORE` | `0.3` | Qdrant 검색 최소 유사도 |
