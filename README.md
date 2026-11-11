@@ -12,6 +12,12 @@ This repository is an executable Basic Core v0.6 reference implementation. It of
 
 The platform brings a chat workspace, agent execution, grounded knowledge search, and on-premises infrastructure into one operating model. The image summarizes the user flow—ask, run an agent, evaluate, and review evidence—and the responsibilities of each layer. It is the **target production architecture**; the Basic Core maps most of it to in-process adapters, and the full-stack profile connects the stateful services. See [docs/architecture.md](docs/architecture.md#compose-vs-target-architecture) for the component-by-component mapping.
 
+## Screenshots
+
+<a href="docs/screenshots.md"><img src="docs/images/gallery/01-chat.png" alt="Baryon AX grounded chat with sources and pipeline trace" width="760"></a>
+
+Seven captured screens cover grounded chat, the source viewer, knowledge upload, memory, governance, knowledge gaps, and admin system metrics. See [docs/screenshots.md](docs/screenshots.md).
+
 ## What works today
 
 - Chat UI with model selection, token streaming, and Markdown rendering (GFM)
