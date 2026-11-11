@@ -714,8 +714,8 @@ export default function App() {
   async function removeDocument(id: string) {
     const response = await fetch(`${API}/v1/documents/${id}`, { method: "DELETE", headers: identity(role) });
     if (response.ok) {
-      setKnowledge(previous => previous.filter(document => document.id !== id));
       if (editingId === id) setEditingId(null);
+      await loadKnowledge();
     }
   }
 

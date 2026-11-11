@@ -1666,6 +1666,7 @@ async def get_document(
         "id": document.id, "title": document.title, "owner_id": document.owner_id,
         "allowed_roles": sorted(document.allowed_roles), "created_at": document.created_at,
         "content": document.content, "chunks_count": len(chunks), "cited_chunk": cited,
+        "category": document.category, "tags": document.tags,
         "mime": document.metadata.get("mime", ""), "parser": document.metadata.get("parser", ""),
         "has_raw_file": raw is not None,
         "raw_filename": document.metadata.get("raw_filename", ""),
