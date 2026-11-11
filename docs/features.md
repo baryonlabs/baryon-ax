@@ -310,7 +310,7 @@
 
 | 항목 | 상태 | 결과/설명 |
 | --- | --- | --- |
-| API 단위·통합 테스트 | ✅ | **95 passed** |
+| API 단위·통합 테스트 | ✅ | **96 passed** |
 | Playwright E2E | ✅ | **15 checks passed** (`npm run test:e2e`, Vite/Compose) |
 | Web 타입체크·빌드 | ✅ | `tsc -b && vite build` 성공 |
 | 전체 스택 스모크 | ✅ | `scripts/smoke_full_stack.py` — health/upload/search/chat/audit/memory |
@@ -415,7 +415,7 @@
 ## 14. 검증 기준
 
 ```text
-API tests           95 passed
+API tests           96 passed
 Playwright E2E      15 checks passed (Vite 5173 / Compose 3001)
 Full-stack smoke    health + upload + Qdrant retrieval + chat + audit + Mem0
 Web build           tsc -b && vite build 성공
