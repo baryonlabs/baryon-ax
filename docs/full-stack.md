@@ -78,6 +78,13 @@ cp .env.example .env
 | `MODEL_TIMEOUT_SECONDS` | `180` | 모델 응답 대기 |
 | `MODEL_PROMPT_PROFILE` | `qwen35` | Qwen3.5용 시스템 프롬프트 (B300) |
 | `RETRIEVAL_MIN_SCORE` | `0.3` | Qdrant 검색 최소 유사도 |
+| `MAX_DOCUMENT_BYTES` | `20000000` | 업로드 상한 (PDF/HWP 대응) |
+| `KORDOC_URL` | `http://kordoc:8080` | kordoc sidecar (HWP/HWPX/HWPML) |
+| `DOCLING_URL` | `http://docling:8000` | docling sidecar (PDF/Office/이미지) |
+| `TIKA_URL` | `http://tika:9998` | Tika fallback (레거시 포맷) |
+| `PARSER_TIMEOUT_SECONDS` | `180` | 문서 1건 파싱 타임아웃 |
+| `INGEST_BATCH_SIZE` | `8` | 인제스트 배치 크기 |
+| `INGEST_MAX_IN_FLIGHT` | `4` | 동시 처리 문서 수 |
 | `DATABASE_URL` | `postgresql://baryon:baryon@127.0.0.1:5433/baryon` | 호스트 실행 시 Postgres |
 | `REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis |
 | `QDRANT_URL` | `http://127.0.0.1:6333` | Qdrant |
@@ -158,6 +165,43 @@ Qwen3.5는 thinking 출력을 끄기 위해 `MODEL_DISABLE_THINKING=true`를 사
 ### D. B300 호스트에 전체 플랫폼 배포
 
 vLLM만 B300에 두는 구성이 아니라 **플랫폼 전체를 B300에서 실행**하려면 [b300-host-deploy.md](b300-host-deploy.md)를 사용합니다. Web/API/Qdrant/PostgreSQL/Redis/Langfuse/Mem0가 모두 B300 컨테이너에서 실행되고, Mac은 SSH 터널로 접속합니다.
+
+### E. 파서 sidecar (HWP/PDF/Office/이미지)
+
+문서 포맷을 넓히려면 파서를 별도 컨테이너로 띄웁니다. API 프로세스는 파서를 직접 실행하지 않습니다.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.parsers.yml \
+  --profile parsers up -d --build
+```
+
+- `kordoc` — HWP 3.x/5.x, HWPX, HWPML → Markdown/구조 블록 (Node 20, `KORDOC_OFFLINE=1`, read-only, 4 GB limit)
+- `docling` — PDF/Office/이미지 → Markdown (python:3.12 + docling 이미지)
+- `tika` — 위 어댑터가 처리하지 못하는 레거시 포맷 fallback
+
+확인:
+
+```bash
+curl -s http://localhost:8000/health
+curl -s -X POST http://localhost:8000/v1/documents \
+  -H "X-User-Id: parser-test" -H "X-Organization-Id: parser-org" -H "X-Roles: admin" \
+  -F "file=@sample.hwpx"
+# {"parser":"kordoc","mime":"application/hwp+zip","chunks":4,...}
+```
+
+sidecar가 없으면 API는 text/markdown만 받습니다. 알 수 없는 바이너리는 415로 거절하고 `document.parse_failed` 감사를 남깁니다.
+
+docling은 첫 변환 전에 모델을 한 번 받아야 합니다(오프라인 배포 대비):
+
+```bash
+docker exec baryon-ax-docling-1 docling-tools models download \
+  layout tableformer rapidocr \
+  --rapidocr-backend-lang torch:ch --rapidocr-backend-lang torch:iso:ko \
+  -o /models
+docker compose -f docker-compose.yml -f docker-compose.parsers.yml restart docling
+```
+
+계약·보안 설정은 [deploy/parsers/README.md](../deploy/parsers/README.md)를 참고하세요.
 
 ## 5. 검증
 

@@ -34,7 +34,7 @@
 
 | 프로젝트 | ★ | 라이선스 | 역할 | 채택 |
 | --- | --- | --- | --- | --- |
-| **[kordoc](https://github.com/chrisryugj/kordoc)** | 2,958 | MIT | HWP 3.x/5.x·HWPX·HWPML·PDF·XLS/XLSX·DOCX·PPTX·이미지 → Markdown/IR/RAG 청크. 로컬 OCR(손글씨), 병합 셀 표, `--format chunks`, MCP 22개 도구, `KORDOC_OFFLINE=1`, gVisor 샌드박스 | **1순위.** Node 20+ |
+| **[kordoc](https://github.com/chrisryugj/kordoc)** | 2,958 | MIT | HWP 3.x/5.x·HWPX·HWPML·PDF·XLS/XLSX·DOCX·PPTX·이미지 → Markdown/IR/RAG 청크. 로컬 OCR(손글씨), 병합 셀 표, `--format chunks`, MCP 22개 도구, `KORDOC_OFFLINE=1`, gVisor 샌드박스 | **채택 — Docker sidecar** (`deploy/parsers/kordoc`) |
 | [rhwp](https://github.com/edwardkim/rhwp) | 4,095 | 확인 필요 | Rust/WASM HWP 뷰어·편집기 | 뷰어가 필요할 때 |
 | [hwp.js](https://github.com/hahnlee/hwp.js) | 1,307 | 확인 필요 | 웹 기반 HWP 파서 | 브라우저 미리보기 |
 | [pyhwp](https://github.com/mete0r/pyhwp) | 303 | NOASSERTION | Python HWP 5.x 파서 | 라이선스 불명 — 보류 |
@@ -53,12 +53,12 @@
 
 | 프로젝트 | ★ | 라이선스 | 강점 | 약점 | 위치 |
 | --- | --- | --- | --- | --- | --- |
-| **[docling](https://github.com/docling-project/docling)** | 70,393 | MIT | PDF 레이아웃·표·읽기순서·OCR, Office/HTML, 구조화 JSON, 청킹 친화 | 대형 PDF에서 느림 | **기본 파서** |
+| **[docling](https://github.com/docling-project/docling)** | 70,393 | MIT | PDF 레이아웃·표·읽기순서·OCR, Office/HTML, 구조화 JSON, 청킹 친화 | 대형 PDF에서 느림 | **채택 — Docker sidecar** (`deploy/parsers/docling`) |
 | **[markitdown](https://github.com/microsoft/markitdown)** | 194,790 | MIT | Office/PDF/HTML/오디오 → Markdown, 매우 가볍고 빠름 | 표 구조·레이아웃 정밀도 낮음 | 빠른 경로/미리보기 |
 | **[MinerU](https://github.com/opendatalab/MinerU)** | 83,452 | NOASSERTION | 복잡 PDF·수식·표 → Markdown/JSON, 에이전트 워크플로 지향 | 라이선스 확인 필요, GPU 선호 | 고품질 PDF 배치 |
 | **[marker](https://github.com/datalab-to/marker)** | 40,845 | Apache-2.0 | PDF→Markdown, 표·수식·이미지, 빠른 변환 | 모델 다운로드·GPU | 고품질 PDF 대안 |
 | **[unstructured](https://github.com/Unstructured-IO/unstructured)** | 15,713 | Apache-2.0 | 파티셔닝·청킹·메타데이터, ETL 지향 | 무거운 의존성, 일부 기능 유료 | 구조 추출 대안 |
-| **[Tika](https://github.com/apache/tika)** | 4,140 | Apache-2.0 | 1,000+ 포맷 탐지·텍스트/메타 추출 | 표·레이아웃 품질 낮음, JVM | **최후 fallback** |
+| **[Tika](https://github.com/apache/tika)** | 4,140 | Apache-2.0 | 1,000+ 포맷 탐지·텍스트/메타 추출 | 표·레이아웃 품질 낮음, JVM | **채택 — Docker sidecar** (`apache/tika`) |
 | **[gotenberg](https://github.com/gotenberg/gotenberg)** | 13,555 | MIT | Office/HTML → PDF 변환 API (Docker) | 변환만 담당 | Office→PDF 전처리 |
 | [mammoth](https://github.com/mwilliamson/mammoth) | — | BSD-2 | DOCX → 시맨틱 HTML/Markdown | DOCX 전용 | DOCX 경량 경로 |
 | [pdfplumber](https://github.com/jsvine/pdfplumber) | 10,890 | MIT | 문자·좌표·표 정밀 추출 | 느림, 스캔 미지원 | 표 검증/디버깅 |

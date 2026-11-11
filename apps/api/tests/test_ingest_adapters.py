@@ -134,6 +134,53 @@ def test_http_sidecar_parses_korean_document() -> None:
         server.shutdown()
 
 
+def test_kordoc_table_cell_shape_is_normalized() -> None:
+    payload = {
+        "blocks": [
+            {
+                "type": "table",
+                "pageNumber": 3,
+                "table": {
+                    "rows": 2,
+                    "cols": 2,
+                    "hasHeader": True,
+                    "cells": [
+                        [{"text": "항목", "colSpan": 1}, {"text": "예산", "colSpan": 1}],
+                        [{"text": "인건비", "colSpan": 1}, {"text": "110", "colSpan": 1}],
+                    ],
+                },
+            }
+        ],
+        "markdown": "(ignored when blocks exist)",
+        "metadata": {"pageCount": 1},
+    }
+    server, url = start_server(lambda method, path: (200, "application/json", json.dumps(payload).encode()))
+    register_default_adapters(env={"KORDOC_URL": url, "PARSER_TIMEOUT_SECONDS": "5"})
+    try:
+        document = REGISTRY.parse(hwpx_bytes(), "form.hwpx", ACL, "mem://form.hwpx")
+        table = document.blocks[0].table
+        assert table is not None
+        assert table.rows == [["항목", "예산"], ["인건비", "110"]]
+        assert table.header_rows == 1
+        assert document.blocks[0].page == 3
+    finally:
+        REGISTRY.unregister("kordoc")
+        server.shutdown()
+
+
+def test_kordoc_markdown_fallback_when_blocks_do_not_map() -> None:
+    payload = {"blocks": [{"type": "unknown-type-no-text"}], "markdown": "# 제목\n\n본문입니다."}
+    server, url = start_server(lambda method, path: (200, "application/json", json.dumps(payload).encode()))
+    register_default_adapters(env={"KORDOC_URL": url, "PARSER_TIMEOUT_SECONDS": "5"})
+    try:
+        document = REGISTRY.parse(hwpx_bytes(), "fallback.hwpx", ACL, "mem://fallback.hwpx")
+        assert document.blocks[0].kind == "heading"
+        assert "본문입니다" in document.render_markdown()
+    finally:
+        REGISTRY.unregister("kordoc")
+        server.shutdown()
+
+
 def test_tika_adapter_reads_plain_text() -> None:
     server, url = start_server(lambda method, path: (200, "text/plain; charset=utf-8", "# 제목\n\n본문입니다.".encode()))
     register_default_adapters(env={"TIKA_URL": url, "PARSER_TIMEOUT_SECONDS": "5"})
@@ -155,6 +202,24 @@ def test_sidecar_failure_raises_parse_error() -> None:
         with pytest.raises(ParseError):
             HttpSidecarParser("kordoc", url, timeout_s=5).parse(hwpx_bytes(), "budget.hwpx", ACL, "mem://budget.hwpx")
     finally:
+        server.shutdown()
+
+
+def test_docling_http_markdown_with_table() -> None:
+    payload = {
+        "markdown": "# 예산 지침\n\n| 구분 | 2026 |\n| --- | --- |\n| 인건비 | 110 |",
+        "metadata": {"page_count": 1},
+    }
+    server, url = start_server(lambda method, path: (200, "application/json", json.dumps(payload).encode()))
+    register_default_adapters(env={"DOCLING_URL": url, "PARSER_TIMEOUT_SECONDS": "5"})
+    try:
+        document = REGISTRY.parse(b"%PDF-1.7\n...", "budget.pdf", ACL, "mem://budget.pdf", "application/pdf")
+        assert document.parser == "docling"
+        assert document.blocks[0].kind == "heading"
+        table = next(block.table for block in document.blocks if block.kind == "table")
+        assert table.rows[1] == ["인건비", "110"]
+    finally:
+        REGISTRY.unregister("docling")
         server.shutdown()
 
 

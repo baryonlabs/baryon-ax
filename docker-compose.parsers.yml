@@ -1,0 +1,86 @@
+# Optional parser sidecars (HWP/PDF/Office/images)
+#
+#   docker compose -f docker-compose.yml -f docker-compose.parsers.yml --profile parsers up -d --build
+#
+# The API degrades to text/markdown when a sidecar is absent; a known binary
+# format with no reachable adapter returns 415 instead of decoding garbage.
+# See docs/ingestion/architecture.md §11 and deploy/parsers/README.md.
+
+services:
+  kordoc:
+    profiles: ["parsers"]
+    build:
+      context: ./deploy/parsers/kordoc
+      args:
+        KORDOC_VERSION: ${KORDOC_VERSION:-^4.24.0}
+    image: baryon-kordoc:0.6
+    environment:
+      KORDOC_OFFLINE: "1"
+      PORT: "8080"
+      MAX_UPLOAD_BYTES: ${MAX_DOCUMENT_BYTES:-20000000}
+      KORDOC_PARSE_TIMEOUT_MS: ${PARSER_TIMEOUT_MS:-120000}
+    expose:
+      - "8080"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=512m
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 4g
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  docling:
+    profiles: ["parsers"]
+    build:
+      context: ./deploy/parsers/docling
+    image: baryon-docling:0.6
+    environment:
+      DOCLING_ARTIFACTS_PATH: /models
+      MAX_UPLOAD_BYTES: ${MAX_DOCUMENT_BYTES:-20000000}
+      OMP_NUM_THREADS: "4"
+    volumes:
+      - docling-models:/models
+    expose:
+      - "8000"
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 6g
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  tika:
+    profiles: ["parsers"]
+    image: apache/tika:latest
+    expose:
+      - "9998"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    restart: unless-stopped
+
+  api:
+    environment:
+      KORDOC_URL: http://kordoc:8080
+      DOCLING_URL: http://docling:8000
+      TIKA_URL: http://tika:9998
+      PARSER_TIMEOUT_SECONDS: ${PARSER_TIMEOUT_SECONDS:-180}
+    # No depends_on here on purpose: declaring it makes `up api` build/start
+    # every parser even when only the API is wanted. Start parsers explicitly
+    # with the same profile; the API degrades gracefully when they are absent.
+
+volumes:
+  docling-models:

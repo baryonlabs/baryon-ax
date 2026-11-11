@@ -88,19 +88,21 @@ def blocks_from_json(items: list[dict[str, Any]]) -> list[Block]:
             kind = "paragraph"
 
         text = str(item.get("text") or item.get("content") or item.get("markdown") or "").strip()
-        page = item.get("page") if isinstance(item.get("page"), int) else None
+        raw_page = item.get("page", item.get("pageNumber"))
+        page = raw_page if isinstance(raw_page, int) else None
         meta: dict[str, Any] = {}
         if item.get("bbox"):
             meta["bbox"] = item["bbox"]
 
         if kind == "table":
-            rows = item.get("rows") or (item.get("table") or {}).get("rows")
-            if rows:
-                width = max(len(row) for row in rows)
-                normalized = [[str(cell) for cell in row] + [""] * (width - len(row)) for row in rows]
-                header_rows = int(item.get("header_rows") or (item.get("table") or {}).get("header_rows") or 1)
+            grid = _table_grid(item)
+            if grid:
+                table_meta = item.get("table") if isinstance(item.get("table"), dict) else {}
+                header_rows = item.get("header_rows") or table_meta.get("header_rows")
+                if header_rows is None:
+                    header_rows = 1 if (item.get("hasHeader") or table_meta.get("hasHeader")) else 0
                 blocks.append(
-                    Block("table", page=page, table=Table(rows=normalized, header_rows=header_rows), meta=meta)
+                    Block("table", page=page, table=Table(rows=grid, header_rows=int(header_rows)), meta=meta)
                 )
                 continue
             # A parser that only returns table markdown degrades to text.
@@ -118,6 +120,45 @@ def blocks_from_json(items: list[dict[str, Any]]) -> list[Block]:
         if text:
             blocks.append(Block(kind, text=text, page=page, meta=meta))  # type: ignore[arg-type]
     return blocks
+
+
+def _cell_text(cell: Any) -> str:
+    if isinstance(cell, dict):
+        return str(cell.get("text") or cell.get("content") or "").strip()
+    return str(cell)
+
+
+def _table_grid(item: dict[str, Any]) -> list[list[str]]:
+    """Normalize the table shapes parsers return.
+
+    Supported:
+      * {"rows": [["a","b"], ...]}          (generic)
+      * {"table": {"cells": [[{text, colSpan, rowSpan}], ...]}}  (kordoc)
+    `table.rows` in kordoc is a *count*, not a row list. Row spans are flattened:
+    the text stays in its own row and spanned positions become empty cells.
+    """
+    table = item.get("table") if isinstance(item.get("table"), dict) else {}
+    rows = item.get("rows") or table.get("rows")
+    cells = item.get("cells") or table.get("cells")
+
+    if cells and isinstance(cells, list) and all(isinstance(row, list) for row in cells):
+        grid: list[list[str]] = []
+        for row in cells:
+            expanded: list[str] = []
+            for cell in row:
+                span = int(cell.get("colSpan", 1) or 1) if isinstance(cell, dict) else 1
+                expanded.append(_cell_text(cell))
+                expanded.extend([""] * (max(1, span) - 1))
+            grid.append(expanded)
+    elif rows and isinstance(rows, list):
+        grid = [[_cell_text(cell) for cell in row] for row in rows]
+    else:
+        return []
+
+    width = max((len(row) for row in grid), default=0)
+    if not width:
+        return []
+    return [row + [""] * (width - len(row)) for row in grid]
 
 
 def parse_response(
@@ -144,17 +185,18 @@ def parse_response(
                 raise ParseError(str(data.get("error") or "parser reported failure"))
             if isinstance(data.get("blocks"), list):
                 blocks = blocks_from_json(data["blocks"])
-                return _document_from_blocks(
-                    blocks,
-                    payload=payload,
-                    filename=filename,
-                    acl=acl,
-                    source_uri=source_uri,
-                    parser=parser,
-                    parser_version=parser_version,
-                    mime=mime,
-                    metadata=data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
-                )
+                if blocks:
+                    return _document_from_blocks(
+                        blocks,
+                        payload=payload,
+                        filename=filename,
+                        acl=acl,
+                        source_uri=source_uri,
+                        parser=parser,
+                        parser_version=parser_version,
+                        mime=mime,
+                        metadata=data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
+                    )
             for key in ("markdown", "content", "text"):
                 if isinstance(data.get(key), str) and data[key].strip():
                     return _from_markdown(

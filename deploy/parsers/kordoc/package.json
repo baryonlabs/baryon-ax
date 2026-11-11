@@ -1,0 +1,10 @@
+{
+  "name": "baryon-kordoc-sidecar",
+  "private": true,
+  "type": "module",
+  "description": "HTTP parse sidecar for kordoc, used by Baryon AX ingest.",
+  "dependencies": {
+    "busboy": "^1.6.0",
+    "kordoc": "^4.24.0"
+  }
+}

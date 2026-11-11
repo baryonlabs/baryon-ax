@@ -51,7 +51,25 @@
 | `main.py` | MIME 라우팅 업로드, 구조 청크 색인, `?async=true`, `/v1/jobs` | ✅ |
 | DB 소스 API (`/v1/sources`) | 등록·스케줄·커서 저장 | ⛔ P1 |
 
-검증: `apps/api/tests/` **70개 통과** (기존 26 + 인제스트 44).
+검증: `apps/api/tests/` **73개 통과** (기존 26 + 인제스트 47).
+
+### 2.2 배포 형태 (Docker sidecar)
+
+파서는 API 이미지에 넣지 않고 **별도 컨테이너**로 띄운다. API는 HTTP로만 호출한다.
+
+| 서비스 | 이미지 | 포트 | 격리 |
+| --- | --- | --- | --- |
+| `kordoc` | `deploy/parsers/kordoc` (node:20-slim + npm kordoc) | 8080 | read-only root, 512MB tmpfs, `no-new-privileges`, 4GB limit, `KORDOC_OFFLINE=1` |
+| `docling` | `deploy/parsers/docling` (python:3.12 + docling) | 8000 | `no-new-privileges`, 6GB limit, `/models` 볼륨 |
+| `tika` | `apache/tika:latest` | 9998 | read-only, `no-new-privileges`, 2GB limit |
+| `api` | 기존 | 8000 | `KORDOC_URL`/`DOCLING_URL`/`TIKA_URL` 주입 |
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.parsers.yml \
+  --profile parsers up -d --build
+```
+
+계약·보안 설정은 [`deploy/parsers/README.md`](../../deploy/parsers/README.md)에 있다. sidecar가 없으면 API는 text/markdown만 받고, 알 수 없는 바이너리는 415로 거절한다.
 
 ---
 

@@ -42,6 +42,12 @@ docker compose up --build
 
 Open `http://localhost:3001`. The default `demo-local` model works without an API key.
 
+To accept HWP/HWPX/PDF/Office/images, add the parser sidecars:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.parsers.yml --profile parsers up -d --build
+```
+
 ### Full stack (Ollama + Qdrant + PostgreSQL + Redis + Langfuse + Mem0)
 
 ```bash
