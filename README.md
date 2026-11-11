@@ -85,6 +85,8 @@ UI에서는 **암묵지** 탭에서 질문 큐, 내 답변, 전체 답변, 게�
 
 ## Quick start
 
+> **하드웨어 최소사양**: Basic Core, Full stack, GPU 추론 구성별 CPU·RAM·GPU·스토리지 기준은 [docs/hardware-requirements.md](docs/hardware-requirements.md)에 정리되어 있습니다.
+
 ### Basic Core (no external services)
 
 ```bash
