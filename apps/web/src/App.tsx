@@ -1,5 +1,5 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, Bot, Boxes, Brain, ChevronRight, Cpu, ExternalLink, FileUp, Globe2, HardDrive, Network, Plus, RefreshCw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { BookOpen, Bot, Boxes, Brain, ChevronRight, Cpu, ExternalLink, FileCode, FileImage, FileSpreadsheet, FileText, FileType, FileUp, Globe2, HardDrive, Network, Plus, RefreshCw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Trash2, UploadCloud, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
@@ -64,6 +64,53 @@ function identity(role: Role): Record<string, string> {
   return { "X-User-Id": CURRENT_USER, "X-Organization-Id": CURRENT_ORG, "X-Roles": role };
 }
 
+const UPLOAD_ACCEPT = ".txt,.md,.markdown,.mdown,.pdf,.hwp,.hwpx,.hwpml,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.png,.jpg,.jpeg,.webp,.gif,.tif,.tiff,.html,.htm,.csv,.json";
+
+type UploadGroup = "docs" | "sheets" | "text" | "images";
+const UPLOAD_FORMATS: { label: string; accept: string; group: UploadGroup }[] = [
+  { label: "PDF", accept: ".pdf", group: "docs" },
+  { label: "HWP", accept: ".hwp", group: "docs" },
+  { label: "HWPX", accept: ".hwpx", group: "docs" },
+  { label: "Word", accept: ".docx,.doc", group: "docs" },
+  { label: "PPT", accept: ".pptx,.ppt", group: "docs" },
+  { label: "Excel", accept: ".xlsx,.xls", group: "sheets" },
+  { label: "CSV", accept: ".csv", group: "sheets" },
+  { label: "JSON", accept: ".json", group: "sheets" },
+  { label: "Markdown", accept: ".md,.markdown", group: "text" },
+  { label: "TXT", accept: ".txt", group: "text" },
+  { label: "HTML", accept: ".html,.htm", group: "text" },
+  { label: "PNG", accept: ".png", group: "images" },
+  { label: "JPG", accept: ".jpg,.jpeg", group: "images" },
+  { label: "WEBP", accept: ".webp", group: "images" },
+  { label: "TIFF", accept: ".tif,.tiff", group: "images" },
+  { label: "GIF", accept: ".gif", group: "images" },
+];
+
+function formatGroupIcon(group: UploadGroup) {
+  if (group === "sheets") return FileSpreadsheet;
+  if (group === "images") return FileImage;
+  if (group === "text") return FileCode;
+  return FileType;
+}
+
+function documentFormat(title: string) {
+  const dot = title.lastIndexOf(".");
+  const ext = dot >= 0 ? title.slice(dot).toLowerCase() : "";
+  const label = ext ? ext.slice(1).toUpperCase() : "DOC";
+  if ([".xlsx", ".xls", ".csv"].includes(ext)) return { label, tone: "sheet", icon: FileSpreadsheet };
+  if ([".png", ".jpg", ".jpeg", ".webp", ".gif", ".tif", ".tiff"].includes(ext)) return { label, tone: "image", icon: FileImage };
+  if ([".md", ".markdown", ".mdown", ".txt", ".html", ".htm", ".json"].includes(ext)) return { label, tone: "text", icon: FileCode };
+  if (ext === ".pdf") return { label, tone: "pdf", icon: FileText };
+  if ([".hwp", ".hwpx", ".hwpml"].includes(ext)) return { label, tone: "hwp", icon: FileType };
+  return { label, tone: "doc", icon: FileType };
+}
+
+function DocumentFormatIcon({ title }: { title: string }) {
+  const meta = documentFormat(title);
+  const Icon = meta.icon;
+  return <div className={`document-icon ${meta.tone}`} title={meta.label}><Icon size={18}/></div>;
+}
+
 function formatBytes(value: number): string {
   if (value >= 1_000_000_000_000) return `${(value / 1_000_000_000_000).toFixed(2)} TB`;
   if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)} GB`;
@@ -84,6 +131,10 @@ const copy = {
   ko: {
     welcome: "Baryon AX를 시작할 준비가 되었습니다. 질문을 입력하거나 Markdown 문서를 업로드해 근거 기반 대화를 시작하세요.",
     indexed: (title: string, chunks: number) => `${title} 문서를 ${chunks}개 청크로 색인했습니다. 이제 권한 범위 안에서 검색할 수 있습니다.`,
+    uploading: "업로드 및 색인 중…", uploadZoneTitle: "파일을 끌어다 놓거나 클릭하세요",
+    uploadZoneBody: "문서를 파싱·청킹·임베딩해 채팅 근거로 바로 사용합니다.", formats: "지원 형식",
+    formatDocs: "문서", formatSheets: "데이터", formatText: "텍스트", formatImages: "이미지",
+    formatHint: "형식 배지를 누르면 해당 파일만 골라서 선택할 수 있습니다.",
     uploadFailed: "문서를 업로드할 수 없습니다. UTF-8 Markdown 또는 텍스트 파일인지 확인해 주세요.",
     failed: "요청을 완료할 수 없습니다. API가 실행 중인지 확인해 주세요.",
     newChat: "+ 새 대화", chat: "채팅", knowledge: "지식", memory: "메모리", governance: "거버넌스", settings: "설정", workspace: "AI 작업 공간",
@@ -91,7 +142,7 @@ const copy = {
     traceTitle: "처리 과정", traceRateLimit: "속도 제한", tracePolicy: "정책 검사", traceMemory: "메모리 검색", traceRetrieval: "문서 검색", traceModel: "모델 생성", traceAudit: "감사 기록", traceMs: "ms", traceSkipped: "건너뜀",
     scope: "문서는 조직 및 역할 권한 범위 안에서만 검색됩니다.", indexedDocs: "색인된 문서", visibleDocs: "내 조직과 역할에서 조회 가능한 문서만 표시됩니다.",
     sendHint: "Shift+Enter로 전송",
-    upload: "문서 업로드", noDocs: "아직 문서가 없습니다", noDocsBody: "UTF-8 Markdown 또는 텍스트 파일을 업로드해 근거 기반 채팅에 활용하세요.",
+    upload: "문서 업로드", noDocs: "아직 문서가 없습니다", noDocsBody: "PDF·HWP·Office·이미지·Markdown을 올리면 자동으로 파싱·색인되어 근거 기반 채팅에 사용됩니다.",
     chunks: "청크", roles: "역할", deleteDocument: "문서 삭제", onPremises: "온프레미스 프로필", language: "언어", profile: "local-org",
     role: "역할", member: "멤버", admin: "관리자",
     auditLog: "감사 로그", auditBody: "조직 단위로 기록된 최근 감사 이벤트입니다. 관리자 역할만 조회할 수 있습니다.",
@@ -132,6 +183,10 @@ const copy = {
   en: {
     welcome: "Baryon AX is ready. Ask a question or upload a Markdown document to ground the conversation.",
     indexed: (title: string, chunks: number) => `Indexed ${title} into ${chunks} chunk(s). It is now available for permission-scoped retrieval.`,
+    uploading: "Uploading and indexing…", uploadZoneTitle: "Drop a file here or click to browse",
+    uploadZoneBody: "Documents are parsed, chunked, and embedded so chat can cite them immediately.", formats: "Supported formats",
+    formatDocs: "Documents", formatSheets: "Data", formatText: "Text", formatImages: "Images",
+    formatHint: "Click a format badge to filter the file picker to that type.",
     uploadFailed: "The document could not be uploaded. Check that it is a UTF-8 Markdown or text file.",
     failed: "The request could not be completed. Check that the API is running.",
     newChat: "+ New conversation", chat: "Chat", knowledge: "Knowledge", memory: "Memory", governance: "Governance", settings: "Settings", workspace: "AI WORKSPACE",
@@ -139,7 +194,7 @@ const copy = {
     traceTitle: "Pipeline", traceRateLimit: "Rate limit", tracePolicy: "Policy check", traceMemory: "Memory search", traceRetrieval: "Document search", traceModel: "Model generation", traceAudit: "Audit log", traceMs: "ms", traceSkipped: "skipped",
     scope: "Documents are searched only within your organization and role scope.", indexedDocs: "Indexed documents", visibleDocs: "Only documents visible to your organization and role are shown.",
     sendHint: "Shift+Enter to send",
-    upload: "Upload document", noDocs: "No documents yet", noDocsBody: "Upload a UTF-8 Markdown or text file to make it available for grounded chat.",
+    upload: "Upload document", noDocs: "No documents yet", noDocsBody: "Upload PDF, HWP, Office, image, or Markdown files; they are parsed and indexed for grounded chat.",
     chunks: "chunk(s)", roles: "roles", deleteDocument: "Delete document", onPremises: "On-premises profile", language: "Language", profile: "local-org",
     role: "Role", member: "Member", admin: "Administrator",
     auditLog: "Audit log", auditBody: "Recent audit events recorded for your organization. Administrator role required.",
@@ -200,6 +255,9 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<View>("chat");
   const [knowledge, setKnowledge] = useState<KnowledgeDocument[]>([]);
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [uploadNote, setUploadNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [dragging, setDragging] = useState(false);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [memoryInput, setMemoryInput] = useState("");
   const [memoryQuery, setMemoryQuery] = useState("");
@@ -357,15 +415,29 @@ export default function App() {
   }, [role, view]);
 
   async function upload(file: File) {
+    setUploadBusy(true);
+    setUploadNote(null);
     try {
       const data = new FormData(); data.append("file", file);
       const response = await fetch(`${API}/v1/documents`, { method: "POST", body: data, headers: identity(role) });
       if (!response.ok) throw new Error("Document upload failed");
       const result = await response.json(); await loadKnowledge();
-      setMessages(previous => [...previous, { role: "assistant", content: t.indexed(result.title, result.chunks) }]);
+      const message = t.indexed(result.title, result.chunks);
+      setUploadNote({ ok: true, text: message });
+      setMessages(previous => [...previous, { role: "assistant", content: message }]);
     } catch {
+      setUploadNote({ ok: false, text: t.uploadFailed });
       setMessages(previous => [...previous, { role: "assistant", content: t.uploadFailed }]);
+    } finally {
+      setUploadBusy(false);
     }
+  }
+
+  function openFilePicker(accept: string = UPLOAD_ACCEPT) {
+    if (!fileInput.current) return;
+    fileInput.current.accept = accept;
+    fileInput.current.value = "";
+    fileInput.current.click();
   }
 
   async function removeDocument(id: string) {
@@ -587,8 +659,8 @@ export default function App() {
           </article>)}
         </div>
         <footer>
-          <input ref={fileInput} type="file" accept=".txt,.md" hidden onChange={event => event.target.files?.[0] && upload(event.target.files[0])}/>
-          <button className="upload" title={t.upload} aria-label={t.upload} onClick={() => fileInput.current?.click()}><FileUp size={18}/></button>
+          <input ref={fileInput} type="file" accept={UPLOAD_ACCEPT} hidden onChange={event => event.target.files?.[0] && upload(event.target.files[0])}/>
+          <button className="upload" title={t.upload} aria-label={t.upload} onClick={() => openFilePicker()}><FileUp size={18}/></button>
           <form onSubmit={send}><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={composerKeyDown} placeholder={t.ask} rows={1}/><button aria-label={t.chat} aria-keyshortcuts="Shift+Enter" disabled={busy || !input.trim()}><Send size={17}/></button></form>
           <p>{t.scope} · {t.sendHint}</p>
         </footer>
@@ -596,12 +668,43 @@ export default function App() {
       {view === "knowledge" && <div className="knowledge">
         <div className="knowledge-top">
           <div><h2>{t.indexedDocs}</h2><p>{t.visibleDocs}</p></div>
-          <button className="primary" onClick={() => fileInput.current?.click()}><FileUp size={16}/>{t.upload}</button>
-          <input ref={fileInput} type="file" accept=".txt,.md" hidden onChange={event => event.target.files?.[0] && upload(event.target.files[0])}/>
+          <button className="primary" disabled={uploadBusy} onClick={() => openFilePicker()}><FileUp size={16}/>{uploadBusy ? t.uploading : t.upload}</button>
+          <input ref={fileInput} type="file" accept={UPLOAD_ACCEPT} hidden onChange={event => event.target.files?.[0] && upload(event.target.files[0])}/>
         </div>
+        <div
+          className={`upload-zone ${dragging ? "dragging" : ""} ${uploadBusy ? "busy" : ""}`}
+          role="button" tabIndex={0}
+          onClick={() => { if (!uploadBusy) openFilePicker(); }}
+          onKeyDown={event => { if (!uploadBusy && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openFilePicker(); } }}
+          onDragOver={event => { event.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={event => { event.preventDefault(); setDragging(false); const file = event.dataTransfer.files?.[0]; if (file && !uploadBusy) void upload(file); }}
+        >
+          <div className="upload-zone-head">
+            <UploadCloud size={24}/>
+            <div><strong>{uploadBusy ? t.uploading : t.uploadZoneTitle}</strong><p>{t.uploadZoneBody}</p></div>
+          </div>
+          <div className="format-groups">
+            {(["docs", "sheets", "text", "images"] as const).map(group => {
+              const GroupIcon = formatGroupIcon(group);
+              const label = group === "docs" ? t.formatDocs : group === "sheets" ? t.formatSheets : group === "text" ? t.formatText : t.formatImages;
+              return <div className="format-group" key={group}>
+                <span className="format-group-label"><GroupIcon size={12}/>{label}</span>
+                <div className="format-chips">
+                  {UPLOAD_FORMATS.filter(format => format.group === group).map(format => (
+                    <button type="button" key={format.label} className={`format-chip ${group}`} disabled={uploadBusy}
+                      onClick={event => { event.stopPropagation(); openFilePicker(format.accept); }}>{format.label}</button>
+                  ))}
+                </div>
+              </div>;
+            })}
+          </div>
+          <small className="format-hint">{t.formatHint}</small>
+        </div>
+        {uploadNote && <p className={`upload-note ${uploadNote.ok ? "ok" : "error"}`}>{uploadNote.text}</p>}
         {knowledge.length === 0 ? <div className="empty"><BookOpen size={28}/><h3>{t.noDocs}</h3><p>{t.noDocsBody}</p></div> : <div className="document-list">
           {knowledge.map(document => <div className="document" key={document.id}>
-            <div className="document-icon"><BookOpen size={18}/></div>
+            <DocumentFormatIcon title={document.title}/>
             <div className="document-main">
               <strong>{document.title}</strong>
               <p>{document.chunks} {t.chunks} · {t.roles}: {document.allowed_roles.join(", ") || "—"} · {t.ownerLabel}: {document.owner_id}</p>

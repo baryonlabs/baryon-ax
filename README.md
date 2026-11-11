@@ -19,6 +19,7 @@ The platform brings a chat workspace, agent execution, grounded knowledge search
 - Korean-first bilingual UI (한국어 / English), with browser-language detection and persisted preference
 - OpenAI-compatible model adapter, verified with **Ollama `qwen2.5:7b`** and **vLLM `Qwen3.5-27B` on B300 GPU 7**, with a safe local demo fallback
 - Input/output policy checks and basic PII masking, including chunk-boundary-safe streaming masks
+- Knowledge screen with a drag-and-drop upload zone and per-format badges (PDF, HWP, HWPX, Office, images, text)
 - Durable document upload with **MIME-based parser routing** (HWP/HWPX/PDF/Office/images via kordoc/docling/Tika sidecars), **structure-aware chunking** (heading paths, table headers), **Qdrant vector retrieval** with lexical fallback, and source citations
 - **LangGraph** policy/retrieval orchestration, **FastEmbed** multilingual embeddings
 - Role-aware document ACLs, inline administrator editing, and organization isolation

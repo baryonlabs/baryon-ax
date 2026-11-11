@@ -138,6 +138,15 @@ try {
     await page.waitForFunction(name => document.body.innerText.includes(name), documentName, { timeout: 10000 });
   });
 
+  await step("knowledge page lists supported upload formats", async () => {
+    await page.waitForSelector(".upload-zone", { timeout: 10000 });
+    assert.ok((await page.locator(".format-chip").count()) >= 12);
+    const formats = await page.locator(".upload-zone").innerText();
+    for (const label of ["PDF", "HWP", "HWPX", "Word", "Excel", "CSV", "Markdown", "PNG", "JPG"]) {
+      assert.ok(formats.includes(label), `missing format chip: ${label}`);
+    }
+  });
+
   await step("administrator edits document roles", async () => {
     const row = page.locator(".document", { hasText: documentName });
     await row.getByRole("button", { name: "권한 편집" }).click();
