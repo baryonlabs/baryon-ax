@@ -11,6 +11,13 @@ type TraceStep = { step: string; status: string; ms: number; detail?: string };
 type ChatTrace = { trace_id?: string; steps: TraceStep[]; total_ms?: number | null; memory_count?: number; retrieval_count?: number };
 type ChatMessage = { role: "user" | "assistant"; content: string; citations?: Citation[]; trace?: ChatTrace };
 type Citation = { document_id: string; title: string; chunk: number };
+type CitedChunk = { number: number; content: string; heading_path?: string | null; page?: number | null; kind?: string | null };
+type DocumentDetail = {
+  id: string; title: string; owner_id: string; allowed_roles: string[]; created_at: string;
+  content: string; chunks_count: number; cited_chunk?: CitedChunk | null;
+  mime: string; parser: string; has_raw_file: boolean; raw_filename: string; raw_size: number;
+};
+type SourceState = { citation: Citation; detail?: DocumentDetail; loading: boolean; error?: string };
 type KnowledgeDocument = { id: string; title: string; owner_id: string; allowed_roles: string[]; created_at: string; chunks: number };
 type MemoryItem = { id: string; memory: string; created_at?: string; metadata?: Record<string, unknown>; score?: number };
 type AuditEvent = {
@@ -135,6 +142,10 @@ const copy = {
     uploadZoneBody: "문서를 파싱·청킹·임베딩해 채팅 근거로 바로 사용합니다.", formats: "지원 형식",
     formatDocs: "문서", formatSheets: "데이터", formatText: "텍스트", formatImages: "이미지",
     formatHint: "형식 배지를 누르면 해당 파일만 골라서 선택할 수 있습니다.",
+    noSources: "이 답변에는 문서 출처가 없습니다.", sourceViewer: "출처 원문", citedSection: "답변에 사용된 부분",
+    originalText: "문서 원문", openOriginal: "원본 파일 열기", downloadOriginal: "원본 다운로드", downloadText: "텍스트 저장",
+    rawMissing: "이 문서는 원본 파일이 저장되지 않았습니다. (이전 업로드)", sourceLoading: "원문을 불러오는 중…",
+    sourceFailed: "원문을 불러올 수 없습니다.", rawFailed: "원본 파일을 열 수 없습니다.", close: "닫기",
     uploadFailed: "문서를 업로드할 수 없습니다. UTF-8 Markdown 또는 텍스트 파일인지 확인해 주세요.",
     failed: "요청을 완료할 수 없습니다. API가 실행 중인지 확인해 주세요.",
     newChat: "+ 새 대화", chat: "채팅", knowledge: "지식", memory: "메모리", governance: "거버넌스", settings: "설정", workspace: "AI 작업 공간",
@@ -187,6 +198,10 @@ const copy = {
     uploadZoneBody: "Documents are parsed, chunked, and embedded so chat can cite them immediately.", formats: "Supported formats",
     formatDocs: "Documents", formatSheets: "Data", formatText: "Text", formatImages: "Images",
     formatHint: "Click a format badge to filter the file picker to that type.",
+    noSources: "This answer has no document sources.", sourceViewer: "Source viewer", citedSection: "Cited passage",
+    originalText: "Original text", openOriginal: "Open original file", downloadOriginal: "Download original", downloadText: "Save text",
+    rawMissing: "The original file was not stored for this document (older upload).", sourceLoading: "Loading the source…",
+    sourceFailed: "Could not load the source.", rawFailed: "Could not open the original file.", close: "Close",
     uploadFailed: "The document could not be uploaded. Check that it is a UTF-8 Markdown or text file.",
     failed: "The request could not be completed. Check that the API is running.",
     newChat: "+ New conversation", chat: "Chat", knowledge: "Knowledge", memory: "Memory", governance: "Governance", settings: "Settings", workspace: "AI WORKSPACE",
@@ -258,6 +273,8 @@ export default function App() {
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadNote, setUploadNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [source, setSource] = useState<SourceState | null>(null);
+  const [sourceBusy, setSourceBusy] = useState(false);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [memoryInput, setMemoryInput] = useState("");
   const [memoryQuery, setMemoryQuery] = useState("");
@@ -431,6 +448,54 @@ export default function App() {
     } finally {
       setUploadBusy(false);
     }
+  }
+
+  async function openSource(citation: Citation) {
+    setSource({ citation, loading: true });
+    setSourceBusy(false);
+    try {
+      const response = await fetch(`${API}/v1/documents/${citation.document_id}?chunk=${citation.chunk}`, { headers: identity(role) });
+      if (!response.ok) throw new Error("Source fetch failed");
+      const detail: DocumentDetail = await response.json();
+      setSource({ citation, detail, loading: false });
+    } catch {
+      setSource({ citation, loading: false, error: t.sourceFailed });
+    }
+  }
+
+  async function openOriginal(download: boolean) {
+    if (!source?.detail) return;
+    setSourceBusy(true);
+    try {
+      const response = await fetch(`${API}/v1/documents/${source.detail.id}/file`, { headers: identity(role) });
+      if (!response.ok) throw new Error("Original file unavailable");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      if (download) {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = source.detail.raw_filename || source.detail.title;
+        anchor.click();
+      } else {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      setSource(previous => previous ? { ...previous, error: t.rawFailed } : previous);
+    } finally {
+      setSourceBusy(false);
+    }
+  }
+
+  function downloadText() {
+    if (!source?.detail) return;
+    const blob = new Blob([source.detail.content], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${source.detail.title || "document"}.md`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 
   function openFilePicker(accept: string = UPLOAD_ACCEPT) {
@@ -654,7 +719,9 @@ export default function App() {
                   </li>)}
                 </ol>
               </details>}
-              {message.citations && message.citations.length > 0 && <div className="sources"><span>{t.sources}</span>{message.citations.map(citation => <button key={`${citation.document_id}-${citation.chunk}`}><BookOpen size={13}/>{citation.title}<ChevronRight size={13}/></button>)}</div>}
+              {message.citations && message.citations.length > 0
+                ? <div className="sources"><span>{t.sources} {message.citations.length}</span>{message.citations.map((citation, citationIndex) => <button key={`${citation.document_id}-${citation.chunk}`} onClick={() => void openSource(citation)} title={`${citation.title} · chunk ${citation.chunk}`}><span className="source-index">{citationIndex + 1}</span><BookOpen size={13}/>{citation.title}<small>#{citation.chunk}</small><ChevronRight size={13}/></button>)}</div>
+                : message.role === "assistant" && message.content && typeof message.trace?.total_ms === "number" && <p className="no-sources">{t.noSources}</p>}
             </div>
           </article>)}
         </div>
@@ -944,5 +1011,43 @@ export default function App() {
         </div>}
       </div>}
     </section>
+    {source && <div className="source-overlay" onClick={() => setSource(null)}>
+      <aside className="source-panel" role="dialog" aria-modal="true" aria-label={t.sourceViewer} onClick={event => event.stopPropagation()}>
+        <header className="source-head">
+          <div>
+            <p className="eyebrow">{t.sourceViewer}</p>
+            <h2>{source.citation.title}</h2>
+            <p className="source-meta">chunk #{source.citation.chunk}{source.detail ? ` · ${source.detail.chunks_count} chunks · ${source.detail.parser || source.detail.mime}` : ""}</p>
+          </div>
+          <button className="source-close" aria-label={t.close} onClick={() => setSource(null)}><X size={17}/></button>
+        </header>
+        {source.loading ? <div className="source-loading">{t.sourceLoading}</div> : source.error ? <div className="source-loading error">{source.error}</div> : source.detail ? <>
+          <div className="source-body">
+            {source.detail.cited_chunk && source.detail.content.trim() !== source.detail.cited_chunk.content.trim() && <section className="source-chunk">
+              <h3>{t.citedSection}</h3>
+              <p>{source.detail.cited_chunk.content}</p>
+              {(source.detail.cited_chunk.heading_path || source.detail.cited_chunk.page) && <small>
+                {source.detail.cited_chunk.heading_path || ""}{source.detail.cited_chunk.heading_path && source.detail.cited_chunk.page ? " · " : ""}{source.detail.cited_chunk.page ? `p.${source.detail.cited_chunk.page}` : ""}
+              </small>}
+            </section>}
+            <section className="source-original">
+              <h3>{t.originalText}</h3>
+              <div className="markdown">
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer"/> }}>{source.detail.content}</ReactMarkdown>
+              </div>
+            </section>
+          </div>
+          <footer className="source-actions">
+            {source.detail.has_raw_file
+              ? <>
+                  <button className="primary" disabled={sourceBusy} onClick={() => void openOriginal(false)}><ExternalLink size={14}/>{t.openOriginal}</button>
+                  <button className="ghost" disabled={sourceBusy} onClick={() => void openOriginal(true)}>{t.downloadOriginal}</button>
+                </>
+              : <span className="muted">{t.rawMissing}</span>}
+            <button className="ghost" onClick={downloadText}>{t.downloadText}</button>
+          </footer>
+        </> : null}
+      </aside>
+    </div>}
   </main>;
 }

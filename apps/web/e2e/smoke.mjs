@@ -72,6 +72,20 @@ try {
     assert.match(traceText, /문서 검색/);
   });
 
+  await step("citation opens the cited passage and original document", async () => {
+    await page.locator(".sources button").first().click();
+    await page.waitForSelector(".source-panel", { timeout: 10000 });
+    await page.waitForSelector(".source-original .markdown", { timeout: 10000 });
+    const panel = await page.locator(".source-panel").innerText();
+    assert.match(panel, /문서 원문/);
+    if (await page.locator(".source-chunk p").count()) {
+      assert.ok((await page.locator(".source-chunk p").first().innerText()).trim().length > 0);
+    }
+    assert.ok((await page.locator(".source-original .markdown").innerText()).trim().length > 0);
+    await page.locator(".source-close").click();
+    await page.waitForSelector(".source-panel", { state: "detached", timeout: 5000 });
+  });
+
   await step("markdown renders in user messages", async () => {
     await page.locator("textarea").fill("**Markdown bold** 확인");
     await page.locator("textarea").press("Shift+Enter");

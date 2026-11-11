@@ -27,6 +27,7 @@ The platform brings a chat workspace, agent execution, grounded knowledge search
 - **PostgreSQL audit events** with JSONL mirroring, **Redis rate limiting**, and **Langfuse tracing**
 - **Mem0 user memory** with Qdrant + Ollama, managed from a dedicated UI tab and **injected into chat answers**
 - **Pipeline trace** under each answer: rate limit, policy, memory search, document search, model, and audit steps with timings
+- **Citation viewer**: click a source to see the cited passage, the full text, and the original uploaded file
 - Administrator settings with runtime, policy, storage, integration, and activity overview
 - Live system cards for storage, memory, CPU load, process count, Compose containers, and backend health
 - One-click admin links for Qdrant, Langfuse, the model server, pgAdmin, and Redis Insight, plus per-integration docs
@@ -123,6 +124,8 @@ See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/b300-v
 | `POST /v1/documents` | Upload a document (MIME-routed; `?async=true` returns a job id) |
 | `GET /v1/jobs/{job_id}` | Async ingest job state and chunk count |
 | `GET /v1/documents` | List documents visible to the caller |
+| `GET /v1/documents/{id}` | Permission-checked document text and cited chunk (`?chunk=N`) |
+| `GET /v1/documents/{id}/file` | Original uploaded file for authorized viewers |
 | `DELETE /v1/documents/{id}` | Delete a document as its uploader or an administrator |
 | `PATCH /v1/documents/{id}` | Update a document's role ACL as an administrator |
 | `GET /v1/documents/search` | Permission-scoped retrieval results |

@@ -24,6 +24,7 @@ from .ir import (
     document_id_for,
     idempotency_key,
     new_document,
+    normalize_text,
 )
 from .mime import MIME_EXTENSIONS, EXTENSION_MIME, sniff_mime, suggested_extension
 from .parsers import (
@@ -63,6 +64,7 @@ __all__ = [
     "document_id_for",
     "idempotency_key",
     "new_document",
+    "normalize_text",
     "NoParserError",
     "ParserRegistry",
     "ParserSpec",

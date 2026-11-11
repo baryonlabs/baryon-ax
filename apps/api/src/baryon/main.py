@@ -21,12 +21,12 @@ from urllib.parse import urlparse
 import httpx
 from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import __version__
 from .ingest import Acl as IngestAcl
-from .ingest import REGISTRY, chunk_document
+from .ingest import REGISTRY, chunk_document, normalize_text
 from .ingest.adapters import register_default_adapters
 from .ingest.mime import sniff_mime
 from .ingest.parsers import ParseError
@@ -248,13 +248,42 @@ class DocumentService:
             try:
                 payload = json.loads(file_path.read_text(encoding="utf-8"))
                 document = Document(
-                    id=payload["id"], organization_id=payload["organization_id"], owner_id=payload.get("owner_id", "unknown"), title=payload["title"],
-                    content=payload["content"], allowed_roles=set(payload["allowed_roles"]), created_at=payload["created_at"],
-                    chunks=payload.get("chunks") or [], metadata=payload.get("metadata") or {},
+                    id=payload["id"], organization_id=payload["organization_id"], owner_id=payload.get("owner_id", "unknown"),
+                    title=normalize_text(payload["title"]),
+                    content=normalize_text(payload["content"]),
+                    allowed_roles=set(payload["allowed_roles"]), created_at=payload["created_at"],
+                    chunks=[
+                        {**item, "text": normalize_text(str(item.get("text") or ""))}
+                        for item in (payload.get("chunks") or [])
+                    ],
+                    metadata=payload.get("metadata") or {},
                 )
             except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                 continue
             self.documents[document.id] = document
+
+    @property
+    def raw_root(self) -> Path:
+        return self.storage_root / "raw"
+
+    def save_raw(self, document: Document, payload: bytes, filename: str, mime: str) -> None:
+        """Keep the original upload next to the parsed text so citations can open it."""
+        suffix = Path(filename).suffix.lower()[:12]
+        self.raw_root.mkdir(parents=True, exist_ok=True)
+        target = self.raw_root / f"{document.id}{suffix}"
+        target.write_bytes(payload)
+        document.metadata.update({
+            "raw_file": target.name, "raw_filename": filename,
+            "raw_mime": mime, "raw_size": len(payload),
+        })
+        self._persist(document)
+
+    def raw_path(self, document: Document) -> Path | None:
+        name = str(document.metadata.get("raw_file") or "")
+        if not name:
+            return None
+        path = self.raw_root / name
+        return path if path.is_file() else None
 
     def _persist(self, document: Document) -> None:
         self.storage_root.mkdir(parents=True, exist_ok=True)
@@ -280,14 +309,18 @@ class DocumentService:
         chunks: list[dict] | None = None,
         metadata: dict | None = None,
     ) -> Document:
+        normalized_chunks = [
+            {**item, "text": normalize_text(str(item.get("text") or ""))}
+            for item in (chunks or [])
+        ]
         document = Document(
             id=str(uuid.uuid4()),
             organization_id=principal.organization_id,
             owner_id=principal.user_id,
-            title=title,
-            content=content,
+            title=normalize_text(title),
+            content=normalize_text(content),
             allowed_roles=allowed_roles,
-            chunks=list(chunks or []),
+            chunks=normalized_chunks,
             metadata=dict(metadata or {}),
         )
         self.documents[document.id] = document
@@ -311,8 +344,11 @@ class DocumentService:
             return False
         if document.owner_id != principal.user_id and "admin" not in principal.roles:
             raise PermissionError("Only the uploader or an administrator can delete this document")
-        self.documents.pop(document_id)
+        document = self.documents.pop(document_id)
         (self.storage_root / f"{document_id}.json").unlink(missing_ok=True)
+        raw = self.raw_path(document)
+        if raw:
+            raw.unlink(missing_ok=True)
         if self.vector:
             self.vector.delete_document(document_id)
         return True
@@ -347,12 +383,26 @@ class DocumentService:
                         visible.append(item)
                 return visible
         terms = search_terms(query)
+        normalized_query = normalize_text(query).lower().strip()
         matches = []
         for document in self.documents.values():
             if not self.can_view(principal, document):
                 continue
-            for number, chunk in enumerate(chunk_text(document.content)):
-                score = sum(term in chunk.lower() for term in terms)
+            title = normalize_text(document.title).lower()
+            # A question about a document usually names it. Match the title and
+            # prefer the leading chunks, which carry the document's framing.
+            title_hit = bool(normalized_query) and (
+                normalized_query in title or any(term in title for term in terms)
+            )
+            if document.chunks:
+                chunks = [normalize_text(str(item.get("text") or "")) for item in document.chunks]
+            else:
+                chunks = [normalize_text(chunk) for chunk in chunk_text(document.content)]
+            for number, chunk in enumerate(chunks):
+                lowered = chunk.lower()
+                score = sum(1 for term in terms if term in lowered)
+                if title_hit:
+                    score += 2
                 if score:
                     matches.append({"document_id": document.id, "title": document.title, "chunk": number + 1,
                                     "content": chunk, "score": score})
@@ -383,7 +433,7 @@ TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_]+|[가-힣]+")
 def search_terms(text: str) -> set[str]:
     """Expand query tokens with short Korean prefixes so particles do not block matches."""
     terms: set[str] = set()
-    for token in TOKEN_PATTERN.findall(text.lower()):
+    for token in TOKEN_PATTERN.findall(normalize_text(text).lower()):
         if len(token) < 2:
             continue
         terms.add(token)
@@ -456,7 +506,7 @@ class VectorIndex:
         try:
             from qdrant_client.models import PointStruct
             prepared = document.chunks or [{"text": chunk} for chunk in chunk_text(document.content)]
-            texts = [str(item.get("text") or "") for item in prepared]
+            texts = [normalize_text(str(item.get("text") or "")) for item in prepared]
             vectors = self._embed(texts)
             points = []
             for index, (item, vector) in enumerate(zip(prepared, vectors)):
@@ -1311,10 +1361,11 @@ async def ingest_upload(
             "content_hash": ingested.content_hash,
         },
     )
+    await asyncio.to_thread(documents.save_raw, document, payload, filename, ingested.mime or detected)
     audit.emit(
         "document.ingested", principal, trace_id,
         document_id=document.id, title=document.title,
-        parser=ingested.parser, chunks=len(chunks),
+        parser=ingested.parser, chunks=len(chunks), raw_size=len(payload),
     )
     return document
 
@@ -1433,6 +1484,55 @@ async def search_documents(
 ) -> dict:
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
     return {"data": await asyncio.to_thread(documents.search, principal, q)}
+
+def _document_for(principal: Principal, document_id: str) -> Document:
+    document = documents.documents.get(document_id)
+    if not document or document.organization_id != principal.organization_id or not documents.can_view(principal, document):
+        # Do not reveal whether a document exists outside the caller's scope.
+        raise HTTPException(404, "Document not found")
+    return document
+
+
+@app.get("/v1/documents/{document_id}")
+async def get_document(
+    document_id: str, chunk: int | None = Query(None, ge=1),
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    document = _document_for(principal, document_id)
+    chunks = document.chunks or [{"text": text} for text in chunk_text(document.content)]
+    cited = None
+    if chunk and 1 <= chunk <= len(chunks):
+        item = chunks[chunk - 1]
+        cited = {
+            "number": chunk, "content": item.get("text", ""),
+            "heading_path": item.get("heading_path"), "page": item.get("page"), "kind": item.get("kind"),
+        }
+    raw = documents.raw_path(document)
+    return {
+        "id": document.id, "title": document.title, "owner_id": document.owner_id,
+        "allowed_roles": sorted(document.allowed_roles), "created_at": document.created_at,
+        "content": document.content, "chunks_count": len(chunks), "cited_chunk": cited,
+        "mime": document.metadata.get("mime", ""), "parser": document.metadata.get("parser", ""),
+        "has_raw_file": raw is not None,
+        "raw_filename": document.metadata.get("raw_filename", ""),
+        "raw_size": document.metadata.get("raw_size", 0),
+    }
+
+
+@app.get("/v1/documents/{document_id}/file")
+async def get_document_file(
+    document_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+):
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    document = _document_for(principal, document_id)
+    path = documents.raw_path(document)
+    if not path:
+        raise HTTPException(404, "Original file is not stored for this document")
+    filename = str(document.metadata.get("raw_filename") or document.title or path.name)
+    return FileResponse(path, media_type=str(document.metadata.get("raw_mime") or "application/octet-stream"), filename=filename)
+
 
 
 @app.get("/v1/documents")

@@ -89,6 +89,7 @@
 | MIME 스니핑 | ✅ | magic bytes 우선, ZIP 내부(`word/`, `xl/`, `ppt/`, HWPX `mimetype`) 검사 |
 | 빈 문서 거부 | ✅ | 공백만 있는 문서는 422 |
 | 텍스트 인코딩 검증 | ✅ | UTF-8 디코딩 실패 시 415 |
+| 한글 정규화 | ✅ | NFD(macOS) 문서·파일명을 NFKC로 정규화해 NFC 질의와 매칭 |
 | 구조 인지 청킹 | ✅ | 헤딩 경로(`h1 > h2`) 보존, 표는 헤더 반복 + 행 묶음 |
 | 청킹 폴백 | ✅ | LlamaIndex `SentenceSplitter` (256 토큰, 32 토큰 overlap) |
 | 파서 폴백 체인 | ✅ | kordoc → docling → Tika → 415, 실패는 `document.parse_failed` 감사 |
@@ -289,9 +290,11 @@
 | K8s 프로브 | ✅ | readiness / liveness `/health` |
 | K8s 데이터 볼륨 | 🔶 | `emptyDir` 스타터, 운영 시 PVC/관리형 저장소로 교체 필요 |
 | CI | ✅ | API pytest + Web build |
-| E2E 자동화 | ✅ | Playwright 14 checks, 전체 Compose 대상 검증 |
+| E2E 자동화 | ✅ | Playwright 15 checks, 전체 Compose 대상 검증 |
 | 시스템 모니터링 | ✅ | 관리자 설정에서 저장공간·메모리·프로세스·컨테이너·백엔드 상태 표시 |
 | 업로드 포맷 UX | ✅ | 지식 화면에 지원 형식 배지(PDF/HWP/HWPX/Office/이미지 등)와 드래그·드롭 영역 |
+| 출처 원문 뷰어 | ✅ | 출처 클릭 시 인용 구절·문서 원문·원본 파일 열기/다운로드 |
+| 원본 파일 보관 | ✅ | 업로드 원본을 문서 ACL과 함께 보관하고 권한 검사 후 제공 |
 | 메모리 컨텍스트 주입 | ✅ | 채팅 시 Mem0 관련 기억을 검색해 시스템 프롬프트에 주입 |
 | 파이프라인 추적 | ✅ | 속도제한·정책·메모리·문서검색·모델·감사 단계별 ms를 UI와 로그로 표시 |
 | 통합 관리자 링크 | ✅ | Qdrant/Langfuse/모델 서버/pgAdmin/Redis Insight를 설정에서 원클릭 이동 |
@@ -307,8 +310,8 @@
 
 | 항목 | 상태 | 결과/설명 |
 | --- | --- | --- |
-| API 단위·통합 테스트 | ✅ | **89 passed** |
-| Playwright E2E | ✅ | **14 checks passed** (`npm run test:e2e`, Vite/Compose) |
+| API 단위·통합 테스트 | ✅ | **95 passed** |
+| Playwright E2E | ✅ | **15 checks passed** (`npm run test:e2e`, Vite/Compose) |
 | Web 타입체크·빌드 | ✅ | `tsc -b && vite build` 성공 |
 | 전체 스택 스모크 | ✅ | `scripts/smoke_full_stack.py` — health/upload/search/chat/audit/memory |
 | Docker 이미지 빌드 | ✅ | API/Web 이미지 빌드 성공 |
@@ -412,8 +415,8 @@
 ## 14. 검증 기준
 
 ```text
-API tests           89 passed
-Playwright E2E      14 checks passed (Vite 5173 / Compose 3001)
+API tests           95 passed
+Playwright E2E      15 checks passed (Vite 5173 / Compose 3001)
 Full-stack smoke    health + upload + Qdrant retrieval + chat + audit + Mem0
 Web build           tsc -b && vite build 성공
 Docker build        API/Web 이미지 성공

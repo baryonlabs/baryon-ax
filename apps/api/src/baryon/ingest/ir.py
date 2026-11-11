@@ -11,11 +11,22 @@ See docs/ingestion/architecture.md for the design rationale.
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 BlockKind = Literal["heading", "paragraph", "list", "table", "code", "caption"]
+
+
+def normalize_text(text: str) -> str:
+    """Normalize to NFC.
+
+    macOS documents and filenames are frequently NFD (decomposed Hangul). Korean
+    tokenizers and substring search operate on precomposed syllables, so an NFD
+    document silently matches nothing. Normalize at every boundary.
+    """
+    return unicodedata.normalize("NFKC", text) if text else text
 
 
 @dataclass
@@ -30,6 +41,7 @@ class Table:
     header_rows: int = 1
 
     def __post_init__(self) -> None:
+        self.rows = [[normalize_text(str(cell)) for cell in row] for row in self.rows]
         if self.header_rows < 0:
             raise ValueError("header_rows must be >= 0")
         if self.rows and self.header_rows > len(self.rows):
@@ -74,6 +86,7 @@ class Block:
     meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        self.text = normalize_text(self.text)
         if self.kind == "table":
             if self.table is None:
                 raise ValueError("table blocks require a Table")
@@ -149,6 +162,7 @@ class Chunk:
     token_estimate: int = 0
 
     def __post_init__(self) -> None:
+        self.text = normalize_text(self.text)
         if self.ordinal < 1:
             raise ValueError("chunk ordinal starts at 1")
         if not self.text.strip():

@@ -43,6 +43,30 @@ def test_role_scoped_retrieval_and_completion() -> None:
     assert trace["total_ms"] > 0
 
 
+def test_document_detail_returns_cited_chunk_and_original_file() -> None:
+    body = b"# Handbook\n\nQdrant stores vectors for grounded retrieval."
+    uploaded = client.post("/v1/documents", files={"file": ("handbook.md", body)}, headers=headers(user="detail-user", roles="member")).json()
+    detail = client.get(f"/v1/documents/{uploaded['id']}?chunk=1", headers=headers(user="detail-user", roles="member"))
+    assert detail.status_code == 200
+    data = detail.json()
+    assert "Qdrant stores vectors" in data["cited_chunk"]["content"]
+    assert "Handbook" in data["content"]
+    assert data["has_raw_file"] is True
+    original = client.get(f"/v1/documents/{uploaded['id']}/file", headers=headers(user="detail-user", roles="member"))
+    assert original.status_code == 200
+    assert original.content == body
+    assert "handbook.md" in original.headers["content-disposition"]
+
+
+def test_document_detail_hides_documents_outside_the_caller_scope() -> None:
+    uploaded = client.post("/v1/documents", files={"file": ("secret.md", b"secret contents")},
+                           data={"allowed_roles": "legal"}, headers=headers(user="owner", roles="legal")).json()
+    detail = client.get(f"/v1/documents/{uploaded['id']}", headers=headers(user="other", roles="member"))
+    assert detail.status_code == 404
+    original = client.get(f"/v1/documents/{uploaded['id']}/file", headers=headers(user="other", roles="member"))
+    assert original.status_code == 404
+
+
 def test_policy_blocks_configured_content() -> None:
     response = client.post("/v1/chat/completions", json={"messages": [{"role": "user", "content": "how to make a bomb"}], "stream": False})
     assert response.status_code == 422
