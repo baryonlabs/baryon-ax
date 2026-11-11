@@ -11,6 +11,16 @@ type TraceStep = { step: string; status: string; ms: number; detail?: string };
 type ChatTrace = { trace_id?: string; steps: TraceStep[]; total_ms?: number | null; memory_count?: number; retrieval_count?: number };
 type ChatMessage = { role: "user" | "assistant"; content: string; citations?: Citation[]; trace?: ChatTrace };
 type Citation = { document_id: string; title: string; chunk: number };
+
+const MENU_MASCOTS: Record<View, { src: string; tagline: Record<Locale, string> }> = {
+  chat: { src: "/mascots/chat.svg", tagline: { ko: "근거로 답하는 대화", en: "Grounded conversations" } },
+  knowledge: { src: "/mascots/knowledge.svg", tagline: { ko: "문서를 지식으로", en: "Documents into knowledge" } },
+  tacit: { src: "/mascots/tacit.svg", tagline: { ko: "사람의 경험을 자산으로", en: "Experience into assets" } },
+  memory: { src: "/mascots/memory.svg", tagline: { ko: "잊지 않는 선호", en: "Preferences that persist" } },
+  governance: { src: "/mascots/governance.svg", tagline: { ko: "모든 변화를 기록", en: "Every change, recorded" } },
+  gaps: { src: "/mascots/gaps.svg", tagline: { ko: "부족한 지식을 찾아서", en: "Find what is missing" } },
+  settings: { src: "/mascots/settings.svg", tagline: { ko: "시스템을 한눈에", en: "The system at a glance" } },
+};
 type CitedChunk = { number: number; content: string; heading_path?: string | null; page?: number | null; kind?: string | null };
 type DocumentDetail = {
   id: string; title: string; owner_id: string; allowed_roles: string[]; created_at: string;
@@ -378,6 +388,8 @@ export default function App() {
   const [tacitError, setTacitError] = useState<"failed" | null>(null);
   const [tacitScope, setTacitScope] = useState<"mine" | "all">("mine");
   const tacitFileInput = useRef<HTMLInputElement>(null);
+  const tacitFormRef = useRef<HTMLElement>(null);
+  const tacitAnswerRef = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => { fetch(`${API}/v1/models`).then(response => response.json()).then(result => result.data?.[0] && setModel(result.data[0].id)).catch(() => undefined); }, []);
@@ -602,6 +614,15 @@ export default function App() {
       setTacitBusy(false);
     }
   }, [tacitBusy, role, loadTacit, t]);
+
+  useEffect(() => {
+    if (!tacitSelected) return;
+    // The answer form sits below the question grid; without this the click
+    // looks like a no-op because the form is off-screen.
+    tacitFormRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const timer = window.setTimeout(() => tacitAnswerRef.current?.focus(), 250);
+    return () => window.clearTimeout(timer);
+  }, [tacitSelected]);
 
   useEffect(() => { if (view === "knowledge") void loadKnowledge(); }, [view, loadKnowledge]);
   useEffect(() => { if (view === "tacit") void loadTacit(); }, [view, loadTacit]);
@@ -902,18 +923,18 @@ export default function App() {
     return <dd>{value}{href && <a className="inline-link" href={href} target="_blank" rel="noreferrer" title={t.open}><ExternalLink size={12}/></a>}</dd>;
   }
 
-  return <main className={`shell ${role === "admin" ? "admin" : ""}`}>
+  return <main className={`shell theme-${view} ${role === "admin" ? "admin" : ""}`}>
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark"><Sparkles size={17}/></div><span>Baryon AX</span></div>
       <button className="new-chat" onClick={() => { setView("chat"); setMessages([{ role: "assistant", content: t.welcome }]); }}>{t.newChat}</button>
       <nav>
-        <button className={view === "chat" ? "active" : ""} onClick={() => setView("chat")}><Bot size={16}/>{t.chat}</button>
-        <button className={view === "knowledge" ? "active" : ""} onClick={() => setView("knowledge")}><BookOpen size={16}/>{t.knowledge}</button>
-        <button className={view === "tacit" ? "active" : ""} onClick={() => setView("tacit")}><MessagesSquare size={16}/>{t.tacit}</button>
-        <button className={view === "memory" ? "active" : ""} onClick={() => setView("memory")}><Brain size={16}/>{t.memory}</button>
-        <button className={view === "governance" ? "active" : ""} onClick={() => setView("governance")}><ShieldCheck size={16}/>{t.governance}</button>
-        {role === "admin" && <button className={view === "gaps" ? "active" : ""} onClick={() => setView("gaps")}><Network size={16}/>{t.gaps}</button>}
-        {role === "admin" && <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><Settings size={16}/>{t.settings}</button>}
+        <button className={view === "chat" ? "active" : ""} onClick={() => setView("chat")}><img className="nav-mascot" src={MENU_MASCOTS.chat.src} alt=""/>{t.chat}</button>
+        <button className={view === "knowledge" ? "active" : ""} onClick={() => setView("knowledge")}><img className="nav-mascot" src={MENU_MASCOTS.knowledge.src} alt=""/>{t.knowledge}</button>
+        <button className={view === "tacit" ? "active" : ""} onClick={() => setView("tacit")}><img className="nav-mascot" src={MENU_MASCOTS.tacit.src} alt=""/>{t.tacit}</button>
+        <button className={view === "memory" ? "active" : ""} onClick={() => setView("memory")}><img className="nav-mascot" src={MENU_MASCOTS.memory.src} alt=""/>{t.memory}</button>
+        <button className={view === "governance" ? "active" : ""} onClick={() => setView("governance")}><img className="nav-mascot" src={MENU_MASCOTS.governance.src} alt=""/>{t.governance}</button>
+        {role === "admin" && <button className={view === "gaps" ? "active" : ""} onClick={() => setView("gaps")}><img className="nav-mascot" src={MENU_MASCOTS.gaps.src} alt=""/>{t.gaps}</button>}
+        {role === "admin" && <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><img className="nav-mascot" src={MENU_MASCOTS.settings.src} alt=""/>{t.settings}</button>}
       </nav>
       <div className={`environment ${role === "admin" ? "admin" : ""}`}>
         <span className="dot"/>{t.onPremises}<br/>
@@ -922,12 +943,17 @@ export default function App() {
       </div>
     </aside>
     <section className="workspace">
+      <div className="menu-ribbon">
+        <img className="menu-ribbon-mascot" src={MENU_MASCOTS[view].src} alt=""/>
+        <strong>{title()}</strong>
+        <span>{MENU_MASCOTS[view].tagline[locale]}</span>
+      </div>
       <header>
         <div><p className="eyebrow">{t.workspace}</p><h1>{title()}</h1></div>
         <div className="header-actions">
           <label className="locale-select role-select"><ShieldCheck size={15}/><span className="sr-only">{t.role}</span><select aria-label={t.role} value={role} onChange={event => setRole(event.target.value as Role)}><option value="member">{t.member}</option><option value="admin">{t.admin}</option></select></label>
           <label className="locale-select"><Globe2 size={15}/><span className="sr-only">{t.language}</span><select aria-label={t.language} value={locale} onChange={event => changeLocale(event.target.value as Locale)}><option value="ko">한국어</option><option value="en">English</option></select></label>
-          {view === "chat" && <><select value={model} onChange={event => setModel(event.target.value)}><option value={model}>{model}</option></select><label className="toggle"><input type="checkbox" checked={retrieval} onChange={event => setRetrieval(event.target.checked)}/><span/>RAG</label></>}
+          {view === "chat" && <><select aria-label={t.modelLabel} value={model} onChange={event => setModel(event.target.value)}><option value={model}>{model}</option></select><label className="toggle"><input type="checkbox" checked={retrieval} onChange={event => setRetrieval(event.target.checked)}/><span/>RAG</label></>}
         </div>
       </header>
       {view === "chat" && <>
@@ -1100,9 +1126,9 @@ export default function App() {
               <button className="primary" onClick={() => { setTacitSelected(question); setTacitAnswer(""); setTacitAttachments([]); setTacitMessage(""); }}><MessagesSquare size={15}/>{t.answerThis}</button>
             </article>)}
           </div>}
-          {tacitSelected && <section className="tacit-form">
+          {tacitSelected && <section className="tacit-form" id="tacit-form" ref={tacitFormRef}>
             <h3>{tacitSelected.question}</h3>
-            <textarea value={tacitAnswer} onChange={event => setTacitAnswer(event.target.value)} placeholder={t.tacitPlaceholder} rows={6}/>
+            <textarea ref={tacitAnswerRef} value={tacitAnswer} onChange={event => setTacitAnswer(event.target.value)} placeholder={t.tacitPlaceholder} rows={6}/>
             <div className="tacit-attachments">
               <input ref={tacitFileInput} type="file" multiple hidden onChange={event => void uploadTacitAttachment(event.target.files)}/>
               <button className="ghost" disabled={tacitBusy} onClick={() => tacitFileInput.current?.click()}><Paperclip size={15}/>{t.attach}</button>

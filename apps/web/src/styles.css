@@ -260,3 +260,21 @@ footer { width:min(860px, 100%); margin:0 auto; padding:16px 30px 24px; }.upload
 .document-chips { margin: 4px 0 6px; }
 .meta-editor { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 .meta-editor input { flex: 1; min-width: 150px; background: #0b1422; border: 1px solid #2c4266; border-radius: 7px; color: #dbe7fa; padding: 7px 9px; font-size: 12px; }
+
+/* Menu mascots and themed ribbon */
+.shell.theme-chat { --menu-accent: #7fb0ff; }
+.shell.theme-knowledge { --menu-accent: #5fd0bd; }
+.shell.theme-tacit { --menu-accent: #f0b45a; }
+.shell.theme-memory { --menu-accent: #b49bf0; }
+.shell.theme-governance { --menu-accent: #7fe0b4; }
+.shell.theme-gaps { --menu-accent: #ff9a6a; }
+.shell.theme-settings { --menu-accent: #9fb6d8; }
+.nav-mascot { width: 24px; height: 24px; flex: 0 0 auto; border-radius: 6px; object-fit: cover; }
+nav button.active .nav-mascot { box-shadow: 0 0 0 1px var(--menu-accent), 0 0 10px -2px var(--menu-accent); }
+.menu-ribbon { position: relative; display: flex; align-items: center; gap: 9px; height: 42px; padding: 0 42px; overflow: hidden; background: #0b1424; border-bottom: 1px solid #1e2c42; }
+.menu-ribbon::before { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, var(--menu-accent), transparent 58%); opacity: .13; pointer-events: none; }
+.menu-ribbon-mascot { position: relative; width: 26px; height: 26px; border-radius: 7px; box-shadow: 0 0 0 1px rgba(255, 255, 255, .1); }
+.menu-ribbon strong { position: relative; color: #e2ecfb; font-size: 12px; font-weight: 650; letter-spacing: .01em; }
+.menu-ribbon span { position: relative; color: #8296b3; font-size: 11px; }
+.menu-ribbon span::before { content: "·"; margin-right: 6px; color: #41546f; }
+@media (max-width: 700px) { .menu-ribbon { padding: 0 20px; } .menu-ribbon span { display: none; } }

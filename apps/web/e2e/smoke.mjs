@@ -166,10 +166,10 @@ try {
 
   await step("administrator edits document roles", async () => {
     const row = page.locator(".document", { hasText: documentName });
-    await row.getByRole("button", { name: "권한 편집" }).click();
+    await row.getByRole("button", { name: "분류 편집" }).click();
     await row.getByLabel("허용 역할").fill("member, admin, legal");
     await row.getByRole("button", { name: "저장" }).click();
-    await row.getByText("문서 권한을 저장했습니다.").waitFor({ timeout: 10000 });
+    await row.getByText("카테고리와 태그를 저장했습니다.").waitFor({ timeout: 10000 });
     await row.getByText("legal").waitFor({ timeout: 10000 });
     assert.match(await row.innerText(), /legal/);
   });
@@ -179,7 +179,12 @@ try {
     await page.waitForTimeout(300);
     assert.equal(await page.locator("nav").getByRole("button", { name: "설정", exact: true }).count(), 0);
     assert.equal(await page.locator(".admin-badge").count(), 0);
-    assert.equal(await page.locator(".document", { hasText: documentName }).getByRole("button", { name: "권한 편집" }).count(), 0);
+    const row = page.locator(".document", { hasText: documentName });
+    if (await row.count()) {
+      await row.getByRole("button", { name: "분류 편집" }).click();
+      assert.equal(await row.getByLabel("허용 역할").count(), 0);
+      await row.getByRole("button", { name: "취소" }).click();
+    }
   });
 
   assert.deepEqual(consoleErrors, [], `Unexpected browser console errors:\n${consoleErrors.join("\n")}`);
