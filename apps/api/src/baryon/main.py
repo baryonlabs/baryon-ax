@@ -283,7 +283,7 @@ class DocumentService:
         return [
             {"id": document.id, "title": document.title, "owner_id": document.owner_id,
              "allowed_roles": sorted(document.allowed_roles), "created_at": document.created_at,
-             "chunks": len(chunk_text(document.content))}
+             "chunks": len(document.chunks) or len(chunk_text(document.content))}
             for document in self.documents.values()
             if self.can_view(principal, document)
         ]
