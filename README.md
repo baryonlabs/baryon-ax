@@ -19,7 +19,7 @@ The platform brings a chat workspace, agent execution, grounded knowledge search
 - Korean-first bilingual UI (한국어 / English), with browser-language detection and persisted preference
 - OpenAI-compatible model adapter, verified with **Ollama `qwen2.5:7b`** and **vLLM `Qwen3.5-27B` on B300 GPU 7**, with a safe local demo fallback
 - Input/output policy checks and basic PII masking, including chunk-boundary-safe streaming masks
-- Durable document upload, **LlamaIndex sentence chunking**, **Qdrant vector retrieval** with lexical fallback, and source citations
+- Durable document upload with **MIME-based parser routing** (HWP/HWPX/PDF/Office/images via kordoc/docling/Tika sidecars), **structure-aware chunking** (heading paths, table headers), **Qdrant vector retrieval** with lexical fallback, and source citations
 - **LangGraph** policy/retrieval orchestration, **FastEmbed** multilingual embeddings
 - Role-aware document ACLs, inline administrator editing, and organization isolation
 - **PostgreSQL audit events** with JSONL mirroring, **Redis rate limiting**, and **Langfuse tracing**
@@ -73,7 +73,12 @@ OLLAMA_HOST_URL=http://host.docker.internal:11435 \
 | `MEM0_ENABLED` / `OLLAMA_BASE_URL` | `false` / local | Mem0 memory layer |
 | `DOCUMENT_STORE` | `/tmp/baryon-ax-documents` | Durable document JSON directory |
 | `AUDIT_LOG` | `/tmp/baryon-ax-audit/events.jsonl` | JSONL audit mirror |
-| `MAX_DOCUMENT_BYTES` | `2000000` | Upload size limit |
+| `MAX_DOCUMENT_BYTES` | `20000000` | Upload size limit |
+| `KORDOC_URL` / `KORDOC_CMD` | empty | kordoc sidecar (`POST /parse`) or CLI (`--format json`) for HWP/HWPX |
+| `DOCLING_URL` / `DOCLING_CMD` | empty | docling sidecar or CLI for PDF/Office/images |
+| `TIKA_URL` | empty | Tika `PUT /tika` fallback for legacy formats |
+| `PARSER_TIMEOUT_SECONDS` | `180` | Per-document parser timeout |
+| `INGEST_BATCH_SIZE` / `INGEST_MAX_IN_FLIGHT` | `8` / `4` | Ingest pipeline batching and concurrency |
 | `RATE_LIMIT_PER_MINUTE` | `60` | Chat requests per user/org per minute |
 
 ## Architecture
@@ -97,7 +102,8 @@ See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/b300-v
 | `GET /health` | Liveness and configured adapter status |
 | `GET /v1/models` | Models visible to the caller |
 | `POST /v1/chat/completions` | OpenAI-style chat completion, including SSE streaming |
-| `POST /v1/documents` | Upload a UTF-8 text/Markdown document |
+| `POST /v1/documents` | Upload a document (MIME-routed; `?async=true` returns a job id) |
+| `GET /v1/jobs/{job_id}` | Async ingest job state and chunk count |
 | `GET /v1/documents` | List documents visible to the caller |
 | `DELETE /v1/documents/{id}` | Delete a document as its uploader or an administrator |
 | `PATCH /v1/documents/{id}` | Update a document's role ACL as an administrator |

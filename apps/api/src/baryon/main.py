@@ -19,16 +19,22 @@ from typing import Annotated, AsyncIterator, Literal, TypedDict
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import __version__
+from .ingest import Acl as IngestAcl
+from .ingest import REGISTRY, chunk_document
+from .ingest.adapters import register_default_adapters
+from .ingest.mime import sniff_mime
+from .ingest.parsers import ParseError
+from .ingest.pipeline import PipelineConfig, PermanentError, run_pipeline
 
 logger = logging.getLogger("baryon.ax")
 
-MAX_DOCUMENT_BYTES = int(os.getenv("MAX_DOCUMENT_BYTES", "2000000"))
+MAX_DOCUMENT_BYTES = int(os.getenv("MAX_DOCUMENT_BYTES", "20000000"))
 MODEL_TIMEOUT_SECONDS = float(os.getenv("MODEL_TIMEOUT_SECONDS", "90"))
 
 
@@ -52,6 +58,8 @@ class Document:
     content: str
     allowed_roles: set[str]
     created_at: str = field(default_factory=now)
+    chunks: list[dict] = field(default_factory=list)
+    metadata: dict = field(default_factory=dict)
 
 
 class Message(BaseModel):
@@ -225,6 +233,7 @@ class DocumentService:
                 document = Document(
                     id=payload["id"], organization_id=payload["organization_id"], owner_id=payload.get("owner_id", "unknown"), title=payload["title"],
                     content=payload["content"], allowed_roles=set(payload["allowed_roles"]), created_at=payload["created_at"],
+                    chunks=payload.get("chunks") or [], metadata=payload.get("metadata") or {},
                 )
             except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                 continue
@@ -245,8 +254,25 @@ class DocumentService:
             return True
         return bool(document.allowed_roles.intersection(principal.roles))
 
-    def create(self, principal: Principal, title: str, content: str, allowed_roles: set[str]) -> Document:
-        document = Document(str(uuid.uuid4()), principal.organization_id, principal.user_id, title, content, allowed_roles)
+    def create(
+        self,
+        principal: Principal,
+        title: str,
+        content: str,
+        allowed_roles: set[str],
+        chunks: list[dict] | None = None,
+        metadata: dict | None = None,
+    ) -> Document:
+        document = Document(
+            id=str(uuid.uuid4()),
+            organization_id=principal.organization_id,
+            owner_id=principal.user_id,
+            title=title,
+            content=content,
+            allowed_roles=allowed_roles,
+            chunks=list(chunks or []),
+            metadata=dict(metadata or {}),
+        )
         self.documents[document.id] = document
         self._persist(document)
         if self.vector:
@@ -412,20 +438,23 @@ class VectorIndex:
             return
         try:
             from qdrant_client.models import PointStruct
-            chunks = chunk_text(document.content)
-            vectors = self._embed(chunks)
-            points = [
-                PointStruct(
-                    id=self._point_id(document.id, index),
-                    vector=vector,
-                    payload={
-                        "document_id": document.id, "title": document.title, "chunk": index + 1,
-                        "content": chunk, "organization_id": document.organization_id,
-                        "owner_id": document.owner_id, "allowed_roles": sorted(document.allowed_roles),
-                    },
-                )
-                for index, (chunk, vector) in enumerate(zip(chunks, vectors))
-            ]
+            prepared = document.chunks or [{"text": chunk} for chunk in chunk_text(document.content)]
+            texts = [str(item.get("text") or "") for item in prepared]
+            vectors = self._embed(texts)
+            points = []
+            for index, (item, vector) in enumerate(zip(prepared, vectors)):
+                payload = {
+                    "document_id": document.id, "title": document.title, "chunk": index + 1,
+                    "content": texts[index], "organization_id": document.organization_id,
+                    "owner_id": document.owner_id, "allowed_roles": sorted(document.allowed_roles),
+                }
+                for key in ("heading_path", "page", "kind", "ordinal"):
+                    if item.get(key) not in (None, ""):
+                        payload[key] = item[key]
+                if document.metadata:
+                    payload["source_type"] = document.metadata.get("source_type", "file")
+                    payload["parser"] = document.metadata.get("parser", "text")
+                points.append(PointStruct(id=self._point_id(document.id, index), vector=vector, payload=payload))
             self.client.upsert(self.collection, points=points, wait=True)
         except Exception:
             logger.exception("Could not index document %s in Qdrant", document.id)
@@ -1074,6 +1103,8 @@ def dashboard_links() -> dict:
     }
 
 
+register_default_adapters()
+
 app = FastAPI(title="Baryon AX API", version=__version__, lifespan=lifespan)
 origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3001,http://localhost:5173").split(",") if origin.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -1081,6 +1112,133 @@ policy = PolicyEngine()
 vector = VectorIndex()
 documents = DocumentService(vector=vector)
 audit = AuditSink()
+
+
+@dataclass
+class IngestJob:
+    """In-process record of an asynchronous document parse/index job."""
+
+    id: str
+    organization_id: str
+    owner_id: str
+    filename: str
+    mime: str
+    trace_id: str
+    state: str = "queued"
+    document_id: str | None = None
+    chunks: int = 0
+    error: str = ""
+    created_at: str = field(default_factory=now)
+    finished_at: str | None = None
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+
+JOBS: dict[str, IngestJob] = {}
+JOBS_LOCK = threading.Lock()
+INGEST_PIPELINE_CONFIG = PipelineConfig(
+    queue_maxsize=int(os.getenv("INGEST_QUEUE_MAXSIZE", "32")),
+    max_in_flight=int(os.getenv("INGEST_MAX_IN_FLIGHT", "4")),
+    batch_size=int(os.getenv("INGEST_BATCH_SIZE", "8")),
+    batch_timeout_s=float(os.getenv("INGEST_BATCH_TIMEOUT_SECONDS", "0.5")),
+    max_retries=int(os.getenv("INGEST_MAX_RETRIES", "2")),
+)
+
+
+async def ingest_upload(
+    principal: Principal,
+    filename: str,
+    payload: bytes,
+    roles: set[str],
+    trace_id: str,
+    *,
+    mime: str = "",
+) -> Document:
+    """Parse an upload into a stored, indexed document.
+
+    The parser is selected by MIME, not by extension, and the resulting IR is
+    rendered to Markdown for the durable store while structure-aware chunks go
+    to the vector index.
+    """
+    if not filename:
+        raise HTTPException(422, "A filename is required")
+    if len(payload) > MAX_DOCUMENT_BYTES:
+        raise HTTPException(413, f"Document exceeds the {MAX_DOCUMENT_BYTES} byte limit")
+    detected = mime or sniff_mime(filename, payload)
+    if detected == "application/octet-stream":
+        raise HTTPException(415, "Unsupported file type")
+    acl = IngestAcl(principal.organization_id, principal.user_id, tuple(sorted(roles)))
+    try:
+        ingested = await asyncio.to_thread(
+            REGISTRY.parse, payload, filename, acl, f"upload://{filename}", detected
+        )
+        chunks = chunk_document(ingested)
+    except ParseError as error:
+        audit.emit(
+            "document.parse_failed", principal, trace_id,
+            filename=filename, mime=detected, reason=str(error)[:300],
+        )
+        logger.warning("Parse failed for %s (%s): %s", filename, detected, error)
+        raise HTTPException(415, f"Could not parse {filename}: {error}") from error
+
+    content = ingested.render_markdown()
+    if not content.strip():
+        raise HTTPException(422, "Document is empty")
+
+    chunk_payload = [
+        {
+            "text": chunk.text,
+            "ordinal": chunk.ordinal,
+            "heading_path": chunk.heading_path,
+            "page": chunk.page,
+            "kind": chunk.kind,
+        }
+        for chunk in chunks
+    ]
+    document = await asyncio.to_thread(
+        documents.create,
+        principal,
+        filename,
+        content,
+        roles,
+        chunk_payload,
+        {
+            "parser": ingested.parser,
+            "parser_version": ingested.parser_version,
+            "mime": ingested.mime or detected,
+            "source_type": ingested.source_type,
+            "content_hash": ingested.content_hash,
+        },
+    )
+    audit.emit(
+        "document.ingested", principal, trace_id,
+        document_id=document.id, title=document.title,
+        parser=ingested.parser, chunks=len(chunks),
+    )
+    return document
+
+
+async def run_ingest_job(job: IngestJob, principal: Principal, payload: bytes, roles: set[str]) -> None:
+    async def handler(batch: list[IngestJob]) -> None:
+        for item in batch:
+            try:
+                document = await ingest_upload(principal, item.filename, payload, roles, item.trace_id, mime=item.mime)
+            except HTTPException as error:
+                raise PermanentError(str(error.detail)) from error
+            item.document_id = document.id
+            item.chunks = len(document.chunks)
+            item.state = "done"
+            item.finished_at = now()
+
+    with JOBS_LOCK:
+        job.state = "running"
+    stats = await run_pipeline([job], handler, INGEST_PIPELINE_CONFIG)
+    if stats.failed and job.state != "done":
+        with JOBS_LOCK:
+            job.state = "failed"
+            job.error = stats.dead_letters[0].error if stats.dead_letters else "ingest failed"
+            job.finished_at = now()
 model_adapter = ModelAdapter()
 rate_limiter = RateLimiter()
 tracer = Tracer()
@@ -1118,25 +1276,55 @@ async def models() -> dict:
 
 @app.post("/v1/documents")
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...), allowed_roles: str = Form("member,admin"),
+    background: bool = Query(False, alias="async"),
     x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
 ) -> dict:
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
-    if not file.filename or Path(file.filename).suffix.lower() not in {".txt", ".md"}:
-        raise HTTPException(415, "Only UTF-8 .txt and .md files are supported by the basic parser")
+    if not file.filename:
+        raise HTTPException(422, "A filename is required")
     payload = await file.read(MAX_DOCUMENT_BYTES + 1)
     if len(payload) > MAX_DOCUMENT_BYTES:
         raise HTTPException(413, f"Document exceeds the {MAX_DOCUMENT_BYTES} byte limit")
-    try:
-        content = payload.decode("utf-8", errors="strict")
-    except UnicodeDecodeError as error:
-        raise HTTPException(415, "Document must be UTF-8 encoded") from error
-    if not content.strip():
-        raise HTTPException(422, "Document is empty")
-    document = await asyncio.to_thread(documents.create, principal, file.filename, content, roles_from_header(allowed_roles))
+    mime = sniff_mime(file.filename, payload)
+    roles = roles_from_header(allowed_roles)
     trace_id = str(uuid.uuid4())
-    audit.emit("document.ingested", principal, trace_id, document_id=document.id, title=document.title)
-    return {"id": document.id, "title": document.title, "chunks": len(chunk_text(content)), "trace_id": trace_id}
+
+    if background:
+        job = IngestJob(
+            id=str(uuid.uuid4()), organization_id=principal.organization_id, owner_id=principal.user_id,
+            filename=file.filename, mime=mime, trace_id=trace_id,
+        )
+        with JOBS_LOCK:
+            JOBS[job.id] = job
+        # Starlette runs this after the response is sent. In-process only: a
+        # restart loses queued jobs, so a durable queue is required for P1.
+        background_tasks.add_task(run_ingest_job, job, principal, payload, roles)
+        return JSONResponse({"job_id": job.id, "state": job.state, "trace_id": trace_id}, status_code=202)
+
+    document = await ingest_upload(principal, file.filename, payload, roles, trace_id, mime=mime)
+    return {
+        "id": document.id,
+        "title": document.title,
+        "chunks": len(document.chunks) or len(chunk_text(document.content)),
+        "parser": document.metadata.get("parser", ""),
+        "mime": document.metadata.get("mime", mime),
+        "trace_id": trace_id,
+    }
+
+
+@app.get("/v1/jobs/{job_id}")
+async def get_ingest_job(
+    job_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+    if not job or job.organization_id != principal.organization_id:
+        raise HTTPException(404, "Job not found")
+    return job.as_dict()
 
 
 @app.get("/v1/documents/search")

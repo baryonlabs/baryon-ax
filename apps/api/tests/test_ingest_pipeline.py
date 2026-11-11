@@ -17,6 +17,7 @@ from baryon.ingest import (
     ParserRegistry,
     ParserSpec,
     ParseError,
+    PermanentError,
     Pipeline,
     PipelineConfig,
     REGISTRY,
@@ -98,7 +99,7 @@ def test_registry_prefers_markdown_and_falls_back_to_text() -> None:
     plain = REGISTRY.parse(b"hello\n\nworld", "a.txt", ACL, "mem://a.txt")
     assert plain.parser == "text"
 
-    fallback = REGISTRY.parse("한글 문서".encode(), "unknown.bin", ACL, "mem://unknown.bin")
+    fallback = REGISTRY.parse("한글 문서".encode(), "unknown.bin", ACL, "mem://unknown.bin", "text/plain")
     assert fallback.parser == "text"
 
 
@@ -250,6 +251,23 @@ async def test_pipeline_dead_letters_after_retries() -> None:
     assert {letter.item for letter in stats.dead_letters} == {1, 2}
     assert all(letter.attempts == 3 for letter in stats.dead_letters)
     assert "permanent" in stats.dead_letters[0].error
+
+
+@pytest.mark.asyncio
+async def test_pipeline_does_not_retry_permanent_errors() -> None:
+    attempts = {"n": 0}
+
+    async def handler(batch: list[int]) -> None:
+        attempts["n"] += 1
+        raise PermanentError("bad input")
+
+    config = PipelineConfig(batch_timeout_s=0.01, max_retries=5, backoff_s=0.001)
+    stats = await Pipeline(handler, config).run([1])
+
+    assert attempts["n"] == 1
+    assert stats.retries == 0
+    assert stats.failed == 1
+    assert "bad input" in stats.dead_letters[0].error
 
 
 @pytest.mark.asyncio

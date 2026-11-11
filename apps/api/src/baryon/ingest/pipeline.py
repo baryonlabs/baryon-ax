@@ -53,6 +53,13 @@ class PipelineConfig:
             raise ValueError("max_retries must be >= 0")
 
 
+class PermanentError(Exception):
+    """Raised by a handler when retrying cannot help (bad input, 4xx).
+
+    The pipeline dead-letters the batch immediately instead of burning retries.
+    """
+
+
 @dataclass
 class DeadLetter:
     item: Any
@@ -184,7 +191,8 @@ class Pipeline(Generic[T]):
                     raise
                 except Exception as error:  # noqa: BLE001 - batch boundary
                     attempt += 1
-                    if attempt > self._config.max_retries:
+                    permanent = isinstance(error, PermanentError)
+                    if permanent or attempt > self._config.max_retries:
                         for item in batch:
                             self._stats.dead_letters.append(
                                 DeadLetter(item=item, error=f"{type(error).__name__}: {error}", attempts=attempt)

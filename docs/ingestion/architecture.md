@@ -36,6 +36,23 @@
 | DB | 없음 | — |
 | 삭제 | Qdrant 필터 삭제 | 재색인·버전 관리 없음 |
 
+### 2.1 구현 현황 (2026-11-11)
+
+| 파일 | 내용 | 상태 |
+| --- | --- | --- |
+| `ingest/ir.py` | Block/Table/Acl/Document/Chunk, 헤딩 경로, 구조 인지 청킹 | ✅ |
+| `ingest/parsers.py` | 확장 가능한 파서 레지스트리, `available()` 게이팅, text/markdown/DB rows | ✅ |
+| `ingest/mime.py` | magic bytes + ZIP 내부 검사 + 확장자 폴백 | ✅ |
+| `ingest/sidecar.py` | HTTP sidecar 계약, Tika(PUT), CLI 워커(stdout JSON / output dir) | ✅ |
+| `ingest/adapters.py` | kordoc/docling/Tika 환경변수 배선, 미구성 시 자동 비활성 | ✅ |
+| `ingest/pipeline.py` | 배압, 크기/시간 배칭, 재시도, `PermanentError`, DLQ, graceful stop | ✅ |
+| `ingest/db.py` | SQLite/SQLAlchemy introspection, 커서 페이지네이션, 행→IR | ✅ |
+| `scripts/ingest_db.py` | 테이블 → API 동기화 CLI (`--dry-run`, `--json`) | ✅ |
+| `main.py` | MIME 라우팅 업로드, 구조 청크 색인, `?async=true`, `/v1/jobs` | ✅ |
+| DB 소스 API (`/v1/sources`) | 등록·스케줄·커서 저장 | ⛔ P1 |
+
+검증: `apps/api/tests/` **70개 통과** (기존 26 + 인제스트 44).
+
 ---
 
 ## 3. Broadway에서 가져올 것
@@ -320,15 +337,15 @@ CREATE TABLE kb_dead_letter (
 
 ## 11. API 변경안
 
-| 메서드 | 경로 | 변화 |
-| --- | --- | --- |
-| `POST` | `/v1/documents` | MIME 스니핑, 다중 포맷, **비동기 옵션** (`?async=true` → `job_id`) |
-| `GET` | `/v1/jobs/{job_id}` | 진행률·단계·실패 건수 |
-| `POST` | `/v1/sources` | 소스 등록(디렉터리/DB). 관리자 전용, `config`에 비밀값 저장 금지 |
-| `POST` | `/v1/sources/{id}/sync` | 수동 동기화 시작 |
-| `GET` | `/v1/sources/{id}` | 마지막 커서·성공/실패 통계 |
-| `POST` | `/v1/admin/reindex` | `parser_version`/`embedding_model` 변경 시 전체 재색인 |
-| `GET` | `/v1/documents/{id}/chunks` | 관리자 감사용(원문 노출 정책 별도) |
+| 메서드 | 경로 | 상태 | 비고 |
+| --- | --- | --- | --- |
+| `POST` | `/v1/documents` | ✅ | MIME 스니핑, 다중 포맷, **비동기 옵션** (`?async=true` → `job_id`) |
+| `GET` | `/v1/jobs/{job_id}` | ✅ | 잡 상태·문서 ID·청크 수·오류. 조직 스코프 |
+| `POST` | `/v1/sources` | ⛔ P1 | 소스 등록(디렉터리/DB). 관리자 전용, `config`에 비밀값 저장 금지 |
+| `POST` | `/v1/sources/{id}/sync` | ⛔ P1 | 수동 동기화 시작 |
+| `GET` | `/v1/sources/{id}` | ⛔ P1 | 마지막 커서·성공/실패 통계 |
+| `POST` | `/v1/admin/reindex` | ✅ | 기존 계약 유지 |
+| `GET` | `/v1/documents/{id}/chunks` | ⛔ | 관리자 감사용(원문 노출 정책 별도) |
 
 기존 계약(`/v1/documents/search`, 인용 메타만 반환)은 **변경하지 않는다**.
 
@@ -350,19 +367,19 @@ CREATE TABLE kb_dead_letter (
 
 ## 13. 단계별 로드맵
 
-### P0 — 다중 포맷 업로드 (2~3주)
-- [x] `ingest/` 모듈: IR, 파서 레지스트리, Broadway식 배처/파이프라인 (테스트 19개 통과)
-- [ ] `TextParser`, `MarkdownParser` → `kordoc` 워커 → `docling` → `Tika` fallback
-- [ ] MIME 스니핑(`python-magic` 또는 확장자+magic bytes), 크기 상한 20MB
-- [ ] 표·헤딩 인지 청킹, Qdrant payload 확장
-- [ ] `document.parse_failed` 감사 + DLQ 테이블
-- **수용 기준**: HWP/HWPX/PDF/DOCX/XLSX/PPTX/PNG 각 1건 업로드 → 검색에서 인용과 함께 반환. 실패 1건이 다른 업로드를 막지 않음.
+### P0 — 다중 포맷 업로드 (완료)
+- [x] `ingest/` 모듈: IR, 파서 레지스트리, Broadway식 배처/파이프라인
+- [x] `TextParser`, `MarkdownParser` → `kordoc`(HTTP/CLI) → `docling`(HTTP/CLI) → `Tika` fallback
+- [x] MIME 스니핑(magic bytes + ZIP 내부), 크기 상한 20MB
+- [x] 표·헤딩 인지 청킹, Qdrant payload 확장(`heading_path`/`page`/`kind`/`parser`)
+- [x] `document.parse_failed` 감사 + DLQ(`PipelineStats.dead_letters`)
+- **수용 기준 충족**: HWPX·PDF·DOCX·XLSX·PPTX·PNG 라우팅 테스트 + 검색 확인. 실패 1건은 DLQ로 격리(`test_async_job_failure_is_isolated`). 실제 kordoc/docling 바이너리 검증은 배포 환경 과제.
 
 ### P1 — DB 지식화 (4~6주)
-- [ ] SQLAlchemy introspection + 스키마 프로파일
-- [ ] dlt 또는 자체 커서 기반 증분
-- [ ] 행 직렬화 템플릿, ACL 매핑, PII 마스킹
-- [ ] `kb_source`/`kb_job`/`kb_dead_letter`, 잡 API
+- [x] SQLAlchemy introspection + 스키마 프로파일 (`ingest/db.py`)
+- [x] 커서 기반 증분 + 행 직렬화 템플릿 (`scripts/ingest_db.py`로 API 동기화)
+- [ ] ACL 매핑 고도화, 색인 전 PII 마스킹
+- [ ] `kb_source`/`kb_job`/`kb_dead_letter`, `/v1/sources` API
 - [ ] 재색인·버전·tombstone
 - **수용 기준**: Postgres 테이블 1개(10만 행) 동기화 → 자연어 검색으로 특정 행 근거 인용. 동기화 중 API 응답 지연 p95 2배 이내.
 
@@ -387,7 +404,9 @@ CREATE TABLE kb_dead_letter (
 | DB | Docker Postgres + 시드 데이터, 커서 증분 재실행 |
 | E2E | Playwright: 업로드 → 검색 → 인용 표시 |
 
-프로토타입 테스트: `apps/api/tests/test_ingest_pipeline.py` (19개, 파서·IR·배압·배칭·재시도·DLQ·graceful stop).
+테스트 파일: `test_ingest_pipeline.py`(20), `test_ingest_adapters.py`(9), `test_ingest_db.py`(7), `test_api_ingest.py`(8). 전체 70개 통과.
+
+E2E 확인: `uvicorn` + `scripts/ingest_db.py`로 SQLite 테이블 3행 동기화 → `/v1/documents/search`에서 행 문서 검색 확인.
 
 ---
 
@@ -434,12 +453,13 @@ stats = await pipeline.run(items)   # 또는 백그라운드 태스크로 실행
 2. `vector._embed`는 내부 락으로 직렬화되어 있다. 배치 크기를 키우면 락 대기 시간이 늘어나므로 `max_in_flight`와 함께 조정한다.
 3. `index_batch`는 **문서 단위 롤백**을 책임진다. 예외를 그대로 올리면 파이프라인이 배치를 재시도하고, 최종 실패 시 DLQ로 보낸다.
 4. `stop()`은 생산만 멈춘다. 진행 중 배치는 완료된다(graceful shutdown 계약).
+5. **비동기 잡은 인프로세스**다. Starlette `BackgroundTasks`로 응답 후 실행되며, 재시작하면 큐가 사라진다. P1에서 `kb_job` + 워커로 교체한다.
 
 ---
 
 ## 16. 열린 결정
 
-1. **kordoc 호출 방식**: CLI subprocess vs HTTP 워커 vs 공식 Python SDK. → HTTP 워커 권장(타임아웃·격리·재사용).
+1. **kordoc 호출 방식**: HTTP 워커 우선, CLI(`KORDOC_CMD`) 지원. 공식 Python SDK는 P1 이후 검토.
 2. **docling vs MinerU/marker**: GPU가 있으면 MinerU가 품질 우위, 없으면 docling. → P0은 docling, 품질 미달 문서만 MinerU 배치.
 3. **청커**: chonkie 도입 시 기존 `chunk_text`와 토큰 단위 정합 필요. → 표/헤딩은 chonkie, 폴백은 현행 유지.
 4. **DB 행 단위 문서화**: 100만 행 이상 테이블은 테이블 단위 문서 + 행 청크 혼합 필요.

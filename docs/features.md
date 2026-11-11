@@ -45,7 +45,7 @@
 | 관리자 설정 뷰 | ✅ | 개요·런타임·보안 정책·저장소 카드 |
 | 반응형 레이아웃 | ✅ | 700px 이하에서 사이드바 숨김, 설정 카드 1열 |
 | 빈 상태 안내 | ✅ | 문서 없음, 감사 이벤트 없음, 권한 없음 상태 표시 |
-| 업로드 오류 안내 | ✅ | UTF-8/확장자 오류 시 채팅에 안내 메시지 |
+| 업로드 오류 안내 | ✅ | 파싱 실패·미지원 형식·용량 초과를 채팅/응답에 안내 |
 | 스트림 오류 안내 | ✅ | 부분 응답 보존 후 오류 문구 추가 |
 | 전역 로딩 인디케이터 | 🔶 | 전송 버튼 비활성화·커서 표시만 있고 전역 스피너는 없음 |
 
@@ -84,11 +84,17 @@
 
 | 기능 | 상태 | 설명 |
 | --- | --- | --- |
-| 문서 업로드 | ✅ | UTF-8 `.txt` / `.md` |
-| 업로드 크기 제한 | ✅ | 기본 2,000,000 bytes (`MAX_DOCUMENT_BYTES`) |
+| 문서 업로드 | ✅ | MIME 기반 라우팅. 기본 `.txt`/`.md`, sidecar 구성 시 HWP/HWPX/PDF/Office/이미지 |
+| 업로드 크기 제한 | ✅ | 기본 20,000,000 bytes (`MAX_DOCUMENT_BYTES`) |
+| MIME 스니핑 | ✅ | magic bytes 우선, ZIP 내부(`word/`, `xl/`, `ppt/`, HWPX `mimetype`) 검사 |
 | 빈 문서 거부 | ✅ | 공백만 있는 문서는 422 |
-| UTF-8 검증 | ✅ | 디코딩 실패 시 415 |
-| 청킹 | ✅ | LlamaIndex `SentenceSplitter` (256 토큰, 32 토큰 overlap) |
+| 텍스트 인코딩 검증 | ✅ | UTF-8 디코딩 실패 시 415 |
+| 구조 인지 청킹 | ✅ | 헤딩 경로(`h1 > h2`) 보존, 표는 헤더 반복 + 행 묶음 |
+| 청킹 폴백 | ✅ | LlamaIndex `SentenceSplitter` (256 토큰, 32 토큰 overlap) |
+| 파서 폴백 체인 | ✅ | kordoc → docling → Tika → 415, 실패는 `document.parse_failed` 감사 |
+| 비동기 인제스트 잡 | ✅ | `POST /v1/documents?async=true` → `GET /v1/jobs/{id}` |
+| 파서 sidecar | ✅ | `KORDOC_URL`/`DOCLING_URL`(HTTP) 또는 `KORDOC_CMD`/`DOCLING_CMD`(CLI), `TIKA_URL` |
+| 파이프라인 배압/재시도/DLQ | ✅ | `INGEST_*` 환경변수, 영구 오류는 재시도 없이 DLQ |
 | 문서 영속화 | ✅ | 문서별 JSON 파일, 재시작 후 복원 |
 | 조직 격리 | ✅ | 다른 조직 문서는 목록·검색·삭제·수정 불가 |
 | 역할 ACL | ✅ | 문서별 `allowed_roles` |
@@ -105,7 +111,10 @@
 | 벡터 검색/Qdrant 연동 | ✅ | FastEmbed 다국어 임베딩 + Qdrant, 실패 시 어휘 검색 폴백 |
 | 임베딩 생성 | ✅ | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (384차원) |
 | 벡터 재색인 | ✅ | 관리자 설정 버튼 + `POST /v1/admin/reindex` |
-| PDF/Word/HTML 파싱 | ⛔ | 텍스트/Markdown만 지원 |
+| PDF/Word/HTML 파싱 | ✅ | docling sidecar/CLI 구성 시. 미구성 시 415 |
+| HWP/HWPX/HWPML 파싱 | ✅ | kordoc sidecar/CLI 구성 시. 표 구조·RAG 청크 지원 |
+| 스캔 이미지 OCR | 🔶 | kordoc 내장 OCR(설정 시), 그 외 OCR 어댑터는 미구현 |
+| 데이터베이스 → 지식 | 🔶 | `baryon.ingest.db` + `scripts/ingest_db.py` (SQLite/SQLAlchemy), API 소스 엔드포인트는 미구현 |
 | 문서 본문 수정 | ⛔ | ACL만 수정 가능 |
 | 문서/감사 페이지네이션 | ⛔ | 감사는 `limit`만 지원, 문서 목록은 전체 반환 |
 | 객체 스토리지 연동 | ⛔ | 로컬 파일 시스템 사용 |

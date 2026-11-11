@@ -40,6 +40,10 @@ class ParserSpec:
     parse: ParseFn
     version: str = "1"
     priority: int = 100  # lower runs first among candidates
+    available: Callable[[], bool] | None = None
+
+    def is_available(self) -> bool:
+        return True if self.available is None else bool(self.available())
 
     def matches(self, filename: str, mime: str) -> bool:
         name = filename.lower()
@@ -58,14 +62,16 @@ class ParserRegistry:
         self._parsers.sort(key=lambda spec: spec.priority)
         return spec
 
+    def unregister(self, name: str) -> None:
+        self._parsers = [p for p in self._parsers if p.name != name]
+
     def specs(self) -> tuple[ParserSpec, ...]:
         return tuple(self._parsers)
 
     def candidates(self, filename: str, mime: str = "") -> list[ParserSpec]:
-        matched = [spec for spec in self._parsers if spec.matches(filename, mime)]
-        # Catch-all text parser should always be able to try last.
-        fallback = [spec for spec in self._parsers if not spec.extensions and not spec.mimes]
-        return matched + [spec for spec in fallback if spec not in matched]
+        # No catch-all: a known binary MIME with no configured adapter must fail
+        # loudly instead of being decoded as text.
+        return [spec for spec in self._parsers if spec.matches(filename, mime) and spec.is_available()]
 
     def parse(
         self,
@@ -292,5 +298,11 @@ def _primary_key_hint(rows: list[dict[str, Any]], columns: dict[str, dict[str, A
 
 REGISTRY = ParserRegistry()
 REGISTRY.register(ParserSpec("markdown", (".md", ".markdown", ".mdown"), ("text/markdown",), parse_markdown))
-REGISTRY.register(ParserSpec("text", (".txt",), ("text/plain",), parse_text))
-REGISTRY.register(ParserSpec("fallback-text", (), (), parse_text, version="1", priority=1000))
+REGISTRY.register(
+    ParserSpec(
+        "text",
+        (".txt", ".csv", ".json"),
+        ("text/plain", "text/csv", "application/json", "application/xml"),
+        parse_text,
+    )
+)

@@ -4,6 +4,15 @@ Public surface:
     from baryon.ingest import Acl, Block, Table, chunk_document, REGISTRY, Pipeline
 """
 
+from .db import (
+    ColumnProfile,
+    TableProfile,
+    documents_from_sqlalchemy,
+    documents_from_sqlite,
+    introspect_sqlalchemy,
+    introspect_sqlite,
+    rows_to_documents,
+)
 from .ir import (
     Acl,
     Block,
@@ -16,6 +25,7 @@ from .ir import (
     idempotency_key,
     new_document,
 )
+from .mime import MIME_EXTENSIONS, EXTENSION_MIME, sniff_mime, suggested_extension
 from .parsers import (
     NoParserError,
     ParserRegistry,
@@ -28,6 +38,7 @@ from .parsers import (
 )
 from .pipeline import (
     DeadLetter,
+    PermanentError,
     Pipeline,
     PipelineConfig,
     PipelineStats,
@@ -36,6 +47,13 @@ from .pipeline import (
 
 __all__ = [
     "Acl",
+    "ColumnProfile",
+    "TableProfile",
+    "documents_from_sqlalchemy",
+    "documents_from_sqlite",
+    "introspect_sqlalchemy",
+    "introspect_sqlite",
+    "rows_to_documents",
     "Block",
     "Chunk",
     "Document",
@@ -50,10 +68,15 @@ __all__ = [
     "ParserSpec",
     "ParseError",
     "REGISTRY",
+    "EXTENSION_MIME",
+    "MIME_EXTENSIONS",
+    "sniff_mime",
+    "suggested_extension",
     "parse_markdown",
     "parse_rows",
     "parse_text",
     "DeadLetter",
+    "PermanentError",
     "Pipeline",
     "PipelineConfig",
     "PipelineStats",
