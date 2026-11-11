@@ -242,6 +242,7 @@ Start the API on port 8000 and the web dev server on port 5173, then:
 cd apps/web
 npx playwright install chromium   # first run only
 npm run test:e2e
+npm run test:buttons              # clicks every control and asserts a response
 ```
 
 Set `E2E_BASE_URL` to test another deployment (for example `http://127.0.0.1:3001` for the Compose web service), and `E2E_SCREENSHOT=/tmp/baryon-ax.png` to capture a full-page screenshot.

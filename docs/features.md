@@ -97,6 +97,7 @@
 | 청킹 폴백 | ✅ | LlamaIndex `SentenceSplitter` (256 토큰, 32 토큰 overlap) |
 | 파서 폴백 체인 | ✅ | kordoc → docling → Tika → 415, 실패는 `document.parse_failed` 감사 |
 | 비동기 인제스트 잡 | ✅ | `POST /v1/documents?async=true` → `GET /v1/jobs/{id}` |
+| 버튼 E2E | ✅ | `npm run test:buttons` — 33개 내비게이션·업로드·암묵지·공백·설정 버튼 시나리오 |
 | 파서 sidecar | ✅ | `KORDOC_URL`/`DOCLING_URL`(HTTP) 또는 `KORDOC_CMD`/`DOCLING_CMD`(CLI), `TIKA_URL` |
 | 파이프라인 배압/재시도/DLQ | ✅ | `INGEST_*` 환경변수, 영구 오류는 재시도 없이 DLQ |
 | 문서 영속화 | ✅ | 문서별 JSON 파일, 재시작 후 복원 |

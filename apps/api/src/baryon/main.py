@@ -1481,8 +1481,17 @@ def auto_resolve_gaps(principal: Principal, trace_id: str, limit: int = 10) -> i
     """After ingestion, close open gaps that retrieval can now answer."""
     resolved = 0
     for gap in gap_store.list(principal.organization_id, "open", limit):
-        hits = documents.search(principal, gap.question, limit=1)
+        hits = documents.search(principal, gap.question, limit=3)
         if not hits:
+            continue
+        # A title-only or single-generic-token hit is not evidence that the
+        # question is answerable. Require salient question terms in the chunk.
+        terms = [term for term in (gap.terms or []) if len(term) >= 2]
+        content = normalize_text(str(hits[0].get("content") or "")).lower()
+        matched = [term for term in terms if term in content]
+        if terms and len(matched) < min(2, len(terms)):
+            continue
+        if not terms and len(hits) < 2:
             continue
         gap_store.mark_resolved(principal.organization_id, [gap.id], gap.pack_id or "")
         audit.emit(

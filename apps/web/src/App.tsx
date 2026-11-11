@@ -846,7 +846,10 @@ export default function App() {
   async function send(event: FormEvent) {
     event.preventDefault(); if (!input.trim() || busy) return;
     const question = input.trim(); setInput(""); setBusy(true);
-    const next = [...messages, { role: "user" as const, content: question }];
+    // Drop in-flight/empty assistant placeholders: sending one fails validation
+    // with 422 and the user just sees "request failed".
+    const history = messages.filter(message => message.content.trim().length > 0);
+    const next = [...history, { role: "user" as const, content: question }];
     setMessages([...next, { role: "assistant", content: "" }]);
     try {
       const response = await fetch(`${API}/v1/chat/completions`, { method: "POST", headers: { "Content-Type": "application/json", ...identity(role) }, body: JSON.stringify({ model, messages: next, stream: true, use_retrieval: retrieval, locale }) });
@@ -1126,6 +1129,7 @@ export default function App() {
               <button className="primary" onClick={() => { setTacitSelected(question); setTacitAnswer(""); setTacitAttachments([]); setTacitMessage(""); }}><MessagesSquare size={15}/>{t.answerThis}</button>
             </article>)}
           </div>}
+          {tacitMessage && !tacitSelected && <p className="settings-note">{tacitMessage}</p>}
           {tacitSelected && <section className="tacit-form" id="tacit-form" ref={tacitFormRef}>
             <h3>{tacitSelected.question}</h3>
             <textarea ref={tacitAnswerRef} value={tacitAnswer} onChange={event => setTacitAnswer(event.target.value)} placeholder={t.tacitPlaceholder} rows={6}/>

@@ -149,6 +149,24 @@ def test_open_gap_resolves_when_source_arrives() -> None:
     assert any(event["type"] == "knowledge.gap_resolved" and event.get("gap_id") == gap["id"] for event in events)
 
 
+def test_title_only_match_does_not_resolve_a_gap() -> None:
+    org = "org-gap-titleonly"
+    ask(org, "감사 일정은?")
+
+    gaps = client.get("/v1/admin/gaps", headers=headers(organization=org)).json()["data"]
+    gap = next(item for item in gaps if "감사" in item["question"])
+
+    upload = client.post(
+        "/v1/documents",
+        files={"file": ("감사 일정.md", "전혀 다른 내용입니다.".encode(), "text/markdown")},
+        headers=headers(organization=org),
+    )
+    assert upload.status_code == 200
+
+    still_open = client.get("/v1/admin/gaps?status=all", headers=headers(organization=org)).json()["data"]
+    assert next(item for item in still_open if item["id"] == gap["id"])["status"] == "open"
+
+
 def test_verify_rejects_pack_without_questions() -> None:
     org = "org-gap-noquestions"
     assert client.post("/v1/admin/ontology-packs/missing/verify", headers=headers(organization=org)).status_code == 404
