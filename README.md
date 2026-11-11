@@ -10,13 +10,23 @@ This repository is an executable Basic Core v0.6 reference implementation. It of
 
 ![Baryon AX platform overview: user flow, layered architecture, and core engines](docs/images/baryon-ax-platform-overview.png)
 
+<p align="center">
+  <img src="apps/web/public/mascots/chat.svg" width="52" alt="Chat cat">
+  <img src="apps/web/public/mascots/knowledge.svg" width="52" alt="Knowledge owl">
+  <img src="apps/web/public/mascots/tacit.svg" width="52" alt="Tacit otter">
+  <img src="apps/web/public/mascots/memory.svg" width="52" alt="Memory elephant">
+  <img src="apps/web/public/mascots/governance.svg" width="52" alt="Governance shiba">
+  <img src="apps/web/public/mascots/gaps.svg" width="52" alt="Gap mole">
+  <img src="apps/web/public/mascots/settings.svg" width="52" alt="Settings beaver">
+</p>
+
 The platform brings a chat workspace, agent execution, grounded knowledge search, and on-premises infrastructure into one operating model. The image summarizes the user flow—ask, run an agent, evaluate, and review evidence—and the responsibilities of each layer. It is the **target production architecture**; the Basic Core maps most of it to in-process adapters, and the full-stack profile connects the stateful services. See [docs/architecture.md](docs/architecture.md#compose-vs-target-architecture) for the component-by-component mapping.
 
 ## Screenshots
 
 <a href="docs/screenshots.md"><img src="docs/images/gallery/01-chat.png" alt="Baryon AX grounded chat with sources and pipeline trace" width="760"></a>
 
-Seven captured screens cover grounded chat, the source viewer, knowledge upload, memory, governance, knowledge gaps, and admin system metrics. See [docs/screenshots.md](docs/screenshots.md).
+Eight captured screens cover grounded chat, the source viewer, knowledge upload, memory, tacit-knowledge provenance, governance, knowledge gaps, and admin system metrics. See [docs/screenshots.md](docs/screenshots.md).
 
 ## What works today
 

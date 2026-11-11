@@ -85,6 +85,22 @@ async function seed() {
     });
   }
 
+  const entries = await jsonFetch(`${api}/v1/tacit/entries`, {}, userHeaders);
+  if (!entries.data.some(item => item.question.includes("해외 지사"))) {
+    const questions = await jsonFetch(`${api}/v1/tacit/questions`, {}, userHeaders);
+    const source = questions.data.find(item => item.source === "gap") ?? questions.data[0];
+    await fetch(`${api}/v1/tacit/entries`, {
+      method: "POST",
+      headers: { ...userHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: source.question,
+        answer: "2030년까지 동남아 2개 지사(싱가포르·호치민)를 설립합니다. 초기 예산은 지사당 12억원, 총 24억원이며 본사 전략기획팀이 분기별 집행률을 점검합니다.",
+        gap_id: source.gap_id,
+        source: source.source,
+      }),
+    });
+  }
+
   return uploaded.id;
 }
 
@@ -127,6 +143,13 @@ async function main() {
     await page.waitForSelector(".memory-item", { timeout: 30_000 });
     await page.screenshot({ path: path.join(outputDir, "04-memory.png") });
     console.log("captured 04-memory.png");
+
+    await page.locator("nav").getByRole("button", { name: "암묵지", exact: true }).click();
+    await page.waitForSelector(".tacit-basis", { timeout: 20_000 });
+    await page.locator(".tacit-basis summary").first().click();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: path.join(outputDir, "08-tacit-knowledge.png"), fullPage: true });
+    console.log("captured 08-tacit-knowledge.png");
 
     await page.locator("nav").getByRole("button", { name: "거버넌스", exact: true }).click();
     await page.waitForSelector(".event", { timeout: 15_000 });

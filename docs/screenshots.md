@@ -29,6 +29,26 @@
 </tr>
 <tr>
 <td width="50%" valign="top">
+<img src="images/gallery/08-tacit-knowledge.png" alt="암묵지 생성 근거" width="100%">
+<h3>8. 암묵지 · 생성 근거</h3>
+<p>문서에 없던 판단 기준을 질문으로 끌어내고, 답변을 게시해 검색 가능한 지식으로 만듭니다. 각 항목의 <strong>생성 근거</strong>를 펼치면 생성 경로, 원본 지식 공백, 감지 사유, 발생 횟수, 핵심 용어, 게시 문서를 확인할 수 있습니다.</p>
+</td>
+<td width="50%" valign="top">
+<p>
+<img src="../apps/web/public/mascots/chat.svg" width="38" alt="Chat cat">
+<img src="../apps/web/public/mascots/knowledge.svg" width="38" alt="Knowledge owl">
+<img src="../apps/web/public/mascots/tacit.svg" width="38" alt="Tacit otter">
+<img src="../apps/web/public/mascots/memory.svg" width="38" alt="Memory elephant">
+<img src="../apps/web/public/mascots/governance.svg" width="38" alt="Governance shiba">
+<img src="../apps/web/public/mascots/gaps.svg" width="38" alt="Gap mole">
+<img src="../apps/web/public/mascots/settings.svg" width="38" alt="Settings beaver">
+</p>
+<h3>메뉴 마스코트</h3>
+<p>채팅 고양이, 지식 부엉이, 암묵지 수달, 메모리 코끼리, 거버넌스 시바견, 지식 공백 두더지, 설정 비버가 메뉴와 상단 리본에 표시됩니다. 메뉴마다 고유 색상이 리본과 활성 아이콘에 적용됩니다.</p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
 <img src="images/gallery/05-governance.png" alt="감사 로그" width="100%">
 <h3>5. 거버넌스 · 감사 로그</h3>
 <p>채팅 시작·완료, 문서 수집, 권한 변경, 메모리 변경 등 조직의 모든 주요 이벤트를 PostgreSQL에 기록하고 최근 이벤트를 관리자에게 보여줍니다. 각 이벤트에는 추적 ID, 사용자, 모델, 지연 시간이 포함됩니다.</p>
@@ -55,7 +75,7 @@
 <li>관측/기억: Langfuse, Mem0</li>
 <li>화면: 1440×950, 한국어, 관리자 역할</li>
 </ul>
-<p>재촬영은 스택이 실행 중인 상태에서 아래 명령으로 수행합니다. 데모 문서와 메모리를 자동으로 준비한 뒤 7장을 갱신합니다.</p>
+<p>재촬영은 스택이 실행 중인 상태에서 아래 명령으로 수행합니다. 데모 문서와 메모리를 자동으로 준비한 뒤 8장을 갱신합니다.</p>
 <pre><code>cd apps/web
 E2E_BASE_URL=http://127.0.0.1:3101 \
   node e2e/capture-gallery.mjs</code></pre>

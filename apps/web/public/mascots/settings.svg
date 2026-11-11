@@ -12,11 +12,11 @@
   <circle cx="25.8" cy="30.2" r=".9" fill="#fff"/>
   <circle cx="39.8" cy="30.2" r=".9" fill="#fff"/>
   <ellipse cx="32" cy="36.8" rx="3.2" ry="2.4" fill="#3d4d5e"/>
-  <path d="M30 40h4v6.5h-4z" fill="#fff"/>
-  <path d="M32 40v6.5M30 43.2h4" stroke="#b9cbdc" stroke-width="1.1"/>
-  <g transform="translate(44 40)">
-    <circle cx="7" cy="7" r="4.2" fill="#f0b45a"/>
-    <circle cx="7" cy="7" r="1.8" fill="#172a44"/>
+  <path d="M28.5 40h7v7h-7z" fill="#fff" stroke="#b9cbdc" stroke-width=".8"/>
+  <path d="M32 40v7M28.5 43.5h7" stroke="#b9cbdc" stroke-width="1"/>
+  <g transform="translate(45 5)">
+    <circle cx="7" cy="7" r="4.6" fill="#f0b45a"/>
+    <circle cx="7" cy="7" r="2" fill="#172a44"/>
     <path d="M7 0v3M7 11v3M0 7h3M11 7h3M2 2l2 2M10 10l2 2M12 2l-2 2M4 10l-2 2" stroke="#f0b45a" stroke-width="1.8" stroke-linecap="round"/>
   </g>
 </svg>

@@ -12,10 +12,10 @@
   <path d="M29.5 36h5l-2.5 2.8z" fill="#4b2e1e"/>
   <path d="M32 38.8v1.7M32 40.5c-1.2 1.6-3 1.4-4 .2M32 40.5c1.2 1.6 3 1.4 4 .2" fill="none" stroke="#4b2e1e" stroke-width="1.5" stroke-linecap="round"/>
   <path d="M15 37h6M15 41h6M43 37h6M43 41h6" stroke="#8f5a38" stroke-width="1.3" stroke-linecap="round"/>
-  <g transform="rotate(8 46 48)">
-    <rect x="38" y="39" width="18" height="15" rx="2.5" fill="#ffe2a8"/>
-    <rect x="38" y="39" width="18" height="15" rx="2.5" fill="none" stroke="#d9a945" stroke-width="1.2"/>
-    <path d="M42 44h10M42 47h10M42 50h7" stroke="#c98f2e" stroke-width="1.2" stroke-linecap="round"/>
+  <g transform="rotate(10 48 50)">
+    <rect x="41" y="44" width="16" height="13" rx="2.5" fill="#ffe2a8"/>
+    <rect x="41" y="44" width="16" height="13" rx="2.5" fill="none" stroke="#d9a945" stroke-width="1.2"/>
+    <path d="M45 48h8M45 51h8M45 54h5" stroke="#c98f2e" stroke-width="1.2" stroke-linecap="round"/>
   </g>
-  <circle cx="42" cy="44" r="3.2" fill="#8f5a38"/>
+  <circle cx="42" cy="46" r="3.2" fill="#8f5a38"/>
 </svg>
