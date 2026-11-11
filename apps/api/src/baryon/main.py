@@ -31,7 +31,7 @@ from .ingest.adapters import register_default_adapters
 from .ingest.mime import sniff_mime
 from .ingest.parsers import ParseError
 from .ingest.pipeline import PipelineConfig, PermanentError, run_pipeline
-from .gaps import GapStore, PackStore, build_pack, cluster_gaps
+from .gaps import GapStore, PackStore, build_pack, cluster_gaps, verify_pack
 
 logger = logging.getLogger("baryon.ax")
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
@@ -1287,6 +1287,7 @@ JOBS: dict[str, IngestJob] = {}
 JOBS_LOCK = threading.Lock()
 gap_store = GapStore()
 pack_store = PackStore()
+ONTOLOGY_COVERAGE_THRESHOLD = float(os.getenv("ONTOLOGY_COVERAGE_THRESHOLD", "0.8"))
 INGEST_PIPELINE_CONFIG = PipelineConfig(
     queue_maxsize=int(os.getenv("INGEST_QUEUE_MAXSIZE", "32")),
     max_in_flight=int(os.getenv("INGEST_MAX_IN_FLIGHT", "4")),
@@ -1367,7 +1368,67 @@ async def ingest_upload(
         document_id=document.id, title=document.title,
         parser=ingested.parser, chunks=len(chunks), raw_size=len(payload),
     )
+    # A new source may close an approved ontology pack: re-run its acceptance
+    # questions immediately so the gap loop closes without an admin action.
+    if document.metadata.get("source_type", "file") in {"file", "database"}:
+        await asyncio.to_thread(auto_verify_packs, principal, document, trace_id)
+        await asyncio.to_thread(auto_resolve_gaps, principal, trace_id)
     return document
+
+
+def apply_pack_verification(pack: dict, principal: Principal, trigger: str, trace_id: str) -> dict:
+    """Re-run acceptance questions and persist the result; resolve gaps on success."""
+    verified = verify_pack(
+        pack,
+        lambda question: documents.search(principal, question, limit=4),
+        threshold=ONTOLOGY_COVERAGE_THRESHOLD,
+    )
+    pack_store.save(verified)
+    if verified.get("status") == "active":
+        gap_store.mark_resolved(principal.organization_id, verified.get("source_gap_ids") or [], verified["id"])
+    audit.emit(
+        "ontology.pack_verified", principal, trace_id,
+        pack_id=verified["id"], trigger=trigger, status=verified["status"],
+        coverage=verified["verification"]["coverage"],
+        passed=verified["verification"]["passed"], total=verified["verification"]["total"],
+    )
+    return verified
+
+
+def auto_resolve_gaps(principal: Principal, trace_id: str, limit: int = 10) -> int:
+    """After ingestion, close open gaps that retrieval can now answer."""
+    resolved = 0
+    for gap in gap_store.list(principal.organization_id, "open", limit):
+        hits = documents.search(principal, gap.question, limit=1)
+        if not hits:
+            continue
+        gap_store.mark_resolved(principal.organization_id, [gap.id], gap.pack_id or "")
+        audit.emit(
+            "knowledge.gap_resolved", principal, trace_id,
+            gap_id=gap.id, question=gap.question[:200], citations=len(hits), trigger="ingest",
+        )
+        resolved += 1
+    return resolved
+
+
+def auto_verify_packs(principal: Principal, document: Document, trace_id: str) -> int:
+    """After a source lands, re-check reviewed packs that mention its entities."""
+    haystack = normalize_text(f"{document.title}\n{document.content}")
+    verified_count = 0
+    for pack in pack_store.list(principal.organization_id, 50):
+        if pack.get("status") != "reviewed":
+            continue
+        names = [str(entity.get("name") or "") for entity in pack.get("entities") or []]
+        if not any(len(name) >= 2 and name in haystack for name in names):
+            continue
+        try:
+            apply_pack_verification(pack, principal, "ingest", trace_id)
+        except ValueError:
+            continue
+        verified_count += 1
+        if verified_count >= 3:
+            break
+    return verified_count
 
 
 async def run_ingest_job(job: IngestJob, principal: Principal, payload: bytes, roles: set[str]) -> None:
@@ -1877,6 +1938,42 @@ async def list_ontology_packs(
     if "admin" not in principal.roles:
         raise HTTPException(403, "Administrator role required")
     return {"data": pack_store.list(principal.organization_id, limit)}
+
+
+@app.post("/v1/admin/ontology-packs/{pack_id}/approve")
+async def approve_ontology_pack(
+    pack_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if "admin" not in principal.roles:
+        raise HTTPException(403, "Administrator role required")
+    pack = pack_store.get(principal.organization_id, pack_id)
+    if not pack:
+        raise HTTPException(404, "Ontology pack not found")
+    pack["status"] = "reviewed"
+    pack_store.save(pack)
+    trace_id = str(uuid.uuid4())
+    audit.emit("ontology.pack_approved", principal, trace_id, pack_id=pack_id, name=pack.get("name", ""))
+    return pack
+
+
+@app.post("/v1/admin/ontology-packs/{pack_id}/verify")
+async def verify_ontology_pack(
+    pack_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if "admin" not in principal.roles:
+        raise HTTPException(403, "Administrator role required")
+    pack = pack_store.get(principal.organization_id, pack_id)
+    if not pack:
+        raise HTTPException(404, "Ontology pack not found")
+    trace_id = str(uuid.uuid4())
+    try:
+        return await asyncio.to_thread(apply_pack_verification, pack, principal, "manual", trace_id)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
 
 
 @app.get("/v1/admin/ontology-packs/{pack_id}")

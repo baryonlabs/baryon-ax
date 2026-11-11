@@ -31,6 +31,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from .ingest.ir import normalize_text
+
 # --------------------------------------------------------------------------
 # detection
 # --------------------------------------------------------------------------
@@ -80,6 +82,7 @@ _QUESTION_NOISE = {
     "무엇", "어떤", "어떻게", "어디", "언제", "누가", "왜", "인가요", "인가", "나요", "까요",
     "있나요", "있습니까", "알려", "알려주세요", "대해", "대한", "관련", "그리고", "또는",
     "얼마", "몇", "무슨", "어느", "누구", "어디", "언제", "어떤", "어떻게",
+    "이란", "란", "뭐", "뭔가요", "인지", "무엇인가요", "무엇인지",
     "때문", "합니다", "입니다", "주세요", "정도", "경우", "내용", "질문", "답변",
     "what", "when", "where", "which", "who", "why", "how", "the", "and", "for", "with",
     "about", "does", "do", "did", "is", "are", "was", "were", "can", "could", "you",
@@ -106,7 +109,7 @@ SOURCE_HINTS: tuple[tuple[tuple[str, ...], str], ...] = (
 
 
 def normalize_question(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "").strip().lower())
+    return re.sub(r"\s+", " ", normalize_text(text or "").strip().lower())
 
 
 def strip_particle(token: str) -> str:
@@ -196,6 +199,9 @@ class GapStore:
                 gap = KnowledgeGap(**json.loads(line))
             except (TypeError, ValueError, json.JSONDecodeError):
                 continue
+            gap.question = normalize_text(gap.question)
+            gap.answer_excerpt = normalize_text(gap.answer_excerpt)
+            gap.terms = [normalize_text(term) for term in gap.terms]
             self._gaps[gap.id] = gap
             self._by_key[gap.key] = gap.id
 
@@ -218,6 +224,8 @@ class GapStore:
         model: str = "",
     ) -> KnowledgeGap | None:
         """Record the exchange when it looks ungrounded. Returns the gap or None."""
+        question = normalize_text(question)
+        answer = normalize_text(answer)
         reasons = detect_reasons(question, answer, citations, used_retrieval)
         if not reasons:
             return None
@@ -282,6 +290,19 @@ class GapStore:
             self._persist(gap)
             return gap
 
+    def mark_resolved(self, organization_id: str, gap_ids: Iterable[str], pack_id: str) -> int:
+        count = 0
+        with self._lock:
+            for gap_id in gap_ids:
+                gap = self.get(organization_id, gap_id)
+                if not gap:
+                    continue
+                gap.status = "resolved"
+                gap.pack_id = pack_id
+                self._persist(gap)
+                count += 1
+        return count
+
     def mark_converted(self, organization_id: str, gap_ids: Iterable[str], pack_id: str) -> int:
         count = 0
         with self._lock:
@@ -305,6 +326,7 @@ class GapStore:
             "open": sum(1 for gap in gaps if gap.status == "open"),
             "dismissed": sum(1 for gap in gaps if gap.status == "dismissed"),
             "converted": sum(1 for gap in gaps if gap.status == "converted"),
+            "resolved": sum(1 for gap in gaps if gap.status == "resolved"),
             "occurrences": sum(gap.occurrences for gap in gaps),
             "reasons": dict(by_reason.most_common()),
         }
@@ -469,6 +491,51 @@ def build_pack(
         "required_sources": sources,
         "acceptance_questions": [gap.question for gap in gaps][:10],
         "notes": "자동 생성된 초안입니다. 관리자 검토 후 엔티티·관계·소스를 확정하세요.",
+    }
+
+
+def verify_pack(pack: dict[str, Any], search, threshold: float = 0.8) -> dict[str, Any]:
+    """Re-run a pack's acceptance questions against the current corpus.
+
+    `search(question) -> list[hit]` is injected so this stays independent of the
+    HTTP layer. A question passes when retrieval returns at least one permitted
+    hit. The pack becomes `active` when coverage reaches the threshold; otherwise
+    it stays `reviewed` and lists what is still missing.
+    """
+    questions = [question for question in (pack.get("acceptance_questions") or []) if question.strip()]
+    if not questions:
+        raise ValueError("pack has no acceptance questions")
+
+    results: list[dict[str, Any]] = []
+    for question in questions[:30]:
+        hits = search(question) or []
+        results.append(
+            {
+                "question": question,
+                "passed": bool(hits),
+                "citations": len(hits),
+                "documents": sorted({str(hit.get("title") or "") for hit in hits})[:3],
+                "missing_terms": [] if hits else salient_terms(question)[:5],
+            }
+        )
+
+    passed = sum(1 for result in results if result["passed"])
+    coverage = round(passed / len(results), 3) if results else 0.0
+    status = "active" if coverage >= threshold else "reviewed"
+    if pack.get("status") == "retired":
+        status = "retired"
+
+    return {
+        **pack,
+        "status": status,
+        "verification": {
+            "verified_at": datetime.now(timezone.utc).isoformat(),
+            "threshold": threshold,
+            "coverage": coverage,
+            "passed": passed,
+            "total": len(results),
+            "results": results,
+        },
     }
 
 

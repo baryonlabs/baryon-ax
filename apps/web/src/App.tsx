@@ -28,15 +28,20 @@ type GapItem = {
   id: string; question: string; answer_excerpt: string; reasons: string[]; citations: number;
   occurrences: number; status: string; first_seen: string; last_seen: string; terms: string[];
 };
-type GapSummary = { total: number; open: number; dismissed: number; converted: number; occurrences: number; reasons: Record<string, number> };
+type GapSummary = { total: number; open: number; dismissed: number; converted: number; resolved: number; occurrences: number; reasons: Record<string, number> };
 type GapCluster = {
   id: string; label: string; size: number; gap_ids: string[]; questions: string[]; terms: string[];
   reasons: Record<string, number>; suggested_pack_name: string; required_sources: { kind: string; hint: string }[];
+};
+type PackVerification = {
+  verified_at: string; coverage: number; passed: number; total: number; threshold: number;
+  results: { question: string; passed: boolean; citations: number; documents: string[]; missing_terms: string[] }[];
 };
 type OntologyPack = {
   id: string; name: string; domain: string; status: string; created_at: string;
   entities: { name: string; type: string }[]; relations: { from: string; type: string; to: string }[];
   required_sources: { kind: string; hint: string }[]; acceptance_questions: string[]; source_gap_ids: string[];
+  verification?: PackVerification;
 };
 type ContainerInfo = { name: string; image: string; status: string; health?: string | null; project?: string; ports: string[] };
 type SystemInfo = {
@@ -190,6 +195,9 @@ const copy = {
     noPacks: "아직 꾸러미가 없습니다", noPacksBody: "클러스터에서 꾸러미를 만들면 초안이 저장됩니다.",
     entities: "엔티티", relations: "관계", generatedFrom: (count: number) => `질문 ${count}건에서 생성`,
     gapCaptureFailed: "지식 공백을 불러올 수 없습니다.", packFailed: "온톨로지 꾸러미를 만들 수 없습니다.", statusDraft: "초안",
+    approvePack: "승인", verifyPack: "재검증", verifying: "검증 중…", coverage: "커버리지", resolved: "해결",
+    statusReviewed: "검토됨", statusActive: "활성", packVerified: (name: string, coverage: number) => `${name} 커버리지 ${Math.round(coverage * 100)}%`,
+    verifyFailed: "재검증에 실패했습니다.", missingTerms: "부족한 용어",
   },
   en: {
     welcome: "Baryon AX is ready. Ask a question or upload a Markdown document to ground the conversation.",
@@ -246,6 +254,9 @@ const copy = {
     noPacks: "No packs yet", noPacksBody: "Create a pack from a cluster to store a draft.",
     entities: "entities", relations: "relations", generatedFrom: (count: number) => `From ${count} question(s)`,
     gapCaptureFailed: "Could not load knowledge gaps.", packFailed: "Could not create the ontology pack.", statusDraft: "draft",
+    approvePack: "Approve", verifyPack: "Re-verify", verifying: "Verifying…", coverage: "Coverage", resolved: "Resolved",
+    statusReviewed: "Reviewed", statusActive: "Active", packVerified: (name: string, coverage: number) => `${name} coverage ${Math.round(coverage * 100)}%`,
+    verifyFailed: "Re-verification failed.", missingTerms: "Missing terms",
   },
 } as const;
 
@@ -413,6 +424,24 @@ export default function App() {
       await loadGaps();
     } catch {
       setGapMessage(t.packFailed);
+    } finally {
+      setGapBusy(false);
+    }
+  }, [gapBusy, role, loadGaps, t]);
+
+  const updatePack = useCallback(async (pack: OntologyPack, action: "approve" | "verify") => {
+    if (gapBusy) return;
+    setGapBusy(true); setGapMessage("");
+    try {
+      const response = await fetch(`${API}/v1/admin/ontology-packs/${pack.id}/${action}`, { method: "POST", headers: identity(role) });
+      if (!response.ok) throw new Error("Pack action failed");
+      const updated = await response.json();
+      if (action === "verify" && updated.verification) {
+        setGapMessage(t.packVerified(updated.name, updated.verification.coverage));
+      }
+      await loadGaps();
+    } catch {
+      setGapMessage(t.verifyFailed);
     } finally {
       setGapBusy(false);
     }
@@ -837,7 +866,7 @@ export default function App() {
             <div><strong>{gapSummary?.open ?? 0}</strong><span>{t.openGaps}</span></div>
             <div><strong>{clusters.length}</strong><span>{t.clusters}</span></div>
             <div><strong>{packs.length}</strong><span>{t.packs}</span></div>
-            <div><strong>{gapSummary?.occurrences ?? 0}</strong><span>{t.occurrences}</span></div>
+            <div><strong>{gapSummary?.resolved ?? 0}</strong><span>{t.resolved}</span></div>
           </div>
           {gapMessage && <p className="settings-note">{gapMessage}</p>}
           <h3 className="section-label">{t.clusters}</h3>
@@ -864,10 +893,24 @@ export default function App() {
           <h3 className="section-label">{t.packs}</h3>
           {packs.length === 0 ? <div className="empty"><Network size={28}/><h3>{t.noPacks}</h3><p>{t.noPacksBody}</p></div> : <div className="pack-list">
             {packs.map(pack => <article className="pack" key={pack.id}>
-              <header><strong>{pack.name}</strong><span className="badge">{t.statusDraft}</span></header>
-              <p>{t.generatedFrom(pack.source_gap_ids.length)} · {t.entities} {pack.entities.length} · {t.relations} {pack.relations.length}</p>
+              <header>
+                <strong>{pack.name}</strong>
+                <span className="badge">{pack.status === "active" ? t.statusActive : pack.status === "reviewed" ? t.statusReviewed : t.statusDraft}</span>
+              </header>
+              <p>{t.generatedFrom(pack.source_gap_ids.length)} · {t.entities} {pack.entities.length} · {t.relations} {pack.relations.length}{pack.verification ? ` · ${t.coverage} ${Math.round(pack.verification.coverage * 100)}%` : ""}</p>
+              {pack.verification && <div className="coverage">
+                <div className="meter"><span style={{ width: `${Math.min(100, pack.verification.coverage * 100)}%` }}/></div>
+                <small>{pack.verification.passed}/{pack.verification.total} · {Math.round(pack.verification.coverage * 100)}%</small>
+              </div>}
               <div className="chips">{pack.entities.slice(0, 8).map(entity => <span className="chip" key={entity.name}>{entity.name}</span>)}</div>
+              {pack.verification?.results.filter(result => !result.passed).slice(0, 2).map(result => <p className="muted" key={result.question}>
+                {result.question}{result.missing_terms.length ? ` · ${t.missingTerms}: ${result.missing_terms.join(", ")}` : ""}
+              </p>)}
               <p className="muted">{pack.required_sources.map(source => source.hint).join(" · ")}</p>
+              <div className="pack-actions">
+                {pack.status === "draft" && <button className="primary" disabled={gapBusy} onClick={() => void updatePack(pack, "approve")}><ShieldCheck size={15}/>{t.approvePack}</button>}
+                {(pack.status === "reviewed" || pack.status === "active") && <button className="primary" disabled={gapBusy} onClick={() => void updatePack(pack, "verify")}><RefreshCw size={15}/>{gapBusy ? t.verifying : t.verifyPack}</button>}
+              </div>
             </article>)}
           </div>}
         </>}

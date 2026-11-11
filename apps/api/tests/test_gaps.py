@@ -1,6 +1,7 @@
 """Knowledge-gap detection, clustering, and ontology-pack generation."""
 
 import json
+import unicodedata
 
 from baryon.gaps import (
     GapStore,
@@ -11,6 +12,7 @@ from baryon.gaps import (
     detect_reasons,
     salient_terms,
     suggest_sources,
+    verify_pack,
 )
 
 
@@ -60,6 +62,19 @@ def test_gap_store_dismiss_and_convert(tmp_path) -> None:
     assert store.list("o", "converted")[0].pack_id == "ont_1"
 
 
+def test_gap_store_normalizes_nfd_questions(tmp_path) -> None:
+    store = GapStore(tmp_path / "gaps.jsonl")
+    nfd = unicodedata.normalize("NFD", "인건비 예산은?")
+    first = store.observe(organization_id="o", user_id="u", question=nfd, answer="모르겠습니다", citations=0)
+    second = store.observe(organization_id="o", user_id="u", question="인건비 예산은?", answer="모르겠습니다", citations=0)
+
+    assert first is not None and second is not None
+    assert first.id == second.id
+    assert second.question == "인건비 예산은?"
+    assert second.occurrences == 2
+    assert all(unicodedata.normalize("NFC", term) == term for term in second.terms)
+
+
 def test_gap_store_is_organization_scoped(tmp_path) -> None:
     store = GapStore(tmp_path / "gaps.jsonl")
     store.observe(organization_id="a", user_id="u", question="질문", answer="모르겠습니다", citations=0)
@@ -103,6 +118,39 @@ def test_build_pack_is_reviewable_draft() -> None:
     assert all(relation["type"] == "related_to" for relation in pack["relations"])
     assert pack["source_gap_ids"] == ["1", "2"]
     assert pack["acceptance_questions"] == ["인건비 예산은?", "예산 편성 기준은?"]
+
+
+def test_verify_pack_activates_when_coverage_meets_threshold() -> None:
+    pack = {
+        "id": "ont_1", "status": "reviewed", "source_gap_ids": ["1"],
+        "acceptance_questions": ["인건비 예산은?", "계약 갱신 일정은?"],
+    }
+
+    def search(question: str):
+        return [{"title": "budget.md"}] if "예산" in question else []
+
+    verified = verify_pack(pack, search, threshold=0.5)
+    assert verified["verification"]["coverage"] == 0.5
+    assert verified["verification"]["passed"] == 1
+    assert verified["status"] == "active"
+    assert verified["verification"]["results"][1]["missing_terms"]
+
+
+def test_verify_pack_stays_reviewed_below_threshold() -> None:
+    pack = {
+        "id": "ont_2", "status": "reviewed", "source_gap_ids": [],
+        "acceptance_questions": ["인건비 예산은?", "계약 갱신 일정은?"],
+    }
+    verified = verify_pack(pack, lambda question: [{"title": "doc"}] if "예산" in question else [], threshold=0.8)
+    assert verified["verification"]["coverage"] == 0.5
+    assert verified["status"] == "reviewed"
+
+
+def test_verify_pack_requires_questions() -> None:
+    import pytest
+
+    with pytest.raises(ValueError):
+        verify_pack({"id": "ont_3", "acceptance_questions": []}, lambda question: [])
 
 
 def test_pack_store_persists_json_per_organization(tmp_path) -> None:

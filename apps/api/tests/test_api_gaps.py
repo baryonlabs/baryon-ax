@@ -90,6 +90,70 @@ def test_streaming_chat_also_records_gap() -> None:
     assert any("스트리밍" in item["question"] for item in gaps)
 
 
+def test_pack_verification_closes_the_loop() -> None:
+    org = "org-gap-verify"
+    ask(org, "2027년 계약 갱신 일정은?")
+
+    gaps = client.get("/v1/admin/gaps", headers=headers(organization=org)).json()["data"]
+    gap = next(item for item in gaps if "계약" in item["question"])
+    pack = client.post(
+        "/v1/admin/ontology-packs",
+        json={"gap_ids": [gap["id"]]},
+        headers=headers(organization=org),
+    ).json()
+
+    approved = client.post(f"/v1/admin/ontology-packs/{pack['id']}/approve", headers=headers(organization=org))
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "reviewed"
+
+    # Before the source is available the pack stays reviewed, with the gap open.
+    first = client.post(f"/v1/admin/ontology-packs/{pack['id']}/verify", headers=headers(organization=org))
+    assert first.status_code == 200
+    assert first.json()["status"] == "reviewed"
+    assert first.json()["verification"]["coverage"] == 0.0
+
+    # A new source that covers the question triggers automatic re-verification.
+    upload = client.post(
+        "/v1/documents",
+        files={"file": ("contract-2027.md", "2027년 계약 갱신 일정은 3월 15일입니다.".encode(), "text/markdown")},
+        headers=headers(organization=org),
+    )
+    assert upload.status_code == 200, upload.text
+
+    verified = client.get(f"/v1/admin/ontology-packs/{pack['id']}", headers=headers(organization=org)).json()
+    assert verified["status"] == "active"
+    assert verified["verification"]["coverage"] == 1.0
+
+    resolved = client.get("/v1/admin/gaps?status=all", headers=headers(organization=org)).json()["data"]
+    assert next(item for item in resolved if item["id"] == gap["id"])["status"] == "resolved"
+
+
+def test_open_gap_resolves_when_source_arrives() -> None:
+    org = "org-gap-autoresolve"
+    ask(org, "2028년 감사 일정은?")
+
+    gaps = client.get("/v1/admin/gaps", headers=headers(organization=org)).json()["data"]
+    gap = next(item for item in gaps if "감사" in item["question"])
+
+    upload = client.post(
+        "/v1/documents",
+        files={"file": ("audit-2028.md", "2028년 감사 일정은 5월 10일입니다.".encode(), "text/markdown")},
+        headers=headers(organization=org),
+    )
+    assert upload.status_code == 200
+
+    resolved = client.get("/v1/admin/gaps?status=all", headers=headers(organization=org)).json()["data"]
+    assert next(item for item in resolved if item["id"] == gap["id"])["status"] == "resolved"
+
+    events = client.get("/v1/audit-events?limit=100", headers=headers(organization=org)).json()["data"]
+    assert any(event["type"] == "knowledge.gap_resolved" and event.get("gap_id") == gap["id"] for event in events)
+
+
+def test_verify_rejects_pack_without_questions() -> None:
+    org = "org-gap-noquestions"
+    assert client.post("/v1/admin/ontology-packs/missing/verify", headers=headers(organization=org)).status_code == 404
+
+
 def test_gap_can_be_dismissed_and_leaves_open_clusters() -> None:
     org = "org-gap-dismiss"
     ask(org, "존재하지 않는 설비 가동률 보고서는?")
