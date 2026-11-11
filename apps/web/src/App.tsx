@@ -708,7 +708,7 @@ export default function App() {
                     >{message.content}</ReactMarkdown>
                   : <span className="cursor"/>}
               </div>
-              {message.role === "assistant" && message.trace && message.trace.steps.length > 0 && <details className="trace" open={index === messages.length - 1}>
+              {message.role === "assistant" && message.trace && message.trace.steps.length > 0 && <details className="trace">
                 <summary><span>{t.traceTitle}</span><em>{typeof message.trace.total_ms === "number" ? `${message.trace.total_ms} ${t.traceMs}` : "…"}</em></summary>
                 <ol>
                   {message.trace.steps.map((step, stepIndex) => <li className={step.status} key={`${step.step}-${stepIndex}`}>

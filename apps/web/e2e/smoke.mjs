@@ -65,7 +65,10 @@ try {
     }, null, { timeout: 60000 });
     await page.waitForSelector(".sources button", { timeout: 30000 });
     assert.ok((await page.locator(".sources button").count()) >= 1);
-    await page.waitForSelector("article.assistant .trace li", { timeout: 30000 });
+    await page.waitForSelector("article.assistant .trace summary", { timeout: 30000 });
+    assert.equal(await page.locator("article.assistant .trace[open]").count(), 0);
+    await page.locator("article.assistant .trace summary").last().click();
+    await page.waitForSelector("article.assistant .trace li", { timeout: 10000 });
     assert.ok((await page.locator("article.assistant .trace li").count()) >= 4);
     const traceText = await page.locator("article.assistant .trace").last().innerText();
     assert.match(traceText, /메모리 검색/);
@@ -189,6 +192,19 @@ try {
   }
 } finally {
   await browser.close();
+  // Remove documents created by E2E runs so demos and retrieval stay clean.
+  try {
+    const adminHeaders = { "X-User-Id": "local-user", "X-Organization-Id": "local-org", "X-Roles": "admin" };
+    const list = await fetch(`${baseUrl}/api/v1/documents`, { headers: adminHeaders });
+    if (list.ok) {
+      const documents = (await list.json()).data;
+      for (const document of documents.filter(item => item.title.startsWith("e2e-"))) {
+        await fetch(`${baseUrl}/api/v1/documents/${document.id}`, { method: "DELETE", headers: adminHeaders });
+      }
+    }
+  } catch {
+    console.warn("E2E cleanup skipped");
+  }
 }
 
 console.log(`\n${checks.length} E2E checks passed against ${baseUrl}`);
