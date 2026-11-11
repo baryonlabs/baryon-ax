@@ -122,6 +122,8 @@
 
 ### 지식 공백 · 온톨로지 제안
 
+> 설계 배경·절차·미래 계획: [research/knowledge-gap-loop.md](research/knowledge-gap-loop.md)
+
 | 기능 | 상태 | 설명 |
 | --- | --- | --- |
 | 공백 감지 | ✅ | 출처 없음, 거절 표현, 모호 표현을 신호로 기록 |
