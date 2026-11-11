@@ -85,6 +85,9 @@
 | 기능 | 상태 | 설명 |
 | --- | --- | --- |
 | 문서 업로드 | ✅ | MIME 기반 라우팅. 기본 `.txt`/`.md`, sidecar 구성 시 HWP/HWPX/PDF/Office/이미지 |
+| 다중 업로드 | ✅ | 여러 파일 선택/드래그, 동일 카테고리·태그 일괄 적용 |
+| 카테고리·태그 | ✅ | 업로드 시 지정, 문서별 편집(업로더·관리자), 목록에 칩으로 표시 |
+| 분류 필터 | ✅ | `GET /v1/documents?category=&tag=` 및 UI 필터 |
 | 업로드 크기 제한 | ✅ | 기본 20,000,000 bytes (`MAX_DOCUMENT_BYTES`) |
 | MIME 스니핑 | ✅ | magic bytes 우선, ZIP 내부(`word/`, `xl/`, `ppt/`, HWPX `mimetype`) 검사 |
 | 빈 문서 거부 | ✅ | 공백만 있는 문서는 422 |
@@ -312,6 +315,8 @@
 | E2E 자동화 | ✅ | Playwright 15 checks, 전체 Compose 대상 검증 |
 | 시스템 모니터링 | ✅ | 관리자 설정에서 저장공간·메모리·프로세스·컨테이너·백엔드 상태 표시 |
 | 업로드 포맷 UX | ✅ | 지식 화면에 지원 형식 배지(PDF/HWP/HWPX/Office/이미지 등)와 드래그·드롭 영역 |
+| 암묵지 생성 근거 | ✅ | 답변별 생성 경로·원본 공백·감지 사유·발생 횟수·핵심 용어·게시 문서 표시 |
+| 지식 저장소 영속화 | ✅ | 지식 공백·암묵지 저장소를 `/data` 볼륨에 보관해 재시작 후에도 유지 |
 | 출처 원문 뷰어 | ✅ | 출처 클릭 시 인용 구절·문서 원문·원본 파일 열기/다운로드 |
 | 원본 파일 보관 | ✅ | 업로드 원본을 문서 ACL과 함께 보관하고 권한 검사 후 제공 |
 | 메모리 컨텍스트 주입 | ✅ | 채팅 시 Mem0 관련 기억을 검색해 시스템 프롬프트에 주입 |
@@ -329,7 +334,7 @@
 
 | 항목 | 상태 | 결과/설명 |
 | --- | --- | --- |
-| API 단위·통합 테스트 | ✅ | **96 passed** |
+| API 단위·통합 테스트 | ✅ | **115 passed** |
 | Playwright E2E | ✅ | **15 checks passed** (`npm run test:e2e`, Vite/Compose) |
 | Web 타입체크·빌드 | ✅ | `tsc -b && vite build` 성공 |
 | 전체 스택 스모크 | ✅ | `scripts/smoke_full_stack.py` — health/upload/search/chat/audit/memory |
@@ -378,6 +383,8 @@
 | `MEM0_HISTORY_DB` | `/tmp/baryon-ax-mem0/history.db` | Mem0 이력 SQLite |
 | `MEM0_TELEMETRY` | `false` | Mem0 텔레메트리 비활성화 |
 | `MEMORY_CONTEXT_LIMIT` | `5` | 채팅에 주입할 최대 기억 수 |
+| `GAP_STORE` | `/data/gaps/gaps.jsonl` | 지식 공백 저장 경로 |
+| `TACIT_STORE` | `/data/tacit/tacit.jsonl` | 암묵지 답변 저장 경로 |
 | `LOG_LEVEL` | `INFO` | API 로그 레벨 (파이프라인 추적 로그 포함) |
 | `SYSTEM_METRICS_ENABLED` | `true` | Docker 소켓 기반 컨테이너 지표 수집 |
 | `DOCKER_PROJECT` | `baryon-ax` | 관리자 화면에 표시할 Compose 프로젝트 |
@@ -434,7 +441,7 @@
 ## 14. 검증 기준
 
 ```text
-API tests           96 passed
+API tests           115 passed
 Playwright E2E      15 checks passed (Vite 5173 / Compose 3001)
 Full-stack smoke    health + upload + Qdrant retrieval + chat + audit + Mem0
 Web build           tsc -b && vite build 성공

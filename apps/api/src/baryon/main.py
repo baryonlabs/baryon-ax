@@ -32,7 +32,7 @@ from .ingest.mime import sniff_mime
 from .ingest.parsers import ParseError
 from .ingest.pipeline import PipelineConfig, PermanentError, run_pipeline
 from .gaps import GapStore, PackStore, build_pack, cluster_gaps, verify_pack
-from .tacit import TacitStore, suggest_questions
+from .tacit import QUESTION_TEMPLATES, TacitStore, suggest_questions
 
 logger = logging.getLogger("baryon.ax")
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
@@ -48,6 +48,19 @@ MODEL_TIMEOUT_SECONDS = float(os.getenv("MODEL_TIMEOUT_SECONDS", "90"))
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def normalize_tags(tags: list[str] | None) -> list[str]:
+    cleaned: list[str] = []
+    for tag in tags or []:
+        value = normalize_text(str(tag)).strip().lstrip("#")[:40]
+        if value and value not in cleaned:
+            cleaned.append(value)
+    return cleaned[:20]
+
+
+def parse_tags(raw: str) -> list[str]:
+    return normalize_tags(re.split(r"[,;\n]", raw or ""))
 
 
 @dataclass
@@ -68,6 +81,8 @@ class Document:
     created_at: str = field(default_factory=now)
     chunks: list[dict] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
+    category: str = ""
+    tags: list[str] = field(default_factory=list)
 
 
 class Message(BaseModel):
@@ -104,7 +119,9 @@ class TacitEntryUpdate(BaseModel):
 
 
 class DocumentUpdate(BaseModel):
-    allowed_roles: list[Annotated[str, Field(min_length=1, max_length=64)]] = Field(default_factory=list, max_length=20)
+    allowed_roles: list[Annotated[str, Field(min_length=1, max_length=64)]] | None = Field(default=None, max_length=20)
+    category: str | None = Field(default=None, max_length=80)
+    tags: list[Annotated[str, Field(min_length=1, max_length=40)]] | None = Field(default=None, max_length=20)
 
 
 class MemoryCreate(BaseModel):
@@ -271,6 +288,8 @@ class DocumentService:
                         for item in (payload.get("chunks") or [])
                     ],
                     metadata=payload.get("metadata") or {},
+                    category=normalize_text(payload.get("category") or ""),
+                    tags=[normalize_text(tag) for tag in (payload.get("tags") or [])],
                 )
             except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                 continue
@@ -322,6 +341,8 @@ class DocumentService:
         allowed_roles: set[str],
         chunks: list[dict] | None = None,
         metadata: dict | None = None,
+        category: str = "",
+        tags: list[str] | None = None,
     ) -> Document:
         normalized_chunks = [
             {**item, "text": normalize_text(str(item.get("text") or ""))}
@@ -336,6 +357,8 @@ class DocumentService:
             allowed_roles=allowed_roles,
             chunks=normalized_chunks,
             metadata=dict(metadata or {}),
+            category=normalize_text(category).strip()[:80],
+            tags=normalize_tags(tags),
         )
         self.documents[document.id] = document
         self._persist(document)
@@ -343,13 +366,27 @@ class DocumentService:
             self.vector.index_document(document)
         return document
 
-    def list_for(self, principal: Principal) -> list[dict]:
+    def list_for(
+        self,
+        principal: Principal,
+        category: str | None = None,
+        tag: str | None = None,
+    ) -> list[dict]:
+        visibility = []
+        for document in self.documents.values():
+            if not self.can_view(principal, document):
+                continue
+            if category and document.category != normalize_text(category):
+                continue
+            if tag and normalize_text(tag) not in document.tags:
+                continue
+            visibility.append(document)
         return [
             {"id": document.id, "title": document.title, "owner_id": document.owner_id,
              "allowed_roles": sorted(document.allowed_roles), "created_at": document.created_at,
-             "chunks": len(document.chunks) or len(chunk_text(document.content))}
-            for document in self.documents.values()
-            if self.can_view(principal, document)
+             "chunks": len(document.chunks) or len(chunk_text(document.content)),
+             "category": document.category, "tags": document.tags}
+            for document in visibility
         ]
 
     def delete(self, principal: Principal, document_id: str) -> bool:
@@ -377,6 +414,26 @@ class DocumentService:
         self._persist(document)
         if self.vector:
             self.vector.update_roles(document_id, allowed_roles)
+        return document
+
+    def update_metadata(
+        self,
+        principal: Principal,
+        document_id: str,
+        *,
+        category: str | None = None,
+        tags: list[str] | None = None,
+    ) -> Document | None:
+        document = self.documents.get(document_id)
+        if not document or document.organization_id != principal.organization_id:
+            return None
+        if document.owner_id != principal.user_id and "admin" not in principal.roles:
+            raise PermissionError("Only the uploader or an administrator can edit document metadata")
+        if category is not None:
+            document.category = normalize_text(category).strip()[:80]
+        if tags is not None:
+            document.tags = normalize_tags(tags)
+        self._persist(document)
         return document
 
     def reindex_all(self) -> int:
@@ -529,6 +586,10 @@ class VectorIndex:
                     "content": texts[index], "organization_id": document.organization_id,
                     "owner_id": document.owner_id, "allowed_roles": sorted(document.allowed_roles),
                 }
+                if document.category:
+                    payload["category"] = document.category
+                if document.tags:
+                    payload["tags"] = document.tags
                 for key in ("heading_path", "page", "kind", "ordinal"):
                     if item.get(key) not in (None, ""):
                         payload[key] = item[key]
@@ -1287,6 +1348,8 @@ class IngestJob:
     mime: str
     trace_id: str
     state: str = "queued"
+    category: str = ""
+    tags: list[str] = field(default_factory=list)
     document_id: str | None = None
     chunks: int = 0
     error: str = ""
@@ -1320,6 +1383,8 @@ async def ingest_upload(
     trace_id: str,
     *,
     mime: str = "",
+    category: str = "",
+    tags: list[str] | None = None,
 ) -> Document:
     """Parse an upload into a stored, indexed document.
 
@@ -1376,6 +1441,8 @@ async def ingest_upload(
             "source_type": ingested.source_type,
             "content_hash": ingested.content_hash,
         },
+        category,
+        tags,
     )
     await asyncio.to_thread(documents.save_raw, document, payload, filename, ingested.mime or detected)
     audit.emit(
@@ -1450,7 +1517,10 @@ async def run_ingest_job(job: IngestJob, principal: Principal, payload: bytes, r
     async def handler(batch: list[IngestJob]) -> None:
         for item in batch:
             try:
-                document = await ingest_upload(principal, item.filename, payload, roles, item.trace_id, mime=item.mime)
+                document = await ingest_upload(
+                    principal, item.filename, payload, roles, item.trace_id,
+                    mime=item.mime, category=item.category, tags=item.tags,
+                )
             except HTTPException as error:
                 raise PermanentError(str(error.detail)) from error
             item.document_id = document.id
@@ -1505,6 +1575,7 @@ async def models() -> dict:
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...), allowed_roles: str = Form("member,admin"),
+    category: str = Form(""), tags: str = Form(""),
     background: bool = Query(False, alias="async"),
     x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
 ) -> dict:
@@ -1522,6 +1593,7 @@ async def upload_document(
         job = IngestJob(
             id=str(uuid.uuid4()), organization_id=principal.organization_id, owner_id=principal.user_id,
             filename=file.filename, mime=mime, trace_id=trace_id,
+            category=normalize_text(category).strip()[:80], tags=parse_tags(tags),
         )
         with JOBS_LOCK:
             JOBS[job.id] = job
@@ -1530,10 +1602,15 @@ async def upload_document(
         background_tasks.add_task(run_ingest_job, job, principal, payload, roles)
         return JSONResponse({"job_id": job.id, "state": job.state, "trace_id": trace_id}, status_code=202)
 
-    document = await ingest_upload(principal, file.filename, payload, roles, trace_id, mime=mime)
+    document = await ingest_upload(
+        principal, file.filename, payload, roles, trace_id,
+        mime=mime, category=category, tags=parse_tags(tags),
+    )
     return {
         "id": document.id,
         "title": document.title,
+        "category": document.category,
+        "tags": document.tags,
         "chunks": len(document.chunks) or len(chunk_text(document.content)),
         "parser": document.metadata.get("parser", ""),
         "mime": document.metadata.get("mime", mime),
@@ -1613,10 +1690,11 @@ async def get_document_file(
 
 @app.get("/v1/documents")
 async def list_documents(
+    category: str | None = Query(None), tag: str | None = Query(None),
     x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
 ) -> dict:
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
-    return {"data": await asyncio.to_thread(documents.list_for, principal)}
+    return {"data": await asyncio.to_thread(documents.list_for, principal, category, tag)}
 
 
 @app.delete("/v1/documents/{document_id}")
@@ -1641,16 +1719,43 @@ async def update_document(
     x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
 ) -> dict:
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
-    roles = {role.strip() for role in update.allowed_roles if role.strip()}
-    try:
-        document = await asyncio.to_thread(documents.update_roles, principal, document_id, roles)
-    except PermissionError as error:
-        raise HTTPException(403, str(error)) from error
-    if not document:
+    document = documents.documents.get(document_id)
+    if not document or document.organization_id != principal.organization_id:
         raise HTTPException(404, "Document not found")
     trace_id = str(uuid.uuid4())
-    audit.emit("document.acl_updated", principal, trace_id, document_id=document.id, allowed_roles=sorted(document.allowed_roles))
-    return {"id": document.id, "allowed_roles": sorted(document.allowed_roles), "trace_id": trace_id}
+
+    if update.allowed_roles is not None:
+        roles = {role.strip() for role in update.allowed_roles if role.strip()}
+        try:
+            document = await asyncio.to_thread(documents.update_roles, principal, document_id, roles)
+        except PermissionError as error:
+            raise HTTPException(403, str(error)) from error
+        if not document:
+            raise HTTPException(404, "Document not found")
+        audit.emit("document.acl_updated", principal, trace_id, document_id=document.id, allowed_roles=sorted(document.allowed_roles))
+
+    if update.category is not None or update.tags is not None:
+        try:
+            document = await asyncio.to_thread(
+                documents.update_metadata, principal, document_id,
+                category=update.category, tags=update.tags,
+            )
+        except PermissionError as error:
+            raise HTTPException(403, str(error)) from error
+        if not document:
+            raise HTTPException(404, "Document not found")
+        audit.emit(
+            "document.metadata_updated", principal, trace_id,
+            document_id=document.id, category=document.category, tags=document.tags,
+        )
+
+    return {
+        "id": document.id,
+        "allowed_roles": sorted(document.allowed_roles),
+        "category": document.category,
+        "tags": document.tags,
+        "trace_id": trace_id,
+    }
 
 
 @app.post("/v1/memories")
@@ -1751,6 +1856,37 @@ def render_tacit_answer(entry) -> str:
     if entry.attachments:
         lines.extend(["", "## 첨부", *[f"- {item.get('title', '')}" for item in entry.attachments]])
     return "\n".join(lines)
+
+
+def tacit_entry_payload(entry) -> dict:
+    """Attach the provenance that made this tacit answer possible."""
+    data = entry.as_dict()
+    basis: dict = {
+        "source": entry.source,
+        "author_id": entry.author_id,
+        "created_at": entry.created_at,
+        "updated_at": entry.updated_at,
+        "gap": None,
+        "template": None,
+        "published_document": None,
+    }
+    if entry.gap_id:
+        gap = gap_store.get(entry.organization_id, entry.gap_id)
+        if gap:
+            basis["gap"] = {
+                "id": gap.id, "question": gap.question, "reasons": gap.reasons,
+                "occurrences": gap.occurrences, "terms": gap.terms, "status": gap.status,
+                "first_seen": gap.first_seen, "last_seen": gap.last_seen,
+            }
+    template = next((item for item in QUESTION_TEMPLATES if item["question"] == entry.question), None)
+    if template:
+        basis["template"] = dict(template)
+    if entry.published_document_id:
+        document = documents.documents.get(entry.published_document_id)
+        if document and document.organization_id == entry.organization_id:
+            basis["published_document"] = {"id": document.id, "title": document.title}
+    data["basis"] = basis
+    return data
 
 
 def record_knowledge_gap(principal: Principal, request: ChatRequest, answer: str, citations: list[dict], trace_id: str) -> None:
@@ -1911,7 +2047,7 @@ async def tacit_entries(
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
     author_id = None if (scope == "all" and "admin" in principal.roles) else principal.user_id
     entries = tacit_store.list(principal.organization_id, author_id=author_id, status=status, limit=limit)
-    return {"data": [entry.as_dict() for entry in entries], "summary": tacit_store.summary(principal.organization_id)}
+    return {"data": [tacit_entry_payload(entry) for entry in entries], "summary": tacit_store.summary(principal.organization_id)}
 
 
 @app.post("/v1/tacit/entries")
@@ -1935,7 +2071,7 @@ async def create_tacit_entry(
         "tacit.recorded", principal, trace_id,
         entry_id=entry.id, question=entry.question[:200], attachments=len(attachments), gap_id=entry.gap_id,
     )
-    return entry.as_dict()
+    return tacit_entry_payload(entry)
 
 
 @app.patch("/v1/tacit/entries/{entry_id}")
@@ -1957,7 +2093,7 @@ async def update_tacit_entry(
         raise HTTPException(409, str(error)) from error
     if not entry:
         raise HTTPException(404, "Answer not found")
-    return entry.as_dict()
+    return tacit_entry_payload(entry)
 
 
 @app.post("/v1/tacit/entries/{entry_id}/publish")
@@ -1972,7 +2108,7 @@ async def publish_tacit_entry(
     if entry.author_id != principal.user_id and "admin" not in principal.roles:
         raise HTTPException(403, "Only the author or an administrator can publish this answer")
     if entry.status == "published":
-        return entry.as_dict()
+        return tacit_entry_payload(entry)
 
     trace_id = str(uuid.uuid4())
     filename = f"tacit-{entry.id}.md"
@@ -1994,7 +2130,7 @@ async def publish_tacit_entry(
         entry_id=entry.id, document_id=document.id, question=entry.question[:200],
         attachments=len(entry.attachments), gap_id=entry.gap_id,
     )
-    return (published or entry).as_dict()
+    return tacit_entry_payload(published or entry)
 
 
 @app.get("/v1/audit-events")

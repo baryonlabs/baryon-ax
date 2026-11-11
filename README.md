@@ -81,7 +81,7 @@ Seven captured screens cover grounded chat, the source viewer, knowledge upload,
 - **권한을 유지합니다.** 답변과 첨부는 조직·역할 ACL을 따르고, 게시 문서는 `member`/`admin` 역할에 공개됩니다.
 - 모든 기록과 게시는 `tacit.recorded`, `tacit.published`, `knowledge.gap_resolved` 감사 이벤트로 남습니다.
 
-UI에서는 **암묵지** 탭에서 질문 큐, 내 답변, 전체 답변, 게시 상태를 확인할 수 있습니다.
+UI에서는 **암묵지** 탭에서 질문 큐, 내 답변, 전체 답변, 게시 상태를 확인할 수 있습니다. 각 항목의 **생성 근거**를 펼치면 생성 경로(공백/템플릿/직접 작성), 원본 질문, 감지 사유, 발생 횟수, 핵심 용어, 게시된 문서까지 확인할 수 있습니다. 지식 공백과 암묵지 저장소는 `/data/gaps`, `/data/tacit`에 보관되어 재시작 후에도 유지됩니다.
 
 ## Quick start
 
@@ -173,11 +173,11 @@ See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/b300-v
 | `POST /v1/chat/completions` | OpenAI-style chat completion, including SSE streaming |
 | `POST /v1/documents` | Upload a document (MIME-routed; `?async=true` returns a job id) |
 | `GET /v1/jobs/{job_id}` | Async ingest job state and chunk count |
-| `GET /v1/documents` | List documents visible to the caller |
+| `GET /v1/documents` | List documents visible to the caller (`?category=&tag=` filters) |
 | `GET /v1/documents/{id}` | Permission-checked document text and cited chunk (`?chunk=N`) |
 | `GET /v1/documents/{id}/file` | Original uploaded file for authorized viewers |
 | `DELETE /v1/documents/{id}` | Delete a document as its uploader or an administrator |
-| `PATCH /v1/documents/{id}` | Update a document's role ACL as an administrator |
+| `PATCH /v1/documents/{id}` | Update category/tags (uploader or admin) and role ACL (admin) |
 | `GET /v1/documents/search` | Permission-scoped retrieval results |
 | `POST /v1/memories` | Store a user memory with Mem0 |
 | `GET /v1/memories` | List the caller's memories |

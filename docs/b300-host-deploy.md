@@ -110,6 +110,8 @@ ssh b300 'cd /data/baryon-b300/baryon-ax && cp .env.b300.example .env'
 | `QDRANT_DASHBOARD_URL` | `http://127.0.0.1:6433/dashboard` |
 | `LANGFUSE_DASHBOARD_URL` | `http://127.0.0.1:3102` |
 | `MODEL_SERVER_URL` | `http://127.0.0.1:8020/docs` |
+| `GAP_STORE` | `/data/gaps/gaps.jsonl` |
+| `TACIT_STORE` | `/data/tacit/tacit.jsonl` |
 
 ## 5. 기존 볼륨에서 `/data`로 이전 (선택)
 
@@ -263,7 +265,7 @@ ssh b300 'tmux kill-session -t baryon-vllm-proxy'
 - 모든 플랫폼 포트는 `127.0.0.1` 바인딩, Mac은 SSH 터널 사용.
 - UFW는 22만 공개하고, 8021은 Docker private 대역(172.16.0.0/12)만 허용.
 - vLLM/API에는 인증이 없습니다. 터널 밖으로 노출하지 마세요.
-- `/data/baryon-b300/baryon-ax-data`에 문서·감사·Mem0·Postgres·Qdrant·FastEmbed 캐시가 있습니다. 백업 대상입니다.
+- `/data/baryon-b300/baryon-ax-data`에 문서·감사·Mem0·Postgres·Qdrant·FastEmbed 캐시, 지식 공백(`gaps`), 암묵지 답변(`tacit`)이 있습니다. 백업 대상입니다.
 - Langfuse에는 프롬프트/응답이 저장됩니다. 보존/삭제 정책을 정의하세요.
 - Docker 소켓 마운트는 root에 준하는 권한입니다. 읽기 전용으로만 유지하고, 필요 없으면 `SYSTEM_METRICS_ENABLED=false`로 끄세요.
 - 현재 신원은 개발용 헤더입니다. 프로덕션 전 OIDC/JWT로 교체하세요.

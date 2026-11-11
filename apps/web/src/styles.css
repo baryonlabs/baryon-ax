@@ -234,3 +234,29 @@ footer { width:min(860px, 100%); margin:0 auto; padding:16px 30px 24px; }.upload
 .badge { flex: none; white-space: nowrap; }
 .cluster-card, .pack { text-align: left; }
 .cluster-card header strong, .pack header strong { flex: 1; min-width: 0; }
+
+/* Tacit knowledge provenance */
+.tacit-basis { margin-top: 10px; padding-top: 9px; border-top: 1px dashed #24344e; }
+.tacit-basis summary { color: #8cb3f2; font-size: 11.5px; cursor: pointer; list-style: none; }
+.tacit-basis summary::-webkit-details-marker { display: none; }
+.tacit-basis summary::before { content: "▸ "; color: #6f9fe4; font-size: 10px; }
+.tacit-basis[open] summary::before { content: "▾ "; }
+.basis-grid { margin: 8px 0 0; display: grid; gap: 6px; }
+.basis-grid > div { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+.basis-grid dt { flex: 0 0 auto; min-width: 72px; color: #71829b; font-size: 11px; }
+.basis-grid dd { margin: 0; color: #cbd9ee; font-size: 11.5px; text-align: right; overflow-wrap: anywhere; }
+.basis-chips { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.badge.gap-resolved { color: #64d9a5; border-color: #2f6350; background: #12251f; }
+.badge.gap-open { color: #f0b45a; border-color: #5f4c2c; background: #251f14; }
+.badge.gap-dismissed { color: #879ab7; border-color: #3a4d69; background: #141d2c; }
+
+/* Knowledge categories, tags, and bulk upload */
+.upload-meta { display: flex; gap: 8px; margin: 10px 0 4px; flex-wrap: wrap; }
+.upload-meta input { flex: 1; min-width: 180px; background: #0b1422; border: 1px solid #2c4266; border-radius: 7px; color: #dbe7fa; padding: 8px 10px; font-size: 12px; }
+.filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+.filter-bar select { background: #0b1422; border: 1px solid #2c4266; border-radius: 7px; color: #dbe7fa; padding: 7px 9px; font-size: 12px; }
+.chip.active { background: #1f3d63; border-color: #6c9dec; color: #eaf2ff; }
+.chip.category { background: #1a2f4d; border-color: #3f5f8c; color: #cfe0f7; }
+.document-chips { margin: 4px 0 6px; }
+.meta-editor { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.meta-editor input { flex: 1; min-width: 150px; background: #0b1422; border: 1px solid #2c4266; border-radius: 7px; color: #dbe7fa; padding: 7px 9px; font-size: 12px; }

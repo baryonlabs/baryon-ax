@@ -111,12 +111,19 @@ def test_tacit_flow_publishes_answer_and_closes_gap() -> None:
     entry = created.json()
     assert entry["status"] == "draft"
     assert entry["attachments"][0]["document_id"] == attachment_id
+    basis = entry["basis"]
+    assert basis["source"] == "gap"
+    assert basis["gap"]["id"] == gap_question["gap_id"]
+    assert basis["gap"]["reasons"]
+    assert basis["gap"]["occurrences"] >= 1
+    assert basis["gap"]["terms"]
 
     published = client.post(f"/v1/tacit/entries/{entry['id']}/publish", headers=member)
     assert published.status_code == 200, published.text
     assert published.json()["status"] == "published"
     document_id = published.json()["published_document_id"]
     assert document_id
+    assert published.json()["basis"]["published_document"]["id"] == document_id
 
     search = client.get("/v1/documents/search", params={"q": "예외 승인 금액"}, headers=member).json()["data"]
     assert any(item["document_id"] == document_id for item in search)
@@ -124,6 +131,10 @@ def test_tacit_flow_publishes_answer_and_closes_gap() -> None:
     gaps = client.get("/v1/admin/gaps?status=all", headers=headers(organization=org, roles="admin")).json()["data"]
     resolved = next(item for item in gaps if item["id"] == gap_question["gap_id"])
     assert resolved["status"] == "resolved"
+
+    listed = client.get("/v1/tacit/entries", headers=member).json()["data"]
+    saved = next(item for item in listed if item["id"] == entry["id"])
+    assert saved["basis"]["gap"]["status"] == "resolved"
 
 
 def test_tacit_entries_are_not_visible_to_other_users() -> None:

@@ -20,6 +20,8 @@ services:
       DOCKER_PROJECT: ${DOCKER_PROJECT:-baryon-ax}
       HOST_PROC: /host/proc
       HOST_HOSTNAME: ${HOST_HOSTNAME:-}
+      GAP_STORE: /data/gaps/gaps.jsonl
+      TACIT_STORE: /data/tacit/tacit.jsonl
     extra_hosts:
       - "host.docker.internal:host-gateway"
     group_add:
@@ -29,6 +31,8 @@ services:
       - audit:/data/audit
       - mem0:/data/mem0
       - models:/data/fastembed
+      - gaps:/data/gaps
+      - tacit:/data/tacit
       - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
     ports:
@@ -90,5 +94,7 @@ volumes:
   audit:
   mem0:
   models:
+  gaps:
+  tacit:
   postgres:
   qdrant:

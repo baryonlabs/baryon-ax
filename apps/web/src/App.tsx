@@ -18,7 +18,7 @@ type DocumentDetail = {
   mime: string; parser: string; has_raw_file: boolean; raw_filename: string; raw_size: number;
 };
 type SourceState = { citation: Citation; detail?: DocumentDetail; loading: boolean; error?: string };
-type KnowledgeDocument = { id: string; title: string; owner_id: string; allowed_roles: string[]; created_at: string; chunks: number };
+type KnowledgeDocument = { id: string; title: string; owner_id: string; allowed_roles: string[]; created_at: string; chunks: number; category: string; tags: string[] };
 type MemoryItem = { id: string; memory: string; created_at?: string; metadata?: Record<string, unknown>; score?: number };
 type AuditEvent = {
   id: string; at: string; type: string; trace_id: string; organization_id: string; user_id: string;
@@ -47,9 +47,19 @@ type TacitQuestion = {
   id: string; question: string; source: string; gap_id?: string; category?: string;
   occurrences: number; reasons: string[]; terms: string[];
 };
+type TacitBasisGap = {
+  id: string; question: string; reasons: string[]; occurrences: number; terms: string[];
+  status: string; first_seen: string; last_seen: string;
+};
+type TacitBasis = {
+  source: string; author_id: string; created_at: string; updated_at: string;
+  gap?: TacitBasisGap | null; template?: { id: string; category: string; question: string } | null;
+  published_document?: { id: string; title: string } | null;
+};
 type TacitEntry = {
   id: string; question: string; answer: string; attachments: { document_id: string; title: string }[];
   status: string; source: string; gap_id?: string | null; created_at: string; published_document_id?: string | null;
+  basis?: TacitBasis;
 };
 type ContainerInfo = { name: string; image: string; status: string; health?: string | null; project?: string; ports: string[] };
 type SystemInfo = {
@@ -166,7 +176,11 @@ const copy = {
     traceTitle: "처리 과정", traceRateLimit: "속도 제한", tracePolicy: "정책 검사", traceMemory: "메모리 검색", traceRetrieval: "문서 검색", traceModel: "모델 생성", traceAudit: "감사 기록", traceMs: "ms", traceSkipped: "건너뜀",
     scope: "문서는 조직 및 역할 권한 범위 안에서만 검색됩니다.", indexedDocs: "색인된 문서", visibleDocs: "내 조직과 역할에서 조회 가능한 문서만 표시됩니다.",
     sendHint: "Shift+Enter로 전송",
-    upload: "문서 업로드", noDocs: "아직 문서가 없습니다", noDocsBody: "PDF·HWP·Office·이미지·Markdown을 올리면 자동으로 파싱·색인되어 근거 기반 채팅에 사용됩니다.",
+    upload: "문서 업로드", category: "카테고리", tags: "태그", allCategories: "전체 카테고리", filterTag: "태그 필터",
+    categoryPlaceholder: "카테고리 (예: 계약, 인사, 연구)", tagsPlaceholder: "태그 (쉼표 구분: 2026, 예산)",
+    editMetadata: "분류 편집", metadataUpdated: "카테고리와 태그를 저장했습니다.", metadataFailed: "분류를 저장할 수 없습니다.",
+    clearFilter: "필터 해제", uncategorized: "미분류", uploadedMany: (count: number) => `${count}개 파일을 업로드했습니다.`,
+    noDocs: "아직 문서가 없습니다", noDocsBody: "PDF·HWP·Office·이미지·Markdown을 올리면 자동으로 파싱·색인되어 근거 기반 채팅에 사용됩니다.",
     chunks: "청크", roles: "역할", deleteDocument: "문서 삭제", onPremises: "온프레미스 프로필", language: "언어", profile: "local-org",
     role: "역할", member: "멤버", admin: "관리자",
     auditLog: "감사 로그", auditBody: "조직 단위로 기록된 최근 감사 이벤트입니다. 관리자 역할만 조회할 수 있습니다.",
@@ -211,6 +225,12 @@ const copy = {
     tacitPlaceholder: "경험에서 나온 판단 기준과 이유를 적어 주세요…", attach: "첨부", submitAnswer: "답변 저장",
     tacitSaved: "답변을 저장했습니다.", publishAnswer: "지식으로 게시", tacitDraft: "작성됨", tacitPublished: "게시됨",
     tacitPublishedMessage: (title: string) => `${title} 문서로 게시했습니다. 이제 검색과 답변에 사용됩니다.`,
+    tacitBasis: "생성 근거", basisSource: "생성 경로", basisGapQuestion: "원본 질문", basisGapStatus: "공백 상태",
+    basisReasons: "감지 사유", basisOccurrences: "발생 횟수", basisTerms: "핵심 용어", basisCreated: "생성 시각",
+    basisAuthor: "작성자", basisTemplate: "템플릿", basisPublished: "게시 문서", basisOpenDoc: "게시 문서 열기",
+    basisSourceGap: "미해결 질문", basisSourceTemplate: "표준 템플릿", basisSourceCustom: "직접 작성",
+    gapStatusOpen: "미해결", gapStatusResolved: "해결됨", gapStatusDismissed: "무시됨",
+    reasonNoCitations: "출처 없음", reasonRefusal: "답변 거부", reasonVague: "모호한 답변", reasonEmpty: "빈 답변",
     tacitFailed: "답변을 저장할 수 없습니다.", noTacit: "아직 답변이 없습니다",
     noTacitBody: "질문에 답하면 여기에 쌓이고, 게시하면 검색 가능한 지식이 됩니다.",
     fromGap: "미해결 질문", fromTemplate: "템플릿", scopeMine: "내 답변", scopeAll: "전체 답변",
@@ -233,7 +253,11 @@ const copy = {
     traceTitle: "Pipeline", traceRateLimit: "Rate limit", tracePolicy: "Policy check", traceMemory: "Memory search", traceRetrieval: "Document search", traceModel: "Model generation", traceAudit: "Audit log", traceMs: "ms", traceSkipped: "skipped",
     scope: "Documents are searched only within your organization and role scope.", indexedDocs: "Indexed documents", visibleDocs: "Only documents visible to your organization and role are shown.",
     sendHint: "Shift+Enter to send",
-    upload: "Upload document", noDocs: "No documents yet", noDocsBody: "Upload PDF, HWP, Office, image, or Markdown files; they are parsed and indexed for grounded chat.",
+    upload: "Upload document", category: "Category", tags: "Tags", allCategories: "All categories", filterTag: "Filter by tag",
+    categoryPlaceholder: "Category (e.g. contracts, HR, research)", tagsPlaceholder: "Tags (comma separated: 2026, budget)",
+    editMetadata: "Edit classification", metadataUpdated: "Category and tags saved.", metadataFailed: "Could not save classification.",
+    clearFilter: "Clear filters", uncategorized: "Uncategorized", uploadedMany: (count: number) => `Uploaded ${count} file(s).`,
+    noDocs: "No documents yet", noDocsBody: "Upload PDF, HWP, Office, image, or Markdown files; they are parsed and indexed for grounded chat.",
     chunks: "chunk(s)", roles: "roles", deleteDocument: "Delete document", onPremises: "On-premises profile", language: "Language", profile: "local-org",
     role: "Role", member: "Member", admin: "Administrator",
     auditLog: "Audit log", auditBody: "Recent audit events recorded for your organization. Administrator role required.",
@@ -278,6 +302,12 @@ const copy = {
     tacitPlaceholder: "Describe the judgement rule and why it matters…", attach: "Attach", submitAnswer: "Save answer",
     tacitSaved: "Answer saved.", publishAnswer: "Publish as knowledge", tacitDraft: "Draft", tacitPublished: "Published",
     tacitPublishedMessage: (title: string) => `Published as ${title}. It is now searchable and used in answers.`,
+    tacitBasis: "Why this was created", basisSource: "Origin", basisGapQuestion: "Source question", basisGapStatus: "Gap status",
+    basisReasons: "Detection reasons", basisOccurrences: "Occurrences", basisTerms: "Key terms", basisCreated: "Created",
+    basisAuthor: "Author", basisTemplate: "Template", basisPublished: "Published document", basisOpenDoc: "Open published document",
+    basisSourceGap: "Open knowledge gap", basisSourceTemplate: "Standard template", basisSourceCustom: "Manually written",
+    gapStatusOpen: "Open", gapStatusResolved: "Resolved", gapStatusDismissed: "Dismissed",
+    reasonNoCitations: "No citations", reasonRefusal: "Refusal", reasonVague: "Vague answer", reasonEmpty: "Empty answer",
     tacitFailed: "Could not save the answer.", noTacit: "No answers yet",
     noTacitBody: "Answers appear here; publishing makes them searchable knowledge.",
     fromGap: "Open gap", fromTemplate: "Template", scopeMine: "Mine", scopeAll: "All",
@@ -308,6 +338,13 @@ export default function App() {
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadNote, setUploadNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [allKnowledge, setAllKnowledge] = useState<KnowledgeDocument[]>([]);
+  const [uploadCategory, setUploadCategory] = useState("");
+  const [uploadTags, setUploadTags] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterTag, setFilterTag] = useState("");
+  const [metaCategory, setMetaCategory] = useState("");
+  const [metaTags, setMetaTags] = useState("");
   const [source, setSource] = useState<SourceState | null>(null);
   const [sourceBusy, setSourceBusy] = useState(false);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
@@ -354,8 +391,14 @@ export default function App() {
 
   const loadKnowledge = useCallback(async () => {
     const response = await fetch(`${API}/v1/documents`, { headers: identity(role) });
-    if (response.ok) setKnowledge((await response.json()).data);
-  }, [role]);
+    if (!response.ok) return;
+    const all: KnowledgeDocument[] = (await response.json()).data;
+    setAllKnowledge(all);
+    setKnowledge(all.filter(document =>
+      (!filterCategory || document.category === filterCategory) &&
+      (!filterTag || document.tags.includes(filterTag))
+    ));
+  }, [role, filterCategory, filterTag]);
 
   const loadMemories = useCallback(async () => {
     try {
@@ -507,6 +550,7 @@ export default function App() {
         const uploaded = await response.json();
         setTacitAttachments(previous => [...previous, {
           id: uploaded.id, title: uploaded.title, owner_id: "", allowed_roles: [], created_at: "", chunks: uploaded.chunks,
+          category: uploaded.category ?? "", tags: uploaded.tags ?? [],
         }]);
       }
     } catch {
@@ -573,23 +617,43 @@ export default function App() {
     }
   }, [role, view]);
 
-  async function upload(file: File) {
+  async function uploadFiles(files: FileList | File[], meta?: { category?: string; tags?: string }) {
+    const list = Array.from(files);
+    if (list.length === 0) return;
     setUploadBusy(true);
     setUploadNote(null);
+    let succeeded = 0;
+    let last: { title: string; chunks: number } | null = null;
     try {
-      const data = new FormData(); data.append("file", file);
-      const response = await fetch(`${API}/v1/documents`, { method: "POST", body: data, headers: identity(role) });
-      if (!response.ok) throw new Error("Document upload failed");
-      const result = await response.json(); await loadKnowledge();
-      const message = t.indexed(result.title, result.chunks);
-      setUploadNote({ ok: true, text: message });
-      setMessages(previous => [...previous, { role: "assistant", content: message }]);
+      for (const file of list) {
+        const data = new FormData();
+        data.append("file", file);
+        if (meta?.category) data.append("category", meta.category);
+        if (meta?.tags) data.append("tags", meta.tags);
+        const response = await fetch(`${API}/v1/documents`, { method: "POST", body: data, headers: identity(role) });
+        if (!response.ok) continue;
+        const result = await response.json();
+        last = { title: result.title, chunks: result.chunks };
+        succeeded += 1;
+      }
+      await loadKnowledge();
+      if (succeeded === list.length) {
+        const message = list.length === 1 && last ? t.indexed(last.title, last.chunks) : t.uploadedMany(succeeded);
+        setUploadNote({ ok: true, text: message });
+        setMessages(previous => [...previous, { role: "assistant", content: message }]);
+      } else {
+        throw new Error("Upload partially failed");
+      }
     } catch {
       setUploadNote({ ok: false, text: t.uploadFailed });
       setMessages(previous => [...previous, { role: "assistant", content: t.uploadFailed }]);
     } finally {
       setUploadBusy(false);
     }
+  }
+
+  async function upload(file: File) {
+    await uploadFiles([file]);
   }
 
   async function openSource(citation: Citation) {
@@ -705,21 +769,29 @@ export default function App() {
     if (response.ok) setMemories(previous => previous.filter(item => item.id !== id));
   }
 
-  function startEditingRoles(document: KnowledgeDocument) {
+  function startEditingDocument(document: KnowledgeDocument) {
     setEditingId(document.id);
     setRoleDraft(document.allowed_roles.join(", "));
+    setMetaCategory(document.category);
+    setMetaTags(document.tags.join(", "));
     setAclMessage(null);
   }
 
-  async function saveRoles(id: string) {
-    const allowed_roles = roleDraft.split(",").map(item => item.trim()).filter(Boolean);
+  async function saveDocumentMetadata(id: string) {
+    const payload: Record<string, unknown> = {
+      category: metaCategory.trim(),
+      tags: metaTags.split(",").map(item => item.trim()).filter(Boolean),
+    };
+    if (role === "admin") {
+      payload.allowed_roles = roleDraft.split(",").map(item => item.trim()).filter(Boolean);
+    }
     try {
       const response = await fetch(`${API}/v1/documents/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...identity(role) },
-        body: JSON.stringify({ allowed_roles }),
+        body: JSON.stringify(payload),
       });
-      if (!response.ok) throw new Error("Document ACL update failed");
+      if (!response.ok) throw new Error("Document metadata update failed");
       setEditingId(null);
       await loadKnowledge();
       setAclMessage({ id, ok: true });
@@ -797,6 +869,25 @@ export default function App() {
     if (view === "tacit") return t.tacit;
     if (view === "settings") return t.adminSettings;
     return t.groundedChat;
+  }
+
+  function reasonLabel(reason: string) {
+    const labels: Record<string, string> = {
+      no_citations: t.reasonNoCitations, refusal: t.reasonRefusal, vague: t.reasonVague, empty_answer: t.reasonEmpty,
+    };
+    return labels[reason] ?? reason;
+  }
+
+  function gapStatusLabel(status: string) {
+    if (status === "resolved") return t.gapStatusResolved;
+    if (status === "dismissed") return t.gapStatusDismissed;
+    return t.gapStatusOpen;
+  }
+
+  function basisSourceLabel(source: string) {
+    if (source === "gap") return t.basisSourceGap;
+    if (source === "template") return t.basisSourceTemplate;
+    return t.basisSourceCustom;
   }
 
   function traceLabel(step: string) {
@@ -880,7 +971,7 @@ export default function App() {
         <div className="knowledge-top">
           <div><h2>{t.indexedDocs}</h2><p>{t.visibleDocs}</p></div>
           <button className="primary" disabled={uploadBusy} onClick={() => openFilePicker()}><FileUp size={16}/>{uploadBusy ? t.uploading : t.upload}</button>
-          <input ref={fileInput} type="file" accept={UPLOAD_ACCEPT} hidden onChange={event => event.target.files?.[0] && upload(event.target.files[0])}/>
+          <input ref={fileInput} type="file" accept={UPLOAD_ACCEPT} multiple hidden onChange={event => void uploadFiles(event.target.files ?? [], { category: uploadCategory, tags: uploadTags })}/>
         </div>
         <div
           className={`upload-zone ${dragging ? "dragging" : ""} ${uploadBusy ? "busy" : ""}`}
@@ -889,11 +980,15 @@ export default function App() {
           onKeyDown={event => { if (!uploadBusy && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openFilePicker(); } }}
           onDragOver={event => { event.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
-          onDrop={event => { event.preventDefault(); setDragging(false); const file = event.dataTransfer.files?.[0]; if (file && !uploadBusy) void upload(file); }}
+          onDrop={event => { event.preventDefault(); setDragging(false); const files = event.dataTransfer.files; if (files?.length && !uploadBusy) void uploadFiles(files, { category: uploadCategory, tags: uploadTags }); }}
         >
           <div className="upload-zone-head">
             <UploadCloud size={24}/>
             <div><strong>{uploadBusy ? t.uploading : t.uploadZoneTitle}</strong><p>{t.uploadZoneBody}</p></div>
+          </div>
+          <div className="upload-meta" onClick={event => event.stopPropagation()}>
+            <input value={uploadCategory} onChange={event => setUploadCategory(event.target.value)} placeholder={t.categoryPlaceholder} aria-label={t.category}/>
+            <input value={uploadTags} onChange={event => setUploadTags(event.target.value)} placeholder={t.tagsPlaceholder} aria-label={t.tags}/>
           </div>
           <div className="format-groups">
             {(["docs", "sheets", "text", "images"] as const).map(group => {
@@ -913,19 +1008,37 @@ export default function App() {
           <small className="format-hint">{t.formatHint}</small>
         </div>
         {uploadNote && <p className={`upload-note ${uploadNote.ok ? "ok" : "error"}`}>{uploadNote.text}</p>}
+        <div className="filter-bar">
+          <select value={filterCategory} onChange={event => setFilterCategory(event.target.value)} aria-label={t.category}>
+            <option value="">{t.allCategories}</option>
+            {Array.from(new Set(allKnowledge.map(document => document.category).filter(Boolean))).sort().map(category =>
+              <option key={category} value={category}>{category}</option>)}
+          </select>
+          <div className="chips">
+            {Array.from(new Set(allKnowledge.flatMap(document => document.tags))).sort().map(tag =>
+              <button type="button" className={`chip ${filterTag === tag ? "active" : ""}`} key={tag} onClick={() => setFilterTag(filterTag === tag ? "" : tag)}>#{tag}</button>)}
+          </div>
+          {(filterCategory || filterTag) && <button className="ghost small" onClick={() => { setFilterCategory(""); setFilterTag(""); }}>{t.clearFilter}</button>}
+        </div>
         {knowledge.length === 0 ? <div className="empty"><BookOpen size={28}/><h3>{t.noDocs}</h3><p>{t.noDocsBody}</p></div> : <div className="document-list">
           {knowledge.map(document => <div className="document" key={document.id}>
             <DocumentFormatIcon title={document.title}/>
             <div className="document-main">
               <strong>{document.title}</strong>
               <p>{document.chunks} {t.chunks} · {t.roles}: {document.allowed_roles.join(", ") || "—"} · {t.ownerLabel}: {document.owner_id}</p>
-              {role === "admin" && editingId === document.id && <div className="acl-editor">
-                <input aria-label={t.allowedRoles} value={roleDraft} onChange={event => setRoleDraft(event.target.value)} placeholder="member, admin"/>
-                <button className="primary small" onClick={() => void saveRoles(document.id)}><Save size={14}/>{t.save}</button>
+              {(document.category || document.tags.length > 0) && <div className="chips document-chips">
+                {document.category && <span className="chip category">{document.category}</span>}
+                {document.tags.map(tag => <span className="chip" key={tag}>#{tag}</span>)}
+              </div>}
+              {(role === "admin" || document.owner_id === CURRENT_USER) && editingId === document.id && <div className="meta-editor">
+                <input aria-label={t.category} value={metaCategory} onChange={event => setMetaCategory(event.target.value)} placeholder={t.categoryPlaceholder}/>
+                <input aria-label={t.tags} value={metaTags} onChange={event => setMetaTags(event.target.value)} placeholder={t.tagsPlaceholder}/>
+                {role === "admin" && <input aria-label={t.allowedRoles} value={roleDraft} onChange={event => setRoleDraft(event.target.value)} placeholder="member, admin"/>}
+                <button className="primary small" onClick={() => void saveDocumentMetadata(document.id)}><Save size={14}/>{t.save}</button>
                 <button className="ghost small" onClick={() => setEditingId(null)}><X size={14}/>{t.cancel}</button>
               </div>}
-              {role === "admin" && editingId !== document.id && <button className="acl" onClick={() => startEditingRoles(document)}>{t.editRoles}</button>}
-              {aclMessage?.id === document.id && <small className={aclMessage.ok ? "acl-ok" : "acl-error"}>{aclMessage.ok ? t.aclUpdated : t.aclFailed}</small>}
+              {(role === "admin" || document.owner_id === CURRENT_USER) && editingId !== document.id && <button className="acl" onClick={() => startEditingDocument(document)}>{t.editMetadata}</button>}
+              {aclMessage?.id === document.id && <small className={aclMessage.ok ? "acl-ok" : "acl-error"}>{aclMessage.ok ? t.metadataUpdated : t.metadataFailed}</small>}
             </div>
             {(role === "admin" || document.owner_id === CURRENT_USER) && <button className="delete" title={t.deleteDocument} aria-label={t.deleteDocument} onClick={() => removeDocument(document.id)}><Trash2 size={16}/></button>}
           </div>)}
@@ -982,6 +1095,8 @@ export default function App() {
             {tacitQuestions.map(question => <article className={`cluster-card tacit-question ${tacitSelected?.id === question.id ? "selected" : ""}`} key={question.id}>
               <header><strong>{question.question}</strong><span className="badge">{question.source === "gap" ? t.fromGap : t.fromTemplate}</span></header>
               {question.category && <p className="muted">{question.category}{question.occurrences > 1 ? ` · ${t.occurrences} ${question.occurrences}` : ""}</p>}
+              {question.reasons.length > 0 && <div className="chips">{question.reasons.map(reason => <span className="chip reason" key={reason}>{reasonLabel(reason)}</span>)}</div>}
+              {question.terms.length > 0 && <p className="muted">{t.basisTerms}: {question.terms.join(" · ")}</p>}
               <button className="primary" onClick={() => { setTacitSelected(question); setTacitAnswer(""); setTacitAttachments([]); setTacitMessage(""); }}><MessagesSquare size={15}/>{t.answerThis}</button>
             </article>)}
           </div>}
@@ -1011,6 +1126,23 @@ export default function App() {
               <header><strong>{entry.question}</strong><span className="badge">{entry.status === "published" ? t.tacitPublished : t.tacitDraft}</span></header>
               <p>{entry.answer.slice(0, 280)}</p>
               {entry.attachments.length > 0 && <div className="chips">{entry.attachments.map(item => <span className="chip" key={item.document_id}>{item.title}</span>)}</div>}
+              {entry.basis && <details className="tacit-basis">
+                <summary>{t.tacitBasis}</summary>
+                <dl className="basis-grid">
+                  <div><dt>{t.basisSource}</dt><dd>{basisSourceLabel(entry.basis.source)}</dd></div>
+                  <div><dt>{t.basisCreated}</dt><dd>{new Date(entry.basis.created_at).toLocaleString(locale === "ko" ? "ko-KR" : "en-US")}</dd></div>
+                  <div><dt>{t.basisAuthor}</dt><dd>{entry.basis.author_id}</dd></div>
+                  {entry.basis.gap && <>
+                    <div><dt>{t.basisGapQuestion}</dt><dd>{entry.basis.gap.question}</dd></div>
+                    <div><dt>{t.basisGapStatus}</dt><dd><span className={`badge gap-${entry.basis.gap.status}`}>{gapStatusLabel(entry.basis.gap.status)}</span></dd></div>
+                    <div><dt>{t.basisReasons}</dt><dd className="basis-chips">{entry.basis.gap.reasons.map(reason => <span className="chip reason" key={reason}>{reasonLabel(reason)}</span>)}</dd></div>
+                    <div><dt>{t.basisOccurrences}</dt><dd>{entry.basis.gap.occurrences}</dd></div>
+                    <div><dt>{t.basisTerms}</dt><dd className="basis-chips">{entry.basis.gap.terms.map(term => <span className="chip" key={term}>{term}</span>)}</dd></div>
+                  </>}
+                  {entry.basis.template && <div><dt>{t.basisTemplate}</dt><dd>{entry.basis.template.category}</dd></div>}
+                  {entry.basis.published_document && <div><dt>{t.basisPublished}</dt><dd><button className="inline-link" onClick={() => void openSource({ document_id: entry.basis!.published_document!.id, title: entry.basis!.published_document!.title, chunk: 1 })}>{entry.basis.published_document.title}<ExternalLink size={12}/></button></dd></div>}
+                </dl>
+              </details>}
               {entry.status !== "published" && <div className="pack-actions">
                 <button className="primary" disabled={tacitBusy} onClick={() => void publishTacit(entry)}><Sparkles size={15}/>{t.publishAnswer}</button>
               </div>}

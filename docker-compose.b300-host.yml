@@ -8,6 +8,8 @@ services:
       - /data/baryon-b300/baryon-ax-data/audit:/data/audit
       - /data/baryon-b300/baryon-ax-data/mem0:/data/mem0
       - /data/baryon-b300/baryon-ax-data/fastembed:/data/fastembed
+      - /data/baryon-b300/baryon-ax-data/gaps:/data/gaps
+      - /data/baryon-b300/baryon-ax-data/tacit:/data/tacit
       - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
     environment:
