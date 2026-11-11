@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import tempfile
@@ -34,6 +35,12 @@ def test_role_scoped_retrieval_and_completion() -> None:
     response = client.post("/v1/chat/completions", json={"messages": [{"role": "user", "content": "What is used for vector search?"}], "stream": False})
     assert response.status_code == 200
     assert response.json()["citations"]
+    trace = response.json()["trace"]
+    steps = [item["step"] for item in trace["steps"]]
+    assert steps == ["rate_limit", "policy", "memory_search", "document_search", "model", "audit"]
+    assert trace["memory_count"] == 0
+    assert trace["retrieval_count"] >= 1
+    assert trace["total_ms"] > 0
 
 
 def test_policy_blocks_configured_content() -> None:
@@ -221,6 +228,51 @@ def test_model_adapter_can_disable_qwen_thinking(monkeypatch) -> None:
     assert payload["chat_template_kwargs"] == {"enable_thinking": False}
 
 
+def test_model_adapter_injects_user_memories() -> None:
+    adapter = ModelAdapter()
+    request = ChatRequest(messages=[Message(role="user", content="내가 좋아하는 음료는?")])
+    payload = adapter.payload(request, [], False, principal=Principal(user_id="u1", organization_id="o1", roles={"member"}),
+                              memories=[{"memory": "사용자는 아메리카노를 좋아한다"}])
+    system = payload["messages"][0]["content"]
+    assert "사용자 기억" in system
+    assert "아메리카노" in system
+
+
+def test_complete_sends_user_memories_to_the_model(monkeypatch) -> None:
+    import baryon.main as app_module
+
+    captured: dict = {}
+
+    class StubResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    class StubClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, headers=None, json=None):
+            captured["json"] = json
+            return StubResponse()
+
+    monkeypatch.setattr(app_module.httpx, "AsyncClient", StubClient)
+    monkeypatch.setenv("MODEL_BASE_URL", "http://model.test/v1")
+    adapter = ModelAdapter()
+    request = ChatRequest(messages=[Message(role="user", content="내 커피는?")])
+    answer = asyncio.run(adapter.complete(request, [], memories=[{"memory": "아메리카노를 좋아한다"}]))
+    assert answer == "ok"
+    assert "아메리카노를 좋아한다" in captured["json"]["messages"][0]["content"]
+
+
 def test_streaming_chat_returns_tokens_and_citations() -> None:
     response = client.post("/v1/chat/completions", json={"messages": [{"role": "user", "content": "stream check"}], "stream": True},
                            headers=headers(organization="stream-org"))
@@ -233,6 +285,11 @@ def test_streaming_chat_returns_tokens_and_citations() -> None:
     assert any(item["type"] == "token" and item["content"] for item in payloads)
     citations = [item for item in payloads if item["type"] == "citations"]
     assert len(citations) == 1 and citations[0]["trace_id"] == trace_id
+    traces = [item for item in payloads if item["type"] == "trace"]
+    assert len(traces) == 2
+    assert traces[0]["data"]["steps"][0]["step"] == "rate_limit"
+    assert traces[-1]["data"]["steps"][-1]["step"] == "audit"
+    assert traces[-1]["data"]["total_ms"] > 0
     assert all("content" not in item for item in citations[0]["data"])
 
 

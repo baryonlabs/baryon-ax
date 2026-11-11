@@ -34,6 +34,12 @@ from .ingest.pipeline import PipelineConfig, PermanentError, run_pipeline
 from .gaps import GapStore, PackStore, build_pack, cluster_gaps
 
 logger = logging.getLogger("baryon.ax")
+logger.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
+if not logger.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    logger.addHandler(_handler)
+    logger.propagate = False
 
 MAX_DOCUMENT_BYTES = int(os.getenv("MAX_DOCUMENT_BYTES", "20000000"))
 MODEL_TIMEOUT_SECONDS = float(os.getenv("MODEL_TIMEOUT_SECONDS", "90"))
@@ -73,6 +79,7 @@ class ChatRequest(BaseModel):
     messages: list[Message] = Field(min_length=1)
     stream: bool = True
     use_retrieval: bool = True
+    use_memory: bool = True
     thread_id: str | None = None
     locale: Literal["ko", "en"] = "ko"
 
@@ -95,6 +102,10 @@ class ChatState(TypedDict):
     request: ChatRequest
     principal: Principal
     citations: list[dict]
+    memories: list[dict]
+    policy_ms: float
+    memory_ms: float
+    retrieval_ms: float
 
 
 class AuditSink:
@@ -601,8 +612,12 @@ class RateLimiter:
             logger.exception("Redis rate limiting failed; allowing request")
 
 
+def _step(step: str, ms: float, status: str = "ok", detail: str = "") -> dict:
+    return {"step": step, "status": status, "ms": round(ms, 2), "detail": detail}
+
+
 class ChatPipeline:
-    """LangGraph orchestration for the policy gate and retrieval step."""
+    """LangGraph orchestration for the policy gate, memory lookup, and retrieval step."""
 
     def __init__(self) -> None:
         self.enabled = False
@@ -611,32 +626,86 @@ class ChatPipeline:
             from langgraph.graph import END, StateGraph
 
             async def policy_node(state: ChatState) -> dict:
+                started = time.perf_counter()
                 policy.check_input(state["request"].messages[-1].content)
-                return {}
+                return {"policy_ms": round((time.perf_counter() - started) * 1000, 2)}
+
+            async def memory_node(state: ChatState) -> dict:
+                request = state["request"]
+                if not request.use_memory or not memory_service.enabled:
+                    return {"memories": [], "memory_ms": 0.0}
+                started = time.perf_counter()
+                items = await asyncio.to_thread(
+                    memory_service.search, request.messages[-1].content, state["principal"],
+                    int(os.getenv("MEMORY_CONTEXT_LIMIT", "5")),
+                )
+                memories = [
+                    {"id": item.get("id", ""), "memory": str(item.get("memory", "")), "score": item.get("score")}
+                    for item in items if item.get("memory")
+                ]
+                return {"memories": memories, "memory_ms": round((time.perf_counter() - started) * 1000, 2)}
 
             async def retrieve_node(state: ChatState) -> dict:
                 request = state["request"]
                 if not request.use_retrieval:
-                    return {"citations": []}
-                return {"citations": await asyncio.to_thread(documents.search, state["principal"], request.messages[-1].content)}
+                    return {"citations": [], "retrieval_ms": 0.0}
+                started = time.perf_counter()
+                citations = await asyncio.to_thread(documents.search, state["principal"], request.messages[-1].content)
+                return {"citations": citations, "retrieval_ms": round((time.perf_counter() - started) * 1000, 2)}
 
             graph = StateGraph(ChatState)
             graph.add_node("policy", policy_node)
+            graph.add_node("memory", memory_node)
             graph.add_node("retrieve", retrieve_node)
             graph.set_entry_point("policy")
-            graph.add_edge("policy", "retrieve")
+            graph.add_edge("policy", "memory")
+            graph.add_edge("memory", "retrieve")
             graph.add_edge("retrieve", END)
             self.graph = graph.compile()
             self.enabled = True
         except Exception:
             logger.exception("LangGraph is unavailable; using direct orchestration")
 
-    async def prepare(self, request: ChatRequest, principal: Principal) -> list[dict]:
+    async def prepare(self, request: ChatRequest, principal: Principal) -> tuple[list[dict], list[dict], list[dict]]:
+        """Run policy, memory, and retrieval; return citations, memories, and a step log."""
         if not self.enabled or self.graph is None:
+            steps = []
+            started = time.perf_counter()
             policy.check_input(request.messages[-1].content)
-            return await asyncio.to_thread(documents.search, principal, request.messages[-1].content) if request.use_retrieval else []
-        state = await self.graph.ainvoke({"request": request, "principal": principal, "citations": []})
-        return state["citations"]
+            steps.append(_step("policy", round((time.perf_counter() - started) * 1000, 2), "ok"))
+            memories: list[dict] = []
+            if request.use_memory and memory_service.enabled:
+                started = time.perf_counter()
+                items = await asyncio.to_thread(
+                    memory_service.search, request.messages[-1].content, principal,
+                    int(os.getenv("MEMORY_CONTEXT_LIMIT", "5")),
+                )
+                memories = [
+                    {"id": item.get("id", ""), "memory": str(item.get("memory", "")), "score": item.get("score")}
+                    for item in items if item.get("memory")
+                ]
+                steps.append(_step("memory_search", round((time.perf_counter() - started) * 1000, 2), "ok", f"{len(memories)}건"))
+            else:
+                steps.append(_step("memory_search", 0.0, "skipped", "비활성"))
+            citations: list[dict] = []
+            if request.use_retrieval:
+                started = time.perf_counter()
+                citations = await asyncio.to_thread(documents.search, principal, request.messages[-1].content)
+                steps.append(_step("document_search", round((time.perf_counter() - started) * 1000, 2), "ok", f"{len(citations)}건"))
+            else:
+                steps.append(_step("document_search", 0.0, "skipped", "비활성"))
+            return citations, memories, steps
+        state = await self.graph.ainvoke({
+            "request": request, "principal": principal, "citations": [], "memories": [],
+            "policy_ms": 0.0, "memory_ms": 0.0, "retrieval_ms": 0.0,
+        })
+        memories = state.get("memories", [])
+        steps = [
+            _step("policy", state.get("policy_ms", 0.0), "ok"),
+            _step("memory_search", state.get("memory_ms", 0.0), "ok" if request.use_memory and memory_service.enabled else "skipped", f"{len(memories)}건"),
+            _step("document_search", state.get("retrieval_ms", 0.0), "ok" if request.use_retrieval else "skipped", f"{len(state['citations'])}건"),
+        ]
+        return state["citations"], memories, steps
 
 
 BASE_SYSTEM_PROMPTS = {
@@ -649,9 +718,17 @@ BASE_SYSTEM_PROMPTS = {
 [근거]
 - 아래 [검색 근거]는 질문과 관련 있을 때만 사용하세요.
 - 근거에 없는 사실, 조직 정보, 구성원, 정책, 수치, 일정은 절대 지어내지 마세요.
-- 답할 근거가 없으면 "제공된 문서에서 해당 정보를 찾지 못했습니다."라고 답하고 필요한 문서를 요청하세요.
+- 사용자 본인에 대한 질문(선호, 습관, 신상 등)은 [사용자 기억]을 근거로 답하세요. 기억에 있으면 "문서에서 찾지 못했습니다"라고 답하지 마세요.
+- 문서 근거와 기억 어디에도 없을 때만 "제공된 문서에서 해당 정보를 찾지 못했습니다."라고 답하고 필요한 문서를 요청하세요.
 - 근거가 질문과 무관하면 무시하세요.
 - 출처를 사용한 경우 답변 끝에 (출처: 문서 제목) 형식으로만 표시하고, 제공되지 않은 문서를 인용하지 마세요.
+
+[사용자 기억]
+- 아래 기억은 이 사용자에 대해 저장된 참고 정보이며, 사용자 질문에 답할 때 유효한 근거입니다.
+- 최신 사용자 발화와 충돌하면 발화를 우선하세요.
+- 기억에 없는 개인 정보를 지어내지 마세요.
+- 기억을 근거로 답할 때 "(출처: 사용자 기억)" 같은 출처 표기를 붙이지 마세요.
+{memories}
 
 [조직]
 - 현재 조직 ID: {organization_id}
@@ -675,9 +752,17 @@ BASE_SYSTEM_PROMPTS = {
 [Grounding]
 - Use the [Retrieved context] below only when it is relevant to the question.
 - Never invent facts, organization details, members, policies, numbers, or schedules that are not in the context.
-- If the context does not support an answer, say "I could not find that information in the provided documents." and ask for the missing document.
+- Questions about the user themself (preferences, habits, profile) should be answered from [User memory]. If the memory contains the answer, do not say it was not found.
+- Only when neither the documents nor the memory support an answer, say "I could not find that information in the provided documents." and ask for the missing document.
 - Ignore retrieved context that is unrelated to the question.
 - When you use a source, append (Source: document title) using only sources that were provided.
+
+[User memory]
+- The notes below are stored reference facts about this user and are valid evidence for answering.
+- If they conflict with the latest user message, follow the latest message.
+- Do not invent personal facts that are not in the memory.
+- Do not add a source marker such as "(Source: user memory)" when answering from memory.
+{memories}
 
 [Organization]
 - Current organization ID: {organization_id}
@@ -734,26 +819,33 @@ class ModelAdapter:
                 profile = "generic"
         return profile if profile in PROFILE_HINTS else "generic"
 
-    def system_prompt(self, request: ChatRequest, principal: Principal | None, context: list[dict]) -> str:
+    def system_prompt(self, request: ChatRequest, principal: Principal | None, context: list[dict], memories: list[dict] | None = None) -> str:
         override = os.getenv("MODEL_SYSTEM_PROMPT", "").strip()
         context_block = "\n\n".join(
             f"[{index}] {item.get('title', 'untitled')} (chunk {item.get('chunk', '?')})\n{item.get('content', '')}"
             for index, item in enumerate(context, 1)
         ) or ("없음" if request.locale == "ko" else "None")
+        memory_block = "\n".join(
+            f"- {str(item.get('memory', '')).strip()}"
+            for item in (memories or []) if str(item.get("memory", "")).strip()
+        ) or ("없음" if request.locale == "ko" else "None")
         if override:
-            return f"{override}\n\n[검색 근거]\n{context_block}" if request.locale == "ko" else f"{override}\n\n[Retrieved context]\n{context_block}"
+            memory_section = f"[사용자 기억]\n{memory_block}\n\n" if request.locale == "ko" else f"[User memory]\n{memory_block}\n\n"
+            context_section = f"[검색 근거]\n{context_block}" if request.locale == "ko" else f"[Retrieved context]\n{context_block}"
+            return f"{override}\n\n{memory_section}{context_section}"
         profile = self.prompt_profile(request)
         base = BASE_SYSTEM_PROMPTS[request.locale]
         hint = PROFILE_HINTS[profile][request.locale]
         return base.format(
             organization_id=principal.organization_id if principal else "unknown",
             roles=", ".join(sorted(principal.roles)) if principal else "unknown",
+            memories=memory_block,
             context=context_block,
         ) + (f"\n\n{hint}" if hint else "")
 
-    def payload(self, request: ChatRequest, context: list[dict], stream: bool, principal: Principal | None = None) -> dict:
+    def payload(self, request: ChatRequest, context: list[dict], stream: bool, principal: Principal | None = None, memories: list[dict] | None = None) -> dict:
         messages = [message.model_dump() for message in request.messages]
-        messages.insert(0, {"role": "system", "content": self.system_prompt(request, principal, context)})
+        messages.insert(0, {"role": "system", "content": self.system_prompt(request, principal, context, memories)})
         payload = {"model": self.resolved_model(request), "messages": messages, "stream": stream}
         template_kwargs = os.getenv("MODEL_CHAT_TEMPLATE_KWARGS", "")
         if template_kwargs:
@@ -773,16 +865,16 @@ class ModelAdapter:
             return self.model
         return request.model
 
-    async def complete(self, request: ChatRequest, context: list[dict], principal: Principal | None = None) -> str:
+    async def complete(self, request: ChatRequest, context: list[dict], principal: Principal | None = None, memories: list[dict] | None = None) -> str:
         if not self.base_url:
             return self.demo_answer(request, context)
         async with httpx.AsyncClient(timeout=MODEL_TIMEOUT_SECONDS) as client:
             response = await client.post(f"{self.base_url}/chat/completions", headers=self.headers(),
-                json=self.payload(request, context, stream=False, principal=principal))
+                json=self.payload(request, context, stream=False, principal=principal, memories=memories))
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"]
 
-    async def stream(self, request: ChatRequest, context: list[dict], principal: Principal | None = None) -> AsyncIterator[str]:
+    async def stream(self, request: ChatRequest, context: list[dict], principal: Principal | None = None, memories: list[dict] | None = None) -> AsyncIterator[str]:
         if not self.base_url:
             for token in re.findall(r"\S+\s*", self.demo_answer(request, context)):
                 yield token
@@ -790,7 +882,7 @@ class ModelAdapter:
             return
         async with httpx.AsyncClient(timeout=MODEL_TIMEOUT_SECONDS) as client:
             async with client.stream("POST", f"{self.base_url}/chat/completions", headers=self.headers(),
-                json=self.payload(request, context, stream=True, principal=principal)) as response:
+                json=self.payload(request, context, stream=True, principal=principal, memories=memories)) as response:
                 response.raise_for_status()
                 if "text/event-stream" not in response.headers.get("content-type", ""):
                     payload = json.loads(await response.aread())
@@ -1487,11 +1579,26 @@ def record_knowledge_gap(principal: Principal, request: ChatRequest, answer: str
         )
 
 
-async def stream_chat(request: ChatRequest, principal: Principal, trace_id: str, started: float, citations: list[dict], trace=None, generation=None) -> AsyncIterator[str]:
+def _finish_trace(trace_payload: dict, model_ms: float, audit_ms: float, started: float, trace_id: str) -> dict:
+    steps = list(trace_payload.get("steps", [])) + [
+        _step("model", model_ms, "ok"),
+        _step("audit", audit_ms, "ok"),
+    ]
+    payload = {**trace_payload, "steps": steps, "total_ms": round((time.perf_counter() - started) * 1000, 2)}
+    logger.info("chat.trace.done %s total=%sms steps=%s", trace_id, payload["total_ms"], json.dumps(steps, ensure_ascii=False))
+    return payload
+
+
+async def stream_chat(
+    request: ChatRequest, principal: Principal, trace_id: str, started: float, citations: list[dict],
+    memories: list[dict], trace_payload: dict, trace=None, generation=None,
+) -> AsyncIterator[str]:
     buffer = ""
     answer_parts: list[str] = []
+    yield sse({"type": "trace", "data": trace_payload})
     try:
-        async for chunk in model_adapter.stream(request, citations, principal):
+        model_started = time.perf_counter()
+        async for chunk in model_adapter.stream(request, citations, principal, memories=memories):
             safe, buffer = policy.mask_stream(buffer + chunk)
             if safe:
                 answer_parts.append(safe)
@@ -1500,11 +1607,15 @@ async def stream_chat(request: ChatRequest, principal: Principal, trace_id: str,
         if tail:
             answer_parts.append(tail)
             yield sse({"type": "token", "content": tail})
+        model_ms = round((time.perf_counter() - model_started) * 1000, 2)
         tracer.finish(generation, "".join(answer_parts))
+        audit_started = time.perf_counter()
         audit.emit("chat.completed", principal, trace_id, thread_id=request.thread_id, model=request.model,
                    latency_ms=round((time.perf_counter() - started) * 1000),
                    citations=[item["document_id"] for item in citations], streamed=True)
+        audit_ms = round((time.perf_counter() - audit_started) * 1000, 2)
         record_knowledge_gap(principal, request, "".join(answer_parts), citations, trace_id)
+        yield sse({"type": "trace", "data": _finish_trace(trace_payload, model_ms, audit_ms, started, trace_id)})
         yield sse({"type": "citations", "data": citation_payload(citations), "trace_id": trace_id})
         yield "data: [DONE]\n\n"
     except asyncio.CancelledError:
@@ -1527,16 +1638,30 @@ async def chat(
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
     request.model = model_adapter.resolved_model(request)
     trace_id, started = str(uuid.uuid4()), time.perf_counter()
+    rate_started = time.perf_counter()
     rate_limiter.check(f"{principal.organization_id}:{principal.user_id}")
-    citations = await pipeline.prepare(request, principal)
-    audit.emit("chat.started", principal, trace_id, thread_id=request.thread_id, model=request.model, retrieval_count=len(citations))
+    steps = [_step("rate_limit", round((time.perf_counter() - rate_started) * 1000, 2), "ok" if rate_limiter.enabled else "skipped",
+                   f"{rate_limiter.limit}/min" if rate_limiter.enabled else "비활성")]
+    citations, memories, pipeline_steps = await pipeline.prepare(request, principal)
+    steps.extend(pipeline_steps)
+    trace_payload = {
+        "trace_id": trace_id, "steps": steps, "total_ms": None,
+        "memory_count": len(memories), "retrieval_count": len(citations),
+    }
+    logger.info("chat.trace %s memory=%d retrieval=%d model=%s steps=%s", trace_id, len(memories), len(citations),
+                request.model, json.dumps(steps, ensure_ascii=False))
+    audit.emit("chat.started", principal, trace_id, thread_id=request.thread_id, model=request.model,
+               memory_count=len(memories), retrieval_count=len(citations))
     trace = tracer.trace(trace_id, principal, request)
     generation = tracer.generation(trace, request, citations)
     if request.stream:
-        return StreamingResponse(stream_chat(request, principal, trace_id, started, citations, trace, generation), media_type="text/event-stream",
+        return StreamingResponse(stream_chat(request, principal, trace_id, started, citations, memories, trace_payload, trace, generation),
+                                 media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Trace-Id": trace_id})
     try:
-        answer = policy.mask_output(await model_adapter.complete(request, citations, principal))
+        model_started = time.perf_counter()
+        answer = policy.mask_output(await model_adapter.complete(request, citations, principal, memories=memories))
+        model_ms = round((time.perf_counter() - model_started) * 1000, 2)
     except httpx.HTTPError as error:
         tracer.finish(generation, "", type(error).__name__)
         audit.emit("chat.failed", principal, trace_id, thread_id=request.thread_id, model=request.model, reason=type(error).__name__, streamed=False)
@@ -1546,13 +1671,16 @@ async def chat(
         audit.emit("chat.failed", principal, trace_id, thread_id=request.thread_id, model=request.model, reason=type(error).__name__, streamed=False)
         raise
     tracer.finish(generation, answer)
+    audit_started = time.perf_counter()
     audit.emit("chat.completed", principal, trace_id, thread_id=request.thread_id, model=request.model,
                latency_ms=round((time.perf_counter() - started) * 1000),
                citations=[item["document_id"] for item in citations], streamed=False)
+    audit_ms = round((time.perf_counter() - audit_started) * 1000, 2)
     record_knowledge_gap(principal, request, answer, citations, trace_id)
     return {"id": trace_id, "object": "chat.completion", "model": request.model,
             "choices": [{"index": 0, "message": {"role": "assistant", "content": answer}, "finish_reason": "stop"}],
-            "citations": citation_payload(citations)}
+            "citations": citation_payload(citations),
+            "trace": _finish_trace(trace_payload, model_ms, audit_ms, started, trace_id)}
 
 
 @app.get("/v1/audit-events")

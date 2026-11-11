@@ -24,7 +24,8 @@ The platform brings a chat workspace, agent execution, grounded knowledge search
 - Role-aware document ACLs, inline administrator editing, and organization isolation
 - **Knowledge-gap capture**: ungrounded or vague answers are clustered into admin-reviewed **ontology pack drafts** (entities, relations, required sources)
 - **PostgreSQL audit events** with JSONL mirroring, **Redis rate limiting**, and **Langfuse tracing**
-- **Mem0 user memory** with Qdrant + Ollama, managed from a dedicated UI tab
+- **Mem0 user memory** with Qdrant + Ollama, managed from a dedicated UI tab and **injected into chat answers**
+- **Pipeline trace** under each answer: rate limit, policy, memory search, document search, model, and audit steps with timings
 - Administrator settings with runtime, policy, storage, integration, and activity overview
 - Live system cards for storage, memory, CPU load, process count, Compose containers, and backend health
 - One-click admin links for Qdrant, Langfuse, the model server, pgAdmin, and Redis Insight, plus per-integration docs

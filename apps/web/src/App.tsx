@@ -7,7 +7,9 @@ import remarkGfm from "remark-gfm";
 export type Locale = "ko" | "en";
 type Role = "member" | "admin";
 type View = "chat" | "knowledge" | "memory" | "governance" | "gaps" | "settings";
-type ChatMessage = { role: "user" | "assistant"; content: string; citations?: Citation[] };
+type TraceStep = { step: string; status: string; ms: number; detail?: string };
+type ChatTrace = { trace_id?: string; steps: TraceStep[]; total_ms?: number | null; memory_count?: number; retrieval_count?: number };
+type ChatMessage = { role: "user" | "assistant"; content: string; citations?: Citation[]; trace?: ChatTrace };
 type Citation = { document_id: string; title: string; chunk: number };
 type KnowledgeDocument = { id: string; title: string; owner_id: string; allowed_roles: string[]; created_at: string; chunks: number };
 type MemoryItem = { id: string; memory: string; created_at?: string; metadata?: Record<string, unknown>; score?: number };
@@ -86,6 +88,7 @@ const copy = {
     failed: "요청을 완료할 수 없습니다. API가 실행 중인지 확인해 주세요.",
     newChat: "+ 새 대화", chat: "채팅", knowledge: "지식", memory: "메모리", governance: "거버넌스", settings: "설정", workspace: "AI 작업 공간",
     groundedChat: "근거 기반 채팅", knowledgeLibrary: "지식 라이브러리", sources: "출처", ask: "무엇이든 질문하거나 업로드한 문서를 검색하세요…",
+    traceTitle: "처리 과정", traceRateLimit: "속도 제한", tracePolicy: "정책 검사", traceMemory: "메모리 검색", traceRetrieval: "문서 검색", traceModel: "모델 생성", traceAudit: "감사 기록", traceMs: "ms", traceSkipped: "건너뜀",
     scope: "문서는 조직 및 역할 권한 범위 안에서만 검색됩니다.", indexedDocs: "색인된 문서", visibleDocs: "내 조직과 역할에서 조회 가능한 문서만 표시됩니다.",
     sendHint: "Shift+Enter로 전송",
     upload: "문서 업로드", noDocs: "아직 문서가 없습니다", noDocsBody: "UTF-8 Markdown 또는 텍스트 파일을 업로드해 근거 기반 채팅에 활용하세요.",
@@ -133,6 +136,7 @@ const copy = {
     failed: "The request could not be completed. Check that the API is running.",
     newChat: "+ New conversation", chat: "Chat", knowledge: "Knowledge", memory: "Memory", governance: "Governance", settings: "Settings", workspace: "AI WORKSPACE",
     groundedChat: "Grounded chat", knowledgeLibrary: "Knowledge library", sources: "Sources", ask: "Ask anything, or query an uploaded document…",
+    traceTitle: "Pipeline", traceRateLimit: "Rate limit", tracePolicy: "Policy check", traceMemory: "Memory search", traceRetrieval: "Document search", traceModel: "Model generation", traceAudit: "Audit log", traceMs: "ms", traceSkipped: "skipped",
     scope: "Documents are searched only within your organization and role scope.", indexedDocs: "Indexed documents", visibleDocs: "Only documents visible to your organization and role are shown.",
     sendHint: "Shift+Enter to send",
     upload: "Upload document", noDocs: "No documents yet", noDocsBody: "Upload a UTF-8 Markdown or text file to make it available for grounded chat.",
@@ -483,7 +487,16 @@ export default function App() {
           const raw = frame.replace(/^data: /, ""); if (raw === "[DONE]") continue;
           const item = JSON.parse(raw);
           if (item.type === "error") throw new Error(item.message);
-          setMessages(previous => { const copied = [...previous]; const last = copied.length - 1; copied[last] = { ...copied[last], content: copied[last].content + (item.type === "token" ? item.content : ""), citations: item.type === "citations" ? item.data : copied[last].citations }; return copied; });
+          setMessages(previous => {
+            const copied = [...previous]; const last = copied.length - 1; const current = copied[last];
+            copied[last] = {
+              ...current,
+              content: current.content + (item.type === "token" ? item.content : ""),
+              citations: item.type === "citations" ? item.data : current.citations,
+              trace: item.type === "trace" ? item.data : current.trace,
+            };
+            return copied;
+          });
         }
       }
     } catch {
@@ -504,6 +517,14 @@ export default function App() {
     if (view === "gaps") return t.gaps;
     if (view === "settings") return t.adminSettings;
     return t.groundedChat;
+  }
+
+  function traceLabel(step: string) {
+    const labels: Record<string, string> = {
+      rate_limit: t.traceRateLimit, policy: t.tracePolicy, memory_search: t.traceMemory,
+      document_search: t.traceRetrieval, model: t.traceModel, audit: t.traceAudit,
+    };
+    return labels[step] ?? step;
   }
 
   function integrationValue(value: string, href?: string) {
@@ -550,6 +571,17 @@ export default function App() {
                     >{message.content}</ReactMarkdown>
                   : <span className="cursor"/>}
               </div>
+              {message.role === "assistant" && message.trace && message.trace.steps.length > 0 && <details className="trace" open={index === messages.length - 1}>
+                <summary><span>{t.traceTitle}</span><em>{typeof message.trace.total_ms === "number" ? `${message.trace.total_ms} ${t.traceMs}` : "…"}</em></summary>
+                <ol>
+                  {message.trace.steps.map((step, stepIndex) => <li className={step.status} key={`${step.step}-${stepIndex}`}>
+                    <span className="trace-dot"/>
+                    <strong>{traceLabel(step.step)}</strong>
+                    {step.detail && <span className="trace-detail">{step.detail}</span>}
+                    <em>{step.status === "skipped" ? t.traceSkipped : `${step.ms} ${t.traceMs}`}</em>
+                  </li>)}
+                </ol>
+              </details>}
               {message.citations && message.citations.length > 0 && <div className="sources"><span>{t.sources}</span>{message.citations.map(citation => <button key={`${citation.document_id}-${citation.chunk}`}><BookOpen size={13}/>{citation.title}<ChevronRight size={13}/></button>)}</div>}
             </div>
           </article>)}

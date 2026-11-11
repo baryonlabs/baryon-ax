@@ -291,6 +291,8 @@
 | CI | ✅ | API pytest + Web build |
 | E2E 자동화 | ✅ | Playwright 13 checks, 전체 Compose 대상 검증 |
 | 시스템 모니터링 | ✅ | 관리자 설정에서 저장공간·메모리·프로세스·컨테이너·백엔드 상태 표시 |
+| 메모리 컨텍스트 주입 | ✅ | 채팅 시 Mem0 관련 기억을 검색해 시스템 프롬프트에 주입 |
+| 파이프라인 추적 | ✅ | 속도제한·정책·메모리·문서검색·모델·감사 단계별 ms를 UI와 로그로 표시 |
 | 통합 관리자 링크 | ✅ | Qdrant/Langfuse/모델 서버/pgAdmin/Redis Insight를 설정에서 원클릭 이동 |
 | 모델 프로바이더 설정 | ✅ | 어댑터·모델·엔드포인트·Thinking·프롬프트 프로필 표시 |
 | 전체 스택 스모크 | ✅ | `scripts/smoke_full_stack.py` |
@@ -304,7 +306,7 @@
 
 | 항목 | 상태 | 결과/설명 |
 | --- | --- | --- |
-| API 단위·통합 테스트 | ✅ | **25 passed** |
+| API 단위·통합 테스트 | ✅ | **89 passed** |
 | Playwright E2E | ✅ | **13 checks passed** (`npm run test:e2e`, Vite/Compose) |
 | Web 타입체크·빌드 | ✅ | `tsc -b && vite build` 성공 |
 | 전체 스택 스모크 | ✅ | `scripts/smoke_full_stack.py` — health/upload/search/chat/audit/memory |
@@ -352,6 +354,8 @@
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Mem0용 Ollama |
 | `MEM0_HISTORY_DB` | `/tmp/baryon-ax-mem0/history.db` | Mem0 이력 SQLite |
 | `MEM0_TELEMETRY` | `false` | Mem0 텔레메트리 비활성화 |
+| `MEMORY_CONTEXT_LIMIT` | `5` | 채팅에 주입할 최대 기억 수 |
+| `LOG_LEVEL` | `INFO` | API 로그 레벨 (파이프라인 추적 로그 포함) |
 | `SYSTEM_METRICS_ENABLED` | `true` | Docker 소켓 기반 컨테이너 지표 수집 |
 | `DOCKER_PROJECT` | `baryon-ax` | 관리자 화면에 표시할 Compose 프로젝트 |
 | `DOCKER_GID` | `0` | Docker 소켓 그룹 ID (B300은 `113`) |
@@ -407,7 +411,7 @@
 ## 14. 검증 기준
 
 ```text
-API tests           25 passed
+API tests           89 passed
 Playwright E2E      13 checks passed (Vite 5173 / Compose 3001)
 Full-stack smoke    health + upload + Qdrant retrieval + chat + audit + Mem0
 Web build           tsc -b && vite build 성공

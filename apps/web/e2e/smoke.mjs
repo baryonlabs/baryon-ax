@@ -65,6 +65,11 @@ try {
     }, null, { timeout: 60000 });
     await page.waitForSelector(".sources button", { timeout: 30000 });
     assert.ok((await page.locator(".sources button").count()) >= 1);
+    await page.waitForSelector("article.assistant .trace li", { timeout: 30000 });
+    assert.ok((await page.locator("article.assistant .trace li").count()) >= 4);
+    const traceText = await page.locator("article.assistant .trace").last().innerText();
+    assert.match(traceText, /메모리 검색/);
+    assert.match(traceText, /문서 검색/);
   });
 
   await step("markdown renders in user messages", async () => {
