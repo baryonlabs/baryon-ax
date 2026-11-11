@@ -1,12 +1,12 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, Bot, Boxes, Brain, ChevronRight, Cpu, ExternalLink, FileUp, Globe2, HardDrive, Plus, RefreshCw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { BookOpen, Bot, Boxes, Brain, ChevronRight, Cpu, ExternalLink, FileUp, Globe2, HardDrive, Network, Plus, RefreshCw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
 export type Locale = "ko" | "en";
 type Role = "member" | "admin";
-type View = "chat" | "knowledge" | "memory" | "governance" | "settings";
+type View = "chat" | "knowledge" | "memory" | "governance" | "gaps" | "settings";
 type ChatMessage = { role: "user" | "assistant"; content: string; citations?: Citation[] };
 type Citation = { document_id: string; title: string; chunk: number };
 type KnowledgeDocument = { id: string; title: string; owner_id: string; allowed_roles: string[]; created_at: string; chunks: number };
@@ -14,6 +14,20 @@ type MemoryItem = { id: string; memory: string; created_at?: string; metadata?: 
 type AuditEvent = {
   id: string; at: string; type: string; trace_id: string; organization_id: string; user_id: string;
   model?: string; latency_ms?: number; reason?: string; [key: string]: unknown;
+};
+type GapItem = {
+  id: string; question: string; answer_excerpt: string; reasons: string[]; citations: number;
+  occurrences: number; status: string; first_seen: string; last_seen: string; terms: string[];
+};
+type GapSummary = { total: number; open: number; dismissed: number; converted: number; occurrences: number; reasons: Record<string, number> };
+type GapCluster = {
+  id: string; label: string; size: number; gap_ids: string[]; questions: string[]; terms: string[];
+  reasons: Record<string, number>; suggested_pack_name: string; required_sources: { kind: string; hint: string }[];
+};
+type OntologyPack = {
+  id: string; name: string; domain: string; status: string; created_at: string;
+  entities: { name: string; type: string }[]; relations: { from: string; type: string; to: string }[];
+  required_sources: { kind: string; hint: string }[]; acceptance_questions: string[]; source_gap_ids: string[];
 };
 type ContainerInfo = { name: string; image: string; status: string; health?: string | null; project?: string; ports: string[] };
 type SystemInfo = {
@@ -104,6 +118,13 @@ const copy = {
     modelServer: "모델 서버", pgadmin: "pgAdmin", redisInsight: "Redis Insight", qdrant: "Qdrant", langfuse: "Langfuse",
     connected: "연결됨", notConnected: "미연결", dbSize: "DB 크기", auditRows: "감사 행", vectorPoints: "벡터 포인트", cacheKeys: "캐시 키", services: "서비스",
     reindex: "벡터 재색인", reindexing: "재색인 중…", reindexed: (count: number) => `${count}개 문서를 Qdrant에 재색인했습니다.`, reindexFailed: "벡터 재색인에 실패했습니다.",
+    gaps: "지식 공백", gapsBody: "근거를 찾지 못했거나 답변이 모호했던 질문을 모아 필요한 데이터와 온톨로지 꾸러미를 제안합니다.",
+    openGaps: "미해결 질문", clusters: "제안 클러스터", packs: "온톨로지 꾸러미", occurrences: "발생", citationsLabel: "출처",
+    dismiss: "제외", createPack: "온톨로지 꾸러미 만들기", packCreated: (name: string) => `${name} 초안을 생성했습니다.`,
+    noGaps: "아직 지식 공백이 없습니다", noGapsBody: "근거를 찾지 못한 질문이 생기면 여기에 쌓입니다.",
+    noPacks: "아직 꾸러미가 없습니다", noPacksBody: "클러스터에서 꾸러미를 만들면 초안이 저장됩니다.",
+    entities: "엔티티", relations: "관계", generatedFrom: (count: number) => `질문 ${count}건에서 생성`,
+    gapCaptureFailed: "지식 공백을 불러올 수 없습니다.", packFailed: "온톨로지 꾸러미를 만들 수 없습니다.", statusDraft: "초안",
   },
   en: {
     welcome: "Baryon AX is ready. Ask a question or upload a Markdown document to ground the conversation.",
@@ -144,6 +165,13 @@ const copy = {
     modelServer: "Model server", pgadmin: "pgAdmin", redisInsight: "Redis Insight", qdrant: "Qdrant", langfuse: "Langfuse",
     connected: "Connected", notConnected: "Not connected", dbSize: "DB size", auditRows: "Audit rows", vectorPoints: "Vector points", cacheKeys: "Cache keys", services: "Services",
     reindex: "Reindex vectors", reindexing: "Reindexing…", reindexed: (count: number) => `Reindexed ${count} document(s) into Qdrant.`, reindexFailed: "Vector reindex failed.",
+    gaps: "Knowledge gaps", gapsBody: "Cluster ungrounded or vague questions and turn them into data requirements and ontology-pack drafts.",
+    openGaps: "Open questions", clusters: "Suggested clusters", packs: "Ontology packs", occurrences: "occurrences", citationsLabel: "citations",
+    dismiss: "Dismiss", createPack: "Create ontology pack", packCreated: (name: string) => `Created draft ${name}.`,
+    noGaps: "No knowledge gaps yet", noGapsBody: "Questions the platform cannot ground will appear here.",
+    noPacks: "No packs yet", noPacksBody: "Create a pack from a cluster to store a draft.",
+    entities: "entities", relations: "relations", generatedFrom: (count: number) => `From ${count} question(s)`,
+    gapCaptureFailed: "Could not load knowledge gaps.", packFailed: "Could not create the ontology pack.", statusDraft: "draft",
   },
 } as const;
 
@@ -182,6 +210,13 @@ export default function App() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [roleDraft, setRoleDraft] = useState("");
   const [aclMessage, setAclMessage] = useState<{ id: string; ok: boolean } | null>(null);
+  const [gaps, setGaps] = useState<GapItem[]>([]);
+  const [gapSummary, setGapSummary] = useState<GapSummary | null>(null);
+  const [clusters, setClusters] = useState<GapCluster[]>([]);
+  const [packs, setPacks] = useState<OntologyPack[]>([]);
+  const [gapsError, setGapsError] = useState<"forbidden" | "failed" | null>(null);
+  const [gapBusy, setGapBusy] = useState(false);
+  const [gapMessage, setGapMessage] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => { fetch(`${API}/v1/models`).then(response => response.json()).then(result => result.data?.[0] && setModel(result.data[0].id)).catch(() => undefined); }, []);
@@ -257,15 +292,63 @@ export default function App() {
     }
   }, [role]);
 
+  const loadGaps = useCallback(async () => {
+    if (role !== "admin") {
+      setGaps([]); setClusters([]); setPacks([]); setGapsError("forbidden");
+      return;
+    }
+    try {
+      const [gapResponse, clusterResponse, packResponse] = await Promise.all([
+        fetch(`${API}/v1/admin/gaps?status=open&limit=100`, { headers: identity(role) }),
+        fetch(`${API}/v1/admin/gaps/clusters`, { headers: identity(role) }),
+        fetch(`${API}/v1/admin/ontology-packs`, { headers: identity(role) }),
+      ]);
+      if (!gapResponse.ok || !clusterResponse.ok || !packResponse.ok) throw new Error("Gap load failed");
+      const gapData = await gapResponse.json();
+      setGaps(gapData.data); setGapSummary(gapData.summary);
+      setClusters((await clusterResponse.json()).data);
+      setPacks((await packResponse.json()).data);
+      setGapsError(null);
+    } catch {
+      setGapsError("failed");
+    }
+  }, [role]);
+
+  const dismissGap = useCallback(async (id: string) => {
+    const response = await fetch(`${API}/v1/admin/gaps/${id}/dismiss`, { method: "POST", headers: identity(role) });
+    if (response.ok) await loadGaps();
+  }, [role, loadGaps]);
+
+  const createPack = useCallback(async (cluster: GapCluster) => {
+    if (gapBusy) return;
+    setGapBusy(true); setGapMessage("");
+    try {
+      const response = await fetch(`${API}/v1/admin/ontology-packs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...identity(role) },
+        body: JSON.stringify({ gap_ids: cluster.gap_ids, name: cluster.suggested_pack_name }),
+      });
+      if (!response.ok) throw new Error("Pack creation failed");
+      const pack = await response.json();
+      setGapMessage(t.packCreated(pack.name));
+      await loadGaps();
+    } catch {
+      setGapMessage(t.packFailed);
+    } finally {
+      setGapBusy(false);
+    }
+  }, [gapBusy, role, loadGaps, t]);
+
   useEffect(() => { if (view === "knowledge") void loadKnowledge(); }, [view, loadKnowledge]);
   useEffect(() => { if (view === "memory") void loadMemories(); }, [view, loadMemories]);
   useEffect(() => { if (view === "governance") void loadAudit(); }, [view, loadAudit]);
+  useEffect(() => { if (view === "gaps") void loadGaps(); }, [view, loadGaps]);
   useEffect(() => { if (view === "settings") void loadSettings(); }, [view, loadSettings]);
   useEffect(() => {
     if (role !== "admin") {
       setEditingId(null);
       setAclMessage(null);
-      if (view === "settings") setView("chat");
+      if (view === "settings" || view === "gaps") setView("chat");
     }
   }, [role, view]);
 
@@ -418,6 +501,7 @@ export default function App() {
     if (view === "knowledge") return t.knowledgeLibrary;
     if (view === "memory") return t.memory;
     if (view === "governance") return t.auditLog;
+    if (view === "gaps") return t.gaps;
     if (view === "settings") return t.adminSettings;
     return t.groundedChat;
   }
@@ -435,6 +519,7 @@ export default function App() {
         <button className={view === "knowledge" ? "active" : ""} onClick={() => setView("knowledge")}><BookOpen size={16}/>{t.knowledge}</button>
         <button className={view === "memory" ? "active" : ""} onClick={() => setView("memory")}><Brain size={16}/>{t.memory}</button>
         <button className={view === "governance" ? "active" : ""} onClick={() => setView("governance")}><ShieldCheck size={16}/>{t.governance}</button>
+        {role === "admin" && <button className={view === "gaps" ? "active" : ""} onClick={() => setView("gaps")}><Network size={16}/>{t.gaps}</button>}
         {role === "admin" && <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><Settings size={16}/>{t.settings}</button>}
       </nav>
       <div className={`environment ${role === "admin" ? "admin" : ""}`}>
@@ -540,6 +625,51 @@ export default function App() {
           </div>)}
         </div>}
       </div>}
+      {view === "gaps" && <div className="knowledge">
+        <div className="knowledge-top">
+          <div><h2>{t.gaps}</h2><p>{t.gapsBody}</p></div>
+          <button className="primary" onClick={() => void loadGaps()}><RefreshCw size={16}/>{t.refresh}</button>
+        </div>
+        {gapsError ? <div className="empty"><Network size={28}/><h3>{gapsError === "forbidden" ? t.adminRequired : t.gapCaptureFailed}</h3><p>{gapsError === "forbidden" ? t.adminRequiredBody : t.scope}</p></div> : <>
+          <div className="gap-summary">
+            <div><strong>{gapSummary?.open ?? 0}</strong><span>{t.openGaps}</span></div>
+            <div><strong>{clusters.length}</strong><span>{t.clusters}</span></div>
+            <div><strong>{packs.length}</strong><span>{t.packs}</span></div>
+            <div><strong>{gapSummary?.occurrences ?? 0}</strong><span>{t.occurrences}</span></div>
+          </div>
+          {gapMessage && <p className="settings-note">{gapMessage}</p>}
+          <h3 className="section-label">{t.clusters}</h3>
+          {clusters.length === 0 ? <div className="empty"><Network size={28}/><h3>{t.noGaps}</h3><p>{t.noGapsBody}</p></div> : <div className="cluster-grid">
+            {clusters.map(cluster => <article className="cluster-card" key={cluster.id}>
+              <header><strong>{cluster.label}</strong><span className="badge">{cluster.size}</span></header>
+              <div className="chips">{cluster.terms.map(term => <span className="chip" key={term}>{term}</span>)}</div>
+              <ul>{cluster.questions.slice(0, 3).map(question => <li key={question}>{question}</li>)}</ul>
+              <p className="muted">{cluster.required_sources.map(source => source.hint).join(" · ")}</p>
+              <button className="primary" disabled={gapBusy} onClick={() => void createPack(cluster)}><Plus size={15}/>{t.createPack}</button>
+            </article>)}
+          </div>}
+          <h3 className="section-label">{t.openGaps}</h3>
+          {gaps.length === 0 ? <div className="empty"><Network size={28}/><h3>{t.noGaps}</h3><p>{t.noGapsBody}</p></div> : <div className="document-list">
+            {gaps.map(gap => <div className="document gap-row" key={gap.id}>
+              <div>
+                <strong>{gap.question}</strong>
+                <p>{new Date(gap.last_seen).toLocaleString(locale === "ko" ? "ko-KR" : "en-US")} · {t.occurrences} {gap.occurrences} · {t.citationsLabel} {gap.citations}</p>
+                <div className="chips">{gap.reasons.map(reason => <span className="chip reason" key={reason}>{reason}</span>)}</div>
+              </div>
+              <button className="delete" title={t.dismiss} aria-label={t.dismiss} onClick={() => void dismissGap(gap.id)}><X size={16}/></button>
+            </div>)}
+          </div>}
+          <h3 className="section-label">{t.packs}</h3>
+          {packs.length === 0 ? <div className="empty"><Network size={28}/><h3>{t.noPacks}</h3><p>{t.noPacksBody}</p></div> : <div className="pack-list">
+            {packs.map(pack => <article className="pack" key={pack.id}>
+              <header><strong>{pack.name}</strong><span className="badge">{t.statusDraft}</span></header>
+              <p>{t.generatedFrom(pack.source_gap_ids.length)} · {t.entities} {pack.entities.length} · {t.relations} {pack.relations.length}</p>
+              <div className="chips">{pack.entities.slice(0, 8).map(entity => <span className="chip" key={entity.name}>{entity.name}</span>)}</div>
+              <p className="muted">{pack.required_sources.map(source => source.hint).join(" · ")}</p>
+            </article>)}
+          </div>}
+        </>}
+      </div>}
       {view === "settings" && <div className="knowledge">
         <div className="knowledge-top">
           <div><h2>{t.adminSettings}</h2><p>{t.adminSettingsBody}</p></div>
@@ -553,6 +683,7 @@ export default function App() {
           <button onClick={() => setView("knowledge")}><BookOpen size={15}/>{t.knowledge}</button>
           <button onClick={() => setView("memory")}><Brain size={15}/>{t.memory}</button>
           <button onClick={() => setView("governance")}><ShieldCheck size={15}/>{t.governance}</button>
+          <button onClick={() => setView("gaps")}><Network size={15}/>{t.gaps}</button>
         </div>
         {reindexMessage && <p className="settings-note">{reindexMessage}</p>}
         {settingsError || !settings ? <div className="empty"><Settings size={28}/><h3>{t.adminOnly}</h3><p>{t.settingsFailed}</p></div> : <div className="settings-grid">

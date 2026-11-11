@@ -31,6 +31,7 @@ from .ingest.adapters import register_default_adapters
 from .ingest.mime import sniff_mime
 from .ingest.parsers import ParseError
 from .ingest.pipeline import PipelineConfig, PermanentError, run_pipeline
+from .gaps import GapStore, PackStore, build_pack, cluster_gaps
 
 logger = logging.getLogger("baryon.ax")
 
@@ -74,6 +75,11 @@ class ChatRequest(BaseModel):
     use_retrieval: bool = True
     thread_id: str | None = None
     locale: Literal["ko", "en"] = "ko"
+
+
+class OntologyPackRequest(BaseModel):
+    gap_ids: list[str] = Field(min_length=1, max_length=100)
+    name: str = Field(default="", max_length=120)
 
 
 class DocumentUpdate(BaseModel):
@@ -1137,6 +1143,8 @@ class IngestJob:
 
 JOBS: dict[str, IngestJob] = {}
 JOBS_LOCK = threading.Lock()
+gap_store = GapStore()
+pack_store = PackStore()
 INGEST_PIPELINE_CONFIG = PipelineConfig(
     queue_maxsize=int(os.getenv("INGEST_QUEUE_MAXSIZE", "32")),
     max_in_flight=int(os.getenv("INGEST_MAX_IN_FLIGHT", "4")),
@@ -1451,6 +1459,34 @@ def citation_payload(citations: list[dict]) -> list[dict]:
     return [{"document_id": item["document_id"], "title": item["title"], "chunk": item["chunk"]} for item in citations]
 
 
+def record_knowledge_gap(principal: Principal, request: ChatRequest, answer: str, citations: list[dict], trace_id: str) -> None:
+    """Record an ungrounded exchange and emit an audit event.
+
+    Never raises: gap capture must not break a chat response.
+    """
+    try:
+        gap = gap_store.observe(
+            organization_id=principal.organization_id,
+            user_id=principal.user_id,
+            question=request.messages[-1].content,
+            answer=answer,
+            citations=len(citations),
+            used_retrieval=request.use_retrieval,
+            thread_id=request.thread_id,
+            trace_id=trace_id,
+            model=request.model,
+        )
+    except Exception:
+        logger.exception("Knowledge gap recording failed")
+        return
+    if gap:
+        audit.emit(
+            "knowledge.gap_detected", principal, trace_id,
+            gap_id=gap.id, reasons=gap.reasons, citations=len(citations),
+            occurrences=gap.occurrences,
+        )
+
+
 async def stream_chat(request: ChatRequest, principal: Principal, trace_id: str, started: float, citations: list[dict], trace=None, generation=None) -> AsyncIterator[str]:
     buffer = ""
     answer_parts: list[str] = []
@@ -1468,6 +1504,7 @@ async def stream_chat(request: ChatRequest, principal: Principal, trace_id: str,
         audit.emit("chat.completed", principal, trace_id, thread_id=request.thread_id, model=request.model,
                    latency_ms=round((time.perf_counter() - started) * 1000),
                    citations=[item["document_id"] for item in citations], streamed=True)
+        record_knowledge_gap(principal, request, "".join(answer_parts), citations, trace_id)
         yield sse({"type": "citations", "data": citation_payload(citations), "trace_id": trace_id})
         yield "data: [DONE]\n\n"
     except asyncio.CancelledError:
@@ -1512,6 +1549,7 @@ async def chat(
     audit.emit("chat.completed", principal, trace_id, thread_id=request.thread_id, model=request.model,
                latency_ms=round((time.perf_counter() - started) * 1000),
                citations=[item["document_id"] for item in citations], streamed=False)
+    record_knowledge_gap(principal, request, answer, citations, trace_id)
     return {"id": trace_id, "object": "chat.completion", "model": request.model,
             "choices": [{"index": 0, "message": {"role": "assistant", "content": answer}, "finish_reason": "stop"}],
             "citations": citation_payload(citations)}
@@ -1526,6 +1564,105 @@ async def audit_events(
     if "admin" not in principal.roles:
         raise HTTPException(403, "Administrator role required")
     return {"data": audit.recent_for(principal, limit)}
+
+
+@app.get("/v1/admin/gaps")
+async def list_gaps(
+    status: str = Query("open"), limit: int = Query(100, ge=1, le=500),
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if "admin" not in principal.roles:
+        raise HTTPException(403, "Administrator role required")
+    filter_status = None if status in {"all", "*"} else status
+    gaps = gap_store.list(principal.organization_id, filter_status, limit)
+    return {"data": [gap.as_dict() for gap in gaps], "summary": gap_store.summary(principal.organization_id)}
+
+
+@app.post("/v1/admin/gaps/{gap_id}/dismiss")
+async def dismiss_gap(
+    gap_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if "admin" not in principal.roles:
+        raise HTTPException(403, "Administrator role required")
+    gap = gap_store.dismiss(principal.organization_id, gap_id)
+    if not gap:
+        raise HTTPException(404, "Knowledge gap not found")
+    trace_id = str(uuid.uuid4())
+    audit.emit("knowledge.gap_dismissed", principal, trace_id, gap_id=gap.id)
+    return {"id": gap.id, "status": gap.status, "trace_id": trace_id}
+
+
+@app.get("/v1/admin/gaps/clusters")
+async def gap_clusters(
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if "admin" not in principal.roles:
+        raise HTTPException(403, "Administrator role required")
+    gaps = gap_store.list(principal.organization_id, "open", 500)
+    clusters = cluster_gaps(gaps)
+    return {
+        "data": [cluster.as_dict() for cluster in clusters],
+        "summary": gap_store.summary(principal.organization_id),
+        "open_gaps": len(gaps),
+    }
+
+
+@app.post("/v1/admin/ontology-packs")
+async def create_ontology_pack(
+    payload: OntologyPackRequest,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if "admin" not in principal.roles:
+        raise HTTPException(403, "Administrator role required")
+    gaps = [gap for gap in (gap_store.get(principal.organization_id, gap_id) for gap_id in payload.gap_ids) if gap]
+    if not gaps:
+        raise HTTPException(404, "No matching knowledge gaps")
+    cluster = next((item for item in cluster_gaps(gaps) if set(item.gap_ids) >= set(gap.id for gap in gaps)), None)
+    pack = build_pack(
+        organization_id=principal.organization_id,
+        name=payload.name or (cluster.suggested_pack_name if cluster else ""),
+        gaps=gaps,
+        cluster=cluster,
+    )
+    pack_store.save(pack)
+    gap_store.mark_converted(principal.organization_id, [gap.id for gap in gaps], pack["id"])
+    trace_id = str(uuid.uuid4())
+    audit.emit(
+        "ontology.pack_created", principal, trace_id,
+        pack_id=pack["id"], name=pack["name"], gap_count=len(gaps),
+        entities=len(pack["entities"]), relations=len(pack["relations"]),
+    )
+    return pack
+
+
+@app.get("/v1/admin/ontology-packs")
+async def list_ontology_packs(
+    limit: int = Query(50, ge=1, le=200),
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if "admin" not in principal.roles:
+        raise HTTPException(403, "Administrator role required")
+    return {"data": pack_store.list(principal.organization_id, limit)}
+
+
+@app.get("/v1/admin/ontology-packs/{pack_id}")
+async def get_ontology_pack(
+    pack_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if "admin" not in principal.roles:
+        raise HTTPException(403, "Administrator role required")
+    pack = pack_store.get(principal.organization_id, pack_id)
+    if not pack:
+        raise HTTPException(404, "Ontology pack not found")
+    return pack
 
 
 @app.get("/v1/admin/settings")

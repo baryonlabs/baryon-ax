@@ -22,6 +22,7 @@ The platform brings a chat workspace, agent execution, grounded knowledge search
 - Durable document upload with **MIME-based parser routing** (HWP/HWPX/PDF/Office/images via kordoc/docling/Tika sidecars), **structure-aware chunking** (heading paths, table headers), **Qdrant vector retrieval** with lexical fallback, and source citations
 - **LangGraph** policy/retrieval orchestration, **FastEmbed** multilingual embeddings
 - Role-aware document ACLs, inline administrator editing, and organization isolation
+- **Knowledge-gap capture**: ungrounded or vague answers are clustered into admin-reviewed **ontology pack drafts** (entities, relations, required sources)
 - **PostgreSQL audit events** with JSONL mirroring, **Redis rate limiting**, and **Langfuse tracing**
 - **Mem0 user memory** with Qdrant + Ollama, managed from a dedicated UI tab
 - Administrator settings with runtime, policy, storage, integration, and activity overview
@@ -119,6 +120,10 @@ See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/b300-v
 | `GET /v1/memories/search` | Semantic memory search |
 | `DELETE /v1/memories/{id}` | Delete the caller's memory |
 | `GET /v1/audit-events` | Recent audit events for administrators |
+| `GET /v1/admin/gaps` | Ungrounded questions with reasons and occurrence counts (admin) |
+| `GET /v1/admin/gaps/clusters` | Proposed ontology clusters (admin) |
+| `POST /v1/admin/ontology-packs` | Create a draft ontology pack from selected gaps (admin) |
+| `GET /v1/admin/ontology-packs` | List draft ontology packs (admin) |
 | `POST /v1/admin/reindex` | Reindex documents into Qdrant (administrator) |
 | `GET /v1/admin/settings` | Effective runtime, storage, policy, and integration settings for administrators |
 
