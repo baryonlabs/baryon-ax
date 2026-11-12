@@ -17,7 +17,7 @@
 | HTTPS | ✅ | `https_enforced: true`, 인증서 approved (2027-02-11 만료, 자동 갱신) |
 | 커스텀 도메인 | ✅ | `https://baryon-ax.baryon.ai/` 라이브, `baryonlabs.github.io/baryon-ax/` → 301 |
 | Google Search Console | ⏳ | `sc-domain:baryon.ai` DNS TXT 인증 확인, sitemap 제출만 남음 |
-| Naver Search Advisor | ⏳ | 사이트 등록·소유확인 필요 (로그인·CAPTCHA는 사람이 직접) |
+| Naver Search Advisor | 🟡 | 소유확인 메타 배포 완료(2026-11-13), 콘솔 소유확인·sitemap 제출 남음 |
 | Bing Webmaster Tools | ⏳ | Microsoft 로그인 후 등록 또는 GSC import 필요 |
 | IndexNow | ✅ | 2026-11-13 새 도메인 4개 URL 제출, `api.indexnow.org`·`bing.com` 모두 200 |
 | Daum 검색등록 | ⏳ | Kakao 로그인 필요 |
@@ -90,20 +90,28 @@ python3 scripts/check_site_seo.py
 
 ## 3. Naver Search Advisor
 
+소유확인 메타태그가 이미 배포되어 있습니다(2026-11-13). 콘솔에서 **소유확인**과 **sitemap 제출**만 남았습니다.
+
 1. https://searchadvisor.naver.com/console/board → 사이트 추가
 2. URL: `https://baryon-ax.baryon.ai/`
-3. 소유확인 → **HTML 태그** → 토큰 복사
-4. 주입:
+3. 콘솔에서 **소유확인** 클릭 (CAPTCHA는 사람이 직접)
+4. **요청 → 사이트맵 제출** → `https://baryon-ax.baryon.ai/sitemap.xml`
+
+배포된 메타 확인:
+
+```bash
+curl -s https://baryon-ax.baryon.ai/ | grep naver-site-verification
+```
+
+토큰을 교체해야 할 때만:
 
 ```bash
 python3 scripts/set_site_verification.py --naver "<token>"
+python3 scripts/check_site_seo.py
+# PR → CI/security-sweep 통과 → 머지 → Pages 배포
 ```
 
-5. 배포 후 `curl -s https://baryon-ax.baryon.ai/ | grep naver-site-verification` 확인
-6. 콘솔에서 **소유확인** (CAPTCHA는 사람이 직접)
-7. **요청 → 사이트맵 제출** → `https://baryon-ax.baryon.ai/sitemap.xml`
-
-> Naver는 공용 호스팅 서브도메인(`github.io`) 등록을 제한할 수 있습니다. 거절되면 커스텀 도메인 이전 후 재시도하는 편이 빠릅니다.
+> 커스텀 도메인 `baryon-ax.baryon.ai`를 사용하므로 공용 `github.io` 호스팅 제한은 해당되지 않습니다.
 
 ---
 
@@ -334,26 +342,20 @@ python3 scripts/apply_site_domain.py --domain baryon-ax.baryon.ai --write
 
 #### 2) Naver Search Advisor
 
+소유확인 메타태그는 이미 배포되어 있습니다(2026-11-13). 콘솔에서 확인만 하면 됩니다.
+
 1. https://searchadvisor.naver.com/console/board → 사이트 추가
 2. URL `https://baryon-ax.baryon.ai/` 입력
-3. 소유확인 → **HTML 태그** → 토큰 복사
-4. 토큰 주입 후 PR:
+3. **소유확인** 클릭 (CAPTCHA는 사람이 직접)
+4. **요청 → 사이트맵 제출** → `https://baryon-ax.baryon.ai/sitemap.xml`
+
+토큰을 교체해야 할 때만:
 
 ```bash
 python3 scripts/set_site_verification.py --naver "<token>"
 python3 scripts/check_site_seo.py
-git switch -c seo/naver-verification
-git add site/index.html site/en/index.html
-git commit -m "chore(seo): add Naver site verification"
-git push -u origin seo/naver-verification
-gh pr create --base main --head seo/naver-verification \
-  --title "chore(seo): add Naver site verification" \
-  --body "Adds the Naver Search Advisor ownership meta tag."
+# PR → vulnerability sweep 통과 → 머지 → Pages 배포
 ```
-
-5. `vulnerability sweep` 통과 후 머지 → Pages 배포 대기
-6. 배포 확인 후 콘솔에서 **소유확인** (CAPTCHA는 사람이 직접)
-7. **요청 → 사이트맵 제출** → `https://baryon-ax.baryon.ai/sitemap.xml`
 
 #### 3) Bing Webmaster Tools
 
