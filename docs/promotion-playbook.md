@@ -19,7 +19,7 @@
 | Google Search Console | ❌ | 등록·sitemap 제출 필요 |
 | Naver Search Advisor | ❌ | 등록·소유확인 필요 |
 | Bing Webmaster Tools | ❌ | 등록 또는 GSC import 필요 |
-| IndexNow | ⚠️ | 키 파일·제출 스크립트 준비됨, **실제 제출은 배포 후 1회 실행** |
+| IndexNow | ✅ | 2026-11-13 4개 URL 제출, `api.indexnow.org`·`bing.com` 모두 202 |
 | Daum 검색등록 | ❌ | Kakao 계정 필요 |
 | SEO/AEO/GEO 자산 | ✅ | title/description, canonical, hreflang, JSON-LD 8종, FAQ, `llms.txt` 3종, OG 2종 |
 | 자동 검증 | ✅ | `scripts/check_site_seo.py` (로컬), `scripts/check_site_live.py` (배포) |
@@ -300,8 +300,8 @@ Baryon AX
 
 ## 13. 다음 액션
 
-1. 머지·배포 후 `python3 scripts/check_site_live.py` 1회
-2. `python3 scripts/submit_indexnow.py` 1회
+1. ~~머지·배포 후 `python3 scripts/check_site_live.py` 1회~~ (2026-11-13 완료, failures 0)
+2. ~~`python3 scripts/submit_indexnow.py` 1회~~ (2026-11-13 완료, 202 Accepted)
 3. Google Search Console URL 접두어 속성 등록 + sitemap 제출
 4. Naver Search Advisor 등록 (거절 시 도메인 이전 검토)
 5. Bing Webmaster(GSC import) · Daum 등록
