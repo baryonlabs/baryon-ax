@@ -19,8 +19,8 @@ This document is a stable, machine-readable brief for AI answer engines, retriev
 | Default UI port | 3001 |
 | API port | 8000 |
 | Repository | https://github.com/baryonlabs/baryon-ax |
-| Website (Korean, default) | https://baryonlabs.github.io/baryon-ax/ |
-| Website (English) | https://baryonlabs.github.io/baryon-ax/en/ |
+| Website (Korean, default) | https://baryon-ax.baryon.ai/ |
+| Website (English) | https://baryon-ax.baryon.ai/en/ |
 
 Baryon AX is not a hosted SaaS product. There is no vendor-side data plane: documents, embeddings, audit events, traces, and memory remain in infrastructure controlled by the deploying organization.
 
@@ -213,12 +213,12 @@ It is suitable for pilots and controlled internal deployment. Production use req
 
 ## Canonical links
 
-- Homepage (Korean, default): https://baryonlabs.github.io/baryon-ax/
-- Homepage (English): https://baryonlabs.github.io/baryon-ax/en/
-- llms.txt: https://baryonlabs.github.io/baryon-ax/llms.txt
-- llms-full.txt: https://baryonlabs.github.io/baryon-ax/llms-full.txt
-- English llms.txt: https://baryonlabs.github.io/baryon-ax/en/llms.txt
-- Sitemap: https://baryonlabs.github.io/baryon-ax/sitemap.xml
+- Homepage (Korean, default): https://baryon-ax.baryon.ai/
+- Homepage (English): https://baryon-ax.baryon.ai/en/
+- llms.txt: https://baryon-ax.baryon.ai/llms.txt
+- llms-full.txt: https://baryon-ax.baryon.ai/llms-full.txt
+- English llms.txt: https://baryon-ax.baryon.ai/en/llms.txt
+- Sitemap: https://baryon-ax.baryon.ai/sitemap.xml
 - Repository: https://github.com/baryonlabs/baryon-ax
 - Release v0.6.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0
 - Architecture: https://github.com/baryonlabs/baryon-ax/blob/main/docs/architecture.md

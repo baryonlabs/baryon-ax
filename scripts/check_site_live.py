@@ -29,7 +29,7 @@ from urllib.parse import urljoin, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site"
-DEFAULT_BASE = "https://baryonlabs.github.io/baryon-ax/"
+DEFAULT_BASE = "https://baryon-ax.baryon.ai/"
 USER_AGENT = "baryon-ax-live-check/1.0 (+https://github.com/baryonlabs/baryon-ax)"
 SITEMAP_NS = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
 KEY_PATTERN = re.compile(r"^[0-9a-f]{8,128}$", re.IGNORECASE)

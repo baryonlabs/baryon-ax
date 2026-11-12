@@ -1,6 +1,6 @@
 # 정적 사이트 SEO · AEO · GEO 운영 가이드
 
-> 대상: https://baryonlabs.github.io/baryon-ax/ (한국어) · `/en/` (English)
+> 대상: https://baryon-ax.baryon.ai/ (한국어) · `/en/` (English)
 > 검증: `python3 scripts/check_site_seo.py` (로컬) · `python3 scripts/check_site_live.py` (배포)
 > 메타 동기화: `python3 scripts/apply_site_meta.py all`
 > 등록·홍보·측정: [docs/promotion-playbook.md](promotion-playbook.md)
@@ -25,7 +25,7 @@
 | title | `Baryon AX — 온프레미스 AI 에이전트 \| RAG 근거 인용, HWP·PDF·Office 검색` | `Baryon AX — On-premises AI Agents with Grounded RAG` |
 | description | 145자: 문서·암묵지·메모리, HWP·PDF·Office, ACL·감사, MIT/Docker | 156자: grounded RAG citations, parsing, ACL/audit, MIT/Docker |
 | OG image | `/assets/og.jpg` (1200×630, ~61KB) | `/assets/og-en.jpg` (1200×630, ~79KB) |
-| canonical | `https://baryonlabs.github.io/baryon-ax/` | `https://baryonlabs.github.io/baryon-ax/en/` |
+| canonical | `https://baryon-ax.baryon.ai/` | `https://baryon-ax.baryon.ai/en/` |
 | hreflang | ko · en · x-default | ko · en · x-default |
 
 OG/Twitter 제목·설명은 `<title>`/description과 **자동 동기화**됩니다(`apply_site_meta.py`).

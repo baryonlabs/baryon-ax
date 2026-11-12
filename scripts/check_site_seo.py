@@ -20,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site"
-BASE = "https://baryonlabs.github.io/baryon-ax/"
+BASE = "https://baryon-ax.baryon.ai/"
 
 failures: list[str] = []
 warnings: list[str] = []
