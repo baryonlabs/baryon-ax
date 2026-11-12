@@ -1,0 +1,80 @@
+name: security-sweep
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OSV_SCANNER_VERSION: v2.7.0
+  TRIVY_VERSION: v0.76.1
+  SECURITY_SWEEP_REF: main
+  SECURITY_FAIL_ON: P0,P1
+  SECURITY_SWEEP_OUT: ${{ runner.temp }}/security-sweep-out
+
+jobs:
+  sweep:
+    name: vulnerability sweep
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout security-sweep
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$SECURITY_SWEEP_REF" \
+            https://github.com/baryonlabs/security-sweep.git "$RUNNER_TEMP/security-sweep"
+
+      - name: Install osv-scanner
+        run: |
+          set -euo pipefail
+          base="https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}"
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "$base/osv-scanner_linux_amd64"
+          curl -fsSLO "$base/osv-scanner_SHA256SUMS"
+          grep ' osv-scanner_linux_amd64$' osv-scanner_SHA256SUMS | sha256sum -c -
+          install -m 0755 osv-scanner_linux_amd64 /usr/local/bin/osv-scanner
+          osv-scanner --version
+
+      - name: Install trivy
+        # Pinned by commit SHA (v0.3.1): tags of this action were hijacked once.
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+
+      - name: Discover, sweep, verify, report
+        run: |
+          set -euo pipefail
+          S="$RUNNER_TEMP/security-sweep/skills/security-sweep/scripts"
+          OUT="$SECURITY_SWEEP_OUT"
+          bash "$S/discover.sh" "$GITHUB_WORKSPACE" --out "$OUT"
+          bash "$S/sweep.sh" --targets "$OUT/targets.json" --out "$OUT" --jobs 4
+          python3 "$S/verify_cves.py" "$OUT"
+          python3 "$S/report.py" "$OUT"
+
+      - name: Gate on blocking findings
+        run: python3 .github/scripts/security_gate.py "$SECURITY_SWEEP_OUT/findings.json"
+
+      - name: Job summary
+        if: always()
+        run: |
+          if [ -f "$SECURITY_SWEEP_OUT/REPORT.md" ]; then
+            {
+              echo ""
+              echo "---"
+              echo ""
+              sed -n '1,80p' "$SECURITY_SWEEP_OUT/REPORT.md"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-sweep-report
+          path: ${{ env.SECURITY_SWEEP_OUT }}
+          if-no-files-found: warn
+          retention-days: 14

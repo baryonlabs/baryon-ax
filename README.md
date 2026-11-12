@@ -262,3 +262,5 @@ This is a reference implementation, not a security certification. The developmen
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+> 🔐 모든 PR은 [security-sweep](https://github.com/baryonlabs/security-sweep)로 의존성 CVE·비밀값·설정 오류를 검사하며, P0/P1이 발견되면 CI가 실패합니다.
