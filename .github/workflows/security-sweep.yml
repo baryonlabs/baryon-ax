@@ -195,3 +195,55 @@ jobs:
           path: ${{ runner.temp }}/image-scan
           if-no-files-found: warn
           retention-days: 30
+
+  images:
+    name: image scan and sbom
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install trivy
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+
+      - name: Build images
+        run: |
+          set -euo pipefail
+          docker build -t baryon-ax-api:ci apps/api
+          docker build -t baryon-ax-web:ci apps/web
+
+      - name: Scan images and write SBOMs
+        run: |
+          set -euo pipefail
+          for name in api web; do
+            trivy image --quiet --severity CRITICAL,HIGH --ignore-unfixed \
+              --format table -o "image-report-${name}.txt" "baryon-ax-${name}:ci"
+            trivy image --quiet --format cyclonedx \
+              -o "sbom-${name}.json" "baryon-ax-${name}:ci"
+          done
+          cat image-report-api.txt image-report-web.txt
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "### Container image scan (CRITICAL/HIGH, fixable)"
+            echo '```'
+            cat image-report-api.txt image-report-web.txt 2>/dev/null || echo "no report"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload image reports and SBOMs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-sweep-images
+          path: |
+            image-report-*.txt
+            sbom-*.json
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,5 +1,13 @@
 # Security baseline
 
+## CI security gate
+
+Every pull request runs `security-sweep` (osv-scanner + trivy + OSV verification).
+Findings at P0/P1 fail the job; results are attached as a report artifact.
+The gate is advisory until branch protection makes `vulnerability sweep` a
+required check (see issue #8). It complements, and does not replace, SAST,
+dependency review, and a human security review.
+
 Before production use, implement these controls:
 
 - Replace development identity headers with validated OIDC/OAuth2 tokens and enforce RBAC at every API boundary.
