@@ -1,3 +1,4 @@
+@charset "UTF-8";
 :root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #e9edf5; background: #0b1020; font-synthesis: none; }
 * { box-sizing: border-box; } body { margin: 0; min-width: 320px; } button, select, textarea { font: inherit; }
 .shell { display: flex; min-height: 100vh; background: radial-gradient(circle at 78% 0%, #182a49 0, transparent 31%), #0b1020; }
@@ -138,8 +139,6 @@ footer { width:min(860px, 100%); margin:0 auto; padding:16px 30px 24px; }.upload
 .trace { margin-top: 12px; border: 1px solid #273a59; border-radius: 8px; background: rgba(13, 23, 40, .55); }
 .trace summary { display: flex; align-items: center; gap: 8px; padding: 8px 11px; color: #9db2d2; font-size: 12px; cursor: pointer; list-style: none; }
 .trace summary::-webkit-details-marker { display: none; }
-.trace summary::before { content: "▸"; color: #6f9fe4; font-size: 10px; }
-.trace[open] summary::before { content: "▾"; }
 .trace summary em { margin-left: auto; color: #71829b; font-style: normal; font-size: 11px; }
 .trace ol { margin: 0; padding: 4px 11px 10px; list-style: none; display: grid; gap: 4px; }
 .trace li { display: flex; align-items: center; gap: 8px; color: #b9cbe8; font-size: 11.5px; }
@@ -239,8 +238,17 @@ footer { width:min(860px, 100%); margin:0 auto; padding:16px 30px 24px; }.upload
 .tacit-basis { margin-top: 10px; padding-top: 9px; border-top: 1px dashed #24344e; }
 .tacit-basis summary { color: #8cb3f2; font-size: 11.5px; cursor: pointer; list-style: none; }
 .tacit-basis summary::-webkit-details-marker { display: none; }
-.tacit-basis summary::before { content: "▸ "; color: #6f9fe4; font-size: 10px; }
-.tacit-basis[open] summary::before { content: "▾ "; }
+.tacit-basis summary::before {
+  content: "";
+  display: inline-block;
+  width: 0; height: 0;
+  margin-right: 6px;
+  border-left: 5px solid #6f9fe4;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform .15s ease;
+}
+.tacit-basis[open] summary::before { transform: rotate(90deg); }
 .basis-grid { margin: 8px 0 0; display: grid; gap: 6px; }
 .basis-grid > div { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
 .basis-grid dt { flex: 0 0 auto; min-width: 72px; color: #71829b; font-size: 11px; }
@@ -276,11 +284,19 @@ nav button.active .nav-mascot { box-shadow: 0 0 0 1px var(--menu-accent), 0 0 10
 .menu-ribbon-mascot { position: relative; width: 26px; height: 26px; border-radius: 7px; box-shadow: 0 0 0 1px rgba(255, 255, 255, .1); }
 .menu-ribbon strong { position: relative; color: #e2ecfb; font-size: 12px; font-weight: 650; letter-spacing: .01em; }
 .menu-ribbon span { position: relative; color: #8296b3; font-size: 11px; }
-.menu-ribbon span::before { content: "·"; margin-right: 6px; color: #41546f; }
+.menu-ribbon span::before {
+  content: "";
+  display: inline-block;
+  width: 3px; height: 3px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: #41546f;
+  vertical-align: middle;
+}
 @media (max-width: 700px) { .menu-ribbon { padding: 0 20px; } .menu-ribbon span { display: none; } }
 
 /* ============================================================
-   UX v2 — design tokens, accessibility, AI interaction patterns
+   UX v2 - design tokens, accessibility, AI interaction patterns
    ============================================================ */
 :root {
   --bg: #0b1020;
@@ -427,8 +443,6 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 .prompt-intro { margin: 8px 0 0; max-width: 720px; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .trace summary { list-style: none; display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .trace summary::-webkit-details-marker { display: none; }
-.trace summary::before { content: "▸"; color: var(--muted); font-size: 11px; }
-.trace details[open] summary::before, details[open].trace summary::before { content: "▾"; }
 
 /* UX v2: desktop/mobile affordances */
 .workspace .menu-toggle { display: none; }
