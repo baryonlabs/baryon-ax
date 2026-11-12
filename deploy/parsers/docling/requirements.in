@@ -1,0 +1,6 @@
+# Top-level ranges. Generate the pinned requirements.txt with:
+# uv pip compile requirements.in --python-version 3.12 --python-platform x86_64-manylinux_2_28 --no-header -o requirements.txt
+docling>=2.0,<3.0
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+python-multipart>=0.0.12,<1

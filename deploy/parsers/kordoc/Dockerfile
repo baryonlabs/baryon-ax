@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim
+FROM node:24-trixie-slim
 
 ARG KORDOC_VERSION=^4.24.0
 ENV NODE_ENV=production \
@@ -7,8 +7,8 @@ ENV NODE_ENV=production \
     PORT=8080
 
 WORKDIR /app
-COPY package.json ./
-RUN npm install --omit=dev --no-audit --no-fund \
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund \
     && npm cache clean --force
 
 COPY server.mjs ./

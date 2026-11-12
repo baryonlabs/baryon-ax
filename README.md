@@ -1,5 +1,8 @@
 # Baryon AX
 
+[![CI](https://github.com/baryonlabs/baryon-ax/actions/workflows/ci.yml/badge.svg)](https://github.com/baryonlabs/baryon-ax/actions/workflows/ci.yml)
+[![security-sweep](https://github.com/baryonlabs/baryon-ax/actions/workflows/security-sweep.yml/badge.svg)](https://github.com/baryonlabs/baryon-ax/actions/workflows/security-sweep.yml)
+
 **Baryon AX** is an on-premises, model-agnostic foundation for enterprise AI agents and grounded chat.
 
 > Connect models. Orchestrate agents. Ground knowledge. Observe everything.
@@ -219,9 +222,9 @@ scripts/        Ollama proxy, B300 vLLM serve/tunnel, full-stack smoke
 ## Development
 
 ```bash
-cd apps/api && python3.12 -m venv .venv && source .venv/bin/activate
-pip install -e '.[dev]'
-pytest
+cd apps/api
+uv sync --extra dev          # uses the pinned uv.lock
+uv run pytest
 
 cd ../web
 npm install
@@ -255,12 +258,70 @@ API_BASE=http://127.0.0.1:8000 REQUIRE_FULL=1 python3 scripts/smoke_full_stack.p
 
 The smoke check covers health backends, document upload, Qdrant retrieval, chat, audit, and Mem0 memory.
 
-## Security status
+## Security
+
+### Security CI on every pull request
+
+Every pull request runs [security-sweep](https://github.com/baryonlabs/security-sweep) before merge. This turns security from a periodic manual review into a merge condition that leaves evidence.
+
+```text
+PR opened or updated
+ → checkout the PR
+ → fetch the pinned security-sweep commit
+ → osv-scanner (checksum-verified) + trivy (SHA-pinned action)
+ → discover → sweep → OSV existence check → KEV/EPSS + reachability → REPORT
+ → fail on P0/P1 (none = pass)
+ → Job Summary + REPORT/Findings artifacts (14 days)
+```
+
+**What it buys**
+
+| | |
+| --- | --- |
+| Real defects blocked before merge | The first sweep found the web image running as root (P1) and a missing `HEALTHCHECK` (P3). Closing the lockfile gap then exposed **63 dependency findings (42 P1)** in `apps/api`; upgrading `fastembed`, `langgraph`, and `pillow` cleared all of them. The current scan is **0 P0/P1/P2/P3** across all four projects. |
+| Review cost and consistency | Scanner versions and the skill commit are pinned, so the same input produces the same result. Authors get a prioritized fix list before review; reviewers no longer have to re-ask "is this PR safe?" The PR sweep takes about **30 seconds** for four projects, and this public repository uses no paid Actions minutes. |
+| Supply-chain and CI safety | The scanner skill is pinned by commit, the Trivy action by SHA, and the osv-scanner binary is checksum-verified. The workflow has `contents: read`, uses no secrets, and is safe for fork PRs. A missing or unreadable report **fails closed**; it is never treated as a pass. |
+| Audit and sales evidence | Run history plus `REPORT.md`, `REPORT.html`, and `findings.json` artifacts. CVEs are checked against OSV, then enriched with CISA KEV, EPSS, and reachability. This is usable evidence for on-premises security questionnaires. |
+| Culture | Security moves from a quarterly manual check to an automatic condition on every PR; the P0/P1 criteria are codified in the gate instead of living in a reviewer's head. |
+
+**Coverage**
+
+| Project | Ecosystem | Lockfile used | PR dependency scan | Weekly image scan |
+| --- | --- | --- | :---: | :---: |
+| `apps/web` | npm | `package-lock.json` | ✅ | ✅ |
+| `apps/api` | PyPI | `uv.lock` | ✅ | ✅ |
+| `deploy/parsers/docling` | PyPI | pinned `requirements.txt` from `requirements.in` | ✅ | SBOM from lockfile* |
+| `deploy/parsers/kordoc` | npm | `package-lock.json` | ✅ | ✅ |
+
+\* The docling image is over 10 GB, so the weekly job generates its SBOM from the pinned lockfile instead of building the image.
+
+**Weekly tracking**
+
+A scheduled run every Monday 03:00 KST covers what PRs cannot:
+
+- re-scans the default branch for vulnerabilities that landed earlier
+- builds `api`, `web`, and `kordoc` images, scans OS and application packages, and publishes **CycloneDX SBOMs**
+- scans the **full git history** for secrets with gitleaks
+- records OS package CVEs in the report; only critical **application** packages block the scheduled run
+
+**What this does not cover**
+
+- **Known vulnerabilities only.** Authorization bypasses, trust-boundary mistakes, and other logic flaws need SAST and human security review. This is a complement, not a replacement.
+- **P2/P3 are report-only.** They appear in the report and Job Summary but do not fail the build. The policy is in [docs/security-ci.md](docs/security-ci.md).
+- **Base-image CVEs are a moving target.** They depend on upstream rebuilds, so the weekly job tracks them instead of blocking on every OS package.
+- **A leaked secret still needs rotation.** gitleaks scans history, but deleting a commit does not revoke a credential.
+- **Pins are deliberate.** Scanner and action updates are reviewed changes; the bump procedure is in the runbook.
+- **CI configuration is part of the trust boundary.** A PR that edits the workflow can change its own checks. Protecting `.github/**` is tracked in [#4](https://github.com/baryonlabs/baryon-ax/issues/4).
+- This is a **baseline, not a security certification.**
+
+The item-by-item improvement backlog is in issues [#1](https://github.com/baryonlabs/baryon-ax/issues/1) (lockfiles), [#2](https://github.com/baryonlabs/baryon-ax/issues/2) (required check), [#3](https://github.com/baryonlabs/baryon-ax/issues/3) (weekly and image scans), [#4](https://github.com/baryonlabs/baryon-ax/issues/4) (CI trust boundary), and [#5](https://github.com/baryonlabs/baryon-ax/issues/5) (expiring allowlist).
+
+**Runbook:** [docs/security-ci.md](docs/security-ci.md) · **Production hardening:** [docs/security.md](docs/security.md)
+
+### Production hardening
 
 This is a reference implementation, not a security certification. The development identity headers, local JSON files, and JSONL audit mirror are development conveniences. The full-stack profile adds PostgreSQL, Qdrant, Redis, Langfuse, and Mem0, but OIDC/JWT, security headers, and a complete retention policy are still required for production. Follow [docs/security.md](docs/security.md) before exposing a deployment to users or confidential data.
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-> 🔐 모든 PR은 [security-sweep](https://github.com/baryonlabs/security-sweep)로 의존성 CVE·비밀값·설정 오류를 검사하며, P0/P1이 발견되면 CI가 실패합니다.

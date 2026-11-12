@@ -2,14 +2,22 @@ name: security-sweep
 
 on:
   pull_request:
+  schedule:
+    # Mondays 03:00 KST (Sunday 18:00 UTC)
+    - cron: "0 18 * * 1"
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: security-sweep-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   OSV_SCANNER_VERSION: v2.7.0
   TRIVY_VERSION: v0.76.1
+  GITLEAKS_VERSION: v8.30.1
   # Pin the scanner skill to a reviewed commit; bump deliberately on update.
   SECURITY_SWEEP_REF: 5b3fc938796fccdf091102ed258ba8e1686d3ba6
   SECURITY_FAIL_ON: P0,P1
@@ -21,6 +29,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The weekly gitleaks scan needs the full history; PRs stay shallow.
+          fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
 
       - name: Checkout security-sweep
         run: |
@@ -61,18 +72,48 @@ jobs:
       - name: Gate on blocking findings
         run: python3 .github/scripts/security_gate.py "$RUNNER_TEMP/security-sweep-out/findings.json"
 
+      - name: SBOM for docling lockfile
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/security-sweep-out"
+          trivy fs --scanners vuln --format cyclonedx --no-progress \
+            --output "$OUT/sbom-docling.cdx.json" deploy/parsers/docling
+
+      - name: Scan git history for secrets
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          version="${GITLEAKS_VERSION#v}"
+          base="https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}"
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "$base/gitleaks_${version}_linux_x64.tar.gz"
+          curl -fsSLO "$base/gitleaks_${version}_checksums.txt"
+          grep " gitleaks_${version}_linux_x64.tar.gz$" "gitleaks_${version}_checksums.txt" | sha256sum -c -
+          tar xzf "gitleaks_${version}_linux_x64.tar.gz"
+          install -m 0755 gitleaks /usr/local/bin/gitleaks
+          OUT="$RUNNER_TEMP/security-sweep-out"
+          gitleaks git --log-opts=--all --redact \
+            --report-format json --report-path "$OUT/gitleaks.json" --exit-code 1
+
       - name: Job summary
         if: always()
         run: |
           OUT="$RUNNER_TEMP/security-sweep-out"
-          if [ -f "$OUT/REPORT.md" ]; then
-            {
-              echo ""
-              echo "---"
-              echo ""
+          {
+            echo ""
+            echo "---"
+            echo ""
+            if [ -f "$OUT/REPORT.md" ]; then
               sed -n '1,80p' "$OUT/REPORT.md"
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
+            fi
+            if [ -f "$OUT/gitleaks.json" ]; then
+              echo ""
+              echo "### Secret history scan"
+              echo ""
+              echo "gitleaks findings: $(jq length "$OUT/gitleaks.json")"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload report
         if: always()
@@ -82,3 +123,75 @@ jobs:
           path: ${{ runner.temp }}/security-sweep-out
           if-no-files-found: warn
           retention-days: 14
+
+  images:
+    name: image scan (${{ matrix.image }})
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: api
+            context: apps/api
+          - image: web
+            context: apps/web
+          - image: kordoc
+            context: deploy/parsers/kordoc
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install trivy
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+
+      - name: Build image
+        run: docker build -t "baryon-ax-${{ matrix.image }}:scan" "${{ matrix.context }}"
+
+      - name: Generate CycloneDX SBOM
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/image-scan"
+          trivy image --scanners vuln --format cyclonedx --no-progress \
+            --output "$RUNNER_TEMP/image-scan/sbom-${{ matrix.image }}.cdx.json" \
+            "baryon-ax-${{ matrix.image }}:scan"
+
+      - name: Scan image
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/image-scan"
+          trivy image --scanners vuln --severity CRITICAL,HIGH --no-progress \
+            --format table \
+            --output "$RUNNER_TEMP/image-scan/trivy-${{ matrix.image }}.txt" \
+            "baryon-ax-${{ matrix.image }}:scan"
+
+      - name: Gate on critical application packages
+        # OS packages are reported for weekly tracking; only application
+        # packages with an available fix block the scheduled run.
+        run: |
+          trivy image --scanners vuln --pkg-types library --severity CRITICAL \
+            --ignore-unfixed --exit-code 1 --no-progress \
+            "baryon-ax-${{ matrix.image }}:scan"
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "### image scan: ${{ matrix.image }}"
+            echo ""
+            echo '```'
+            sed -n '1,60p' "$RUNNER_TEMP/image-scan/trivy-${{ matrix.image }}.txt" 2>/dev/null || echo "no report"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload SBOM and report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-sweep-image-${{ matrix.image }}
+          path: ${{ runner.temp }}/image-scan
+          if-no-files-found: warn
+          retention-days: 30
