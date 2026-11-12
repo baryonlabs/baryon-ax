@@ -178,6 +178,14 @@
         },
         {
           "@type": "Question",
+          "name": "Can I start on a Mac mini?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Install Docker Desktop on an Apple Silicon Mac mini, then paste git clone https://github.com/baryonlabs/baryon-ax.git && cd baryon-ax && cp .env.example .env && docker compose up --build into Terminal. The demo model runs without a GPU or API key; connect an on-prem GPU or any OpenAI-compatible model when needed. If installation is blocked, technical support can help."
+          }
+        },
+        {
+          "@type": "Question",
           "name": "What are the minimum hardware requirements?",
           "acceptedAnswer": {
             "@type": "Answer",
@@ -205,7 +213,7 @@
           "name": "Which document formats are supported?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "HWP and HWPX through the kordoc parser, PDF, Office formats (DOCX, XLSX, PPTX), images, and plain text through docling, and legacy formats through Tika, all selected by MIME type. Parsed text is chunked with structure awareness before indexing in Qdrant, and original files stay in your own document store."
+            "text": "HWP and HWPX through the kordoc parser, PDF, Office formats (DOCX, XLSX, PPTX), images, and plain text through docling, and legacy formats through Tika, all selected by MIME type. Parsed text is chunked with structure awareness before indexing in Qdrant, and original files stay in your own document store. See supported formats for the complete list."
           }
         },
         {
@@ -230,6 +238,14 @@
           "acceptedAnswer": {
             "@type": "Answer",
             "text": "Original files and parsed text live in DOCUMENT_STORE , vectors in Qdrant, audit events in PostgreSQL plus a JSONL mirror, and memory in Mem0/Qdrant. Feedback, tacit knowledge, and knowledge gaps use their own JSONL stores. All stores remain inside your environment."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How is security handled?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Every pull request runs security-sweep for dependency CVEs, secrets, and configuration errors; P0/P1 findings block the merge. A weekly job scans images, SBOMs, and the full git history. For production, follow the security baseline for OIDC/JWT and secret management."
           }
         }
       ]
@@ -796,6 +812,7 @@ docker compose down
       <div class="faq">
         <h3>Frequently asked questions</h3>
         <details><summary>What is Baryon AX?</summary><p>Baryon AX is an open-source, on-premises AI agent platform that runs grounded RAG over your own documents, tacit knowledge, and memory, then answers with source citations. It ships with organization and role access control, audit logging, and model-agnostic inference, so enterprise knowledge is retrieved, cited, and audited without leaving your network.</p></details>
+        <details><summary>Can I start on a Mac mini?</summary><p>Yes. Install Docker Desktop on an Apple Silicon Mac mini, then paste <code>git clone https://github.com/baryonlabs/baryon-ax.git &amp;&amp; cd baryon-ax &amp;&amp; cp .env.example .env &amp;&amp; docker compose up --build</code> into Terminal. The demo model runs without a GPU or API key; connect an on-prem GPU or any OpenAI-compatible model when needed. If installation is blocked, <a href="#support">technical support</a> can help.</p></details>
         <details><summary>What are the minimum hardware requirements?</summary><p>The Basic Core runs on 2 vCPU, 4GB RAM, and 10GB disk with the demo model. The full stack (Qdrant, PostgreSQL, Redis, Langfuse, Mem0) recommends 8 vCPU, 16GB RAM (32GB recommended), and 100GB disk. GPU inference starts with an RTX 4090 24GB for a 7B model. See <a href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md">hardware requirements</a>.</p></details>
         <details><summary>Does it work in an air-gapped network?</summary><p>Yes. Baryon AX runs fully offline with no outbound calls required. Mirror the Docker images, model weights, and packages, then keep the model, vector store, and document stores inside your network. See the <a href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/open-source.md">open-source component and license inventory</a> for what to mirror.</p></details>
         <details><summary>Which models are supported?</summary><p>Any model that exposes an OpenAI-compatible API. Ollama <code>qwen2.5:7b</code> and vLLM <code>Qwen3.5-27B</code> on B300 GPU 7 are validated. Without a model, the <code>demo-local</code> fallback still demonstrates the UI and flow.</p></details>

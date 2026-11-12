@@ -109,6 +109,14 @@
         },
         {
           "@type": "Question",
+          "name": "맥미니에서도 바로 시작할 수 있나요?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "네. Apple Silicon 맥미니에 Docker Desktop을 설치한 뒤, 터미널에 git clone https://github.com/baryonlabs/baryon-ax.git && cd baryon-ax && cp .env.example .env && docker compose up --build 한 줄을 붙여넣으면 됩니다. GPU나 API 키 없이 데모 모델로 시작하고, 필요할 때 사내 GPU나 OpenAI 호환 모델을 연결하세요. 설치가 막히면 기술지원 섹션으로 문의할 수 있습니다."
+          }
+        },
+        {
+          "@type": "Question",
           "name": "최소 하드웨어 사양은 무엇인가요?",
           "acceptedAnswer": {
             "@type": "Answer",
@@ -136,7 +144,7 @@
           "name": "HWP/HWPX 문서도 처리할 수 있나요?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "네. kordoc 사이드카가 HWP/HWPX를 파싱하고, docling이 PDF·Office·이미지를, Tika가 레거시 형식을 보완합니다. parser 프로필을 함께 실행해야 하며, MIME 기반으로 파서가 자동 라우팅됩니다."
+            "text": "네. kordoc 사이드카가 HWP/HWPX를 파싱하고, docling이 PDF·Office·이미지를, Tika가 레거시 형식을 보완합니다. parser 프로필을 함께 실행해야 하며, MIME 기반으로 파서가 자동 라우팅됩니다. 전체 목록은 지원 형식 에서 확인하세요."
           }
         },
         {
@@ -153,6 +161,14 @@
           "acceptedAnswer": {
             "@type": "Answer",
             "text": "모든 PR은 security-sweep 로 의존성 CVE·비밀값·설정 오류를 검사하고, P0/P1이면 머지를 차단합니다. 주 1회 이미지·SBOM·전체 git 히스토리 비밀값 스캔을 실행합니다. 운영 전 OIDC/JWT와 시크릿 관리 등은 보안 베이스라인 을 따르세요."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "라이선스는 무엇인가요?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "MIT 라이선스입니다. 상업적 사용과 수정·배포가 가능하며, 저작권 고지를 유지해야 합니다. 자세한 내용은 LICENSE 를 참고하세요."
           }
         }
       ]
@@ -869,6 +885,10 @@ docker compose down
         <details>
           <summary>어떤 문서를 지원하나요?</summary>
           <p>HWP·HWPX·PDF·Word·Excel·PowerPoint 등 Office 문서와 이미지·텍스트를 지원합니다. kordoc·docling·Tika 파서가 MIME 유형에 따라 자동 라우팅하고, 표·제목 같은 문서 구조를 인식해 청킹합니다. 검색과 인용은 사용자에게 부여된 문서 ACL 권한 범위 안에서만 이뤄집니다.</p>
+        </details>
+        <details>
+          <summary>맥미니에서도 바로 시작할 수 있나요?</summary>
+          <p>네. Apple Silicon 맥미니에 Docker Desktop을 설치한 뒤, 터미널에 <code>git clone https://github.com/baryonlabs/baryon-ax.git &amp;&amp; cd baryon-ax &amp;&amp; cp .env.example .env &amp;&amp; docker compose up --build</code> 한 줄을 붙여넣으면 됩니다. GPU나 API 키 없이 데모 모델로 시작하고, 필요할 때 사내 GPU나 OpenAI 호환 모델을 연결하세요. 설치가 막히면 <a href="#support">기술지원</a> 섹션으로 문의할 수 있습니다.</p>
         </details>
         <details>
           <summary>최소 하드웨어 사양은 무엇인가요?</summary>
