@@ -23,7 +23,7 @@
 | Daum 검색등록 | 🟡 | 등록 신청 완료(2026-11-13), 검토 결과 이메일 대기 |
 | SEO/AEO/GEO 자산 | ✅ | title/description, canonical, hreflang, JSON-LD 8종, FAQ, `llms.txt` 3종, OG 2종 |
 | 자동 검증 | ✅ | `check_site_seo.py` 0/0, `check_site_live.py` 새 도메인 0 failures |
-| 분석 | ❌ | GA4 또는 Cloudflare Web Analytics 미연결 |
+| 분석 | ✅ | Cloudflare Web Analytics `baryon-ax.baryon.ai` 설치 (2026-11-13) |
 
 ### 자동화 자산
 
@@ -311,7 +311,7 @@ python3 scripts/apply_site_domain.py --domain baryon-ax.baryon.ai --write
 5. ~~Naver Search Advisor 소유확인 + sitemap 제출~~ (2026-11-13 완료)
 6. ~~Daum 검색등록 신청~~ (2026-11-13 완료, 검토 대기)
 7. Bing Webmaster Tools 로그인·사이트 추가 (IndexNow는 완료, 대시보드는 선택)
-8. 분석 도구 연결 (GA4 또는 Cloudflare Web Analytics)
+8. ~~분석 도구 연결~~ (2026-11-13 Cloudflare Web Analytics 설치)
 9. LinkedIn·Naver 블로그 첫 글 발행 ([docs/promotion-drafts.md](promotion-drafts.md))
 
 ---
@@ -330,6 +330,7 @@ python3 scripts/apply_site_domain.py --domain baryon-ax.baryon.ai --write
 - [x] Google Search Console sitemap 제출(4개 발견) + 핵심 URL 색인
 - [x] Naver Search Advisor 소유확인 + sitemap 제출
 - [x] Daum 검색등록 신청 (검토 대기)
+- [x] Cloudflare Web Analytics beacon 설치 (`baryon-ax.baryon.ai`)
 - [x] title/description/canonical/hreflang, JSON-LD, FAQ, `llms.txt` 3종, OG 2종, sitemap 4개 URL
 - [x] `robots.txt` AI 크롤러 허용 + sitemap 명시
 - [x] 홍보 문안·UTM 링크 ([docs/promotion-drafts.md](promotion-drafts.md))
@@ -364,11 +365,11 @@ Bing 수집은 IndexNow로 이미 진행 중입니다. 대시보드가 필요할
 - 거절 시 사유에 따라 설명·디렉토리 보완 후 재신청
 - 신청 URL: `http://baryon-ax.baryon.ai/` (Daum 폼이 http prefix를 사용)
 
-#### 3) 분석 도구
+#### 3) 분석 도구 — 완료
 
-- Cloudflare Web Analytics: `baryon.ai` zone에 사이트 추가 후 JS 스니펫을 `site/index.html`·`site/en/index.html`의 `</body>` 앞에 삽입
-- 또는 GA4 측정 ID를 `gtag.js`로 삽입
-- 삽입 후 `python3 scripts/check_site_seo.py` → PR → 머지 → `check_site_live.py`
+- Cloudflare Web Analytics에 `baryon-ax.baryon.ai` 사이트를 추가하고 beacon 스니펫을 `site/index.html`·`site/en/index.html`의 `</body>` 앞에 삽입했습니다.
+- 배포 후 **Cloudflare Dashboard → Web Analytics → baryon-ax.baryon.ai**에서 페이지뷰·방문자를 확인합니다.
+- GA4를 추가로 붙일 경우 measurement ID를 `gtag.js`로 삽입합니다.
 
 ### 개시 당일 순서
 
