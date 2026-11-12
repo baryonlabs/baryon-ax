@@ -1,4 +1,38 @@
+# robots.txt for https://baryonlabs.github.io/baryon-ax/
+# Machine-readable summaries for LLM and AI answer engines:
+#   https://baryonlabs.github.io/baryon-ax/llms.txt
+#   https://baryonlabs.github.io/baryon-ax/llms-full.txt
+#   https://baryonlabs.github.io/baryon-ax/en/llms.txt
+
 User-agent: *
+Allow: /
+
+# Search and answer-engine crawlers (explicitly allowed)
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: CCBot
 Allow: /
 
 Sitemap: https://baryonlabs.github.io/baryon-ax/sitemap.xml

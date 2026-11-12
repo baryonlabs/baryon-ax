@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Baryon AX — 근거로 답하는 온프레미스 AI 에이전트</title>
-<meta name="description" content="Baryon AX는 문서·암묵지·메모리를 연결해 출처가 있는 답을 만드는 온프레미스 AI 에이전트 플랫폼입니다. OpenAI 호환 모델, Qdrant 검색, 조직·역할 거버넌스, PR 보안 CI를 한 구성으로 제공합니다.">
+<title>Baryon AX — 온프레미스 AI 에이전트 | RAG 근거 인용, HWP·PDF·Office 검색</title>
+<meta name="description" content="Baryon AX는 문서·암묵지·메모리를 연결해 출처를 인용하는 온프레미스 AI 에이전트 플랫폼입니다. HWP·HWPX·PDF·Office를 파싱하고, 조직·역할 ACL과 감사 로그로 권한을 통제하며, Docker로 사내 서버에 설치하는 MIT 오픈소스입니다.">
 <link rel="canonical" href="https://baryonlabs.github.io/baryon-ax/">
 <link rel="alternate" hreflang="ko" href="https://baryonlabs.github.io/baryon-ax/">
 <link rel="alternate" hreflang="en" href="https://baryonlabs.github.io/baryon-ax/en/">
@@ -15,28 +15,28 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Baryon AX">
 <meta property="og:locale" content="ko_KR">
-<meta property="og:title" content="Baryon AX — 근거로 답하는 온프레미스 AI 에이전트">
-<meta property="og:description" content="문서·암묵지·메모리를 연결해 출처가 있는 답을 만드는 온프레미스 AI 에이전트 플랫폼. OpenAI 호환 모델, Qdrant 검색, 거버넌스, 보안 CI를 포함합니다.">
+<meta property="og:title" content="Baryon AX — 온프레미스 AI 에이전트 | RAG 근거 인용, HWP·PDF·Office 검색">
+<meta property="og:description" content="Baryon AX는 문서·암묵지·메모리를 연결해 출처를 인용하는 온프레미스 AI 에이전트 플랫폼입니다. HWP·HWPX·PDF·Office를 파싱하고, 조직·역할 ACL과 감사 로그로 권한을 통제하며, Docker로 사내 서버에 설치하는 MIT 오픈소스입니다.">
 <meta property="og:url" content="https://baryonlabs.github.io/baryon-ax/">
 <meta property="og:image" content="https://baryonlabs.github.io/baryon-ax/assets/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Baryon AX — On-premises AI agents with grounded answers">
+<meta property="og:image:alt" content="Baryon AX — 근거로 답하는 온프레미스 AI 에이전트 플랫폼">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Baryon AX — 근거로 답하는 온프레미스 AI 에이전트">
-<meta name="twitter:description" content="문서·암묵지·메모리를 연결해 출처가 있는 답을 만드는 온프레미스 AI 에이전트 플랫폼.">
+<meta name="twitter:title" content="Baryon AX — 온프레미스 AI 에이전트 | RAG 근거 인용, HWP·PDF·Office 검색">
+<meta name="twitter:description" content="Baryon AX는 문서·암묵지·메모리를 연결해 출처를 인용하는 온프레미스 AI 에이전트 플랫폼입니다. HWP·HWPX·PDF·Office를 파싱하고, 조직·역할 ACL과 감사 로그로 권한을 통제하며, Docker로 사내 서버에 설치하는 MIT 오픈소스입니다.">
 <meta name="twitter:image" content="https://baryonlabs.github.io/baryon-ax/assets/og.jpg">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/style.css">
-<script type="application/ld+json">
-{
+<script type="application/ld+json">{
   "@context": "https://schema.org",
   "@graph": [
     {
       "@type": "Organization",
       "@id": "https://baryonlabs.github.io/baryon-ax/#org",
       "name": "Baryon Labs",
-      "url": "https://github.com/baryonlabs"
+      "url": "https://github.com/baryonlabs",
+      "sameAs": "https://github.com/baryonlabs"
     },
     {
       "@type": "SoftwareApplication",
@@ -52,20 +52,39 @@
       "datePublished": "2026-11-13",
       "image": "https://baryonlabs.github.io/baryon-ax/assets/og.jpg",
       "license": "https://opensource.org/licenses/MIT",
-      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-      "author": { "@id": "https://baryonlabs.github.io/baryon-ax/#org" },
-      "publisher": { "@id": "https://baryonlabs.github.io/baryon-ax/#org" }
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": {
+        "@id": "https://baryonlabs.github.io/baryon-ax/#org"
+      },
+      "publisher": {
+        "@id": "https://baryonlabs.github.io/baryon-ax/#org"
+      },
+      "screenshot": "https://baryonlabs.github.io/baryon-ax/assets/og.jpg",
+      "sameAs": "https://github.com/baryonlabs/baryon-ax",
+      "softwareHelp": "https://baryonlabs.github.io/baryon-ax/"
     },
     {
       "@type": "WebPage",
       "@id": "https://baryonlabs.github.io/baryon-ax/#page",
       "url": "https://baryonlabs.github.io/baryon-ax/",
-      "name": "Baryon AX — 근거로 답하는 온프레미스 AI 에이전트",
+      "name": "Baryon AX — 온프레미스 AI 에이전트 | RAG 근거 인용, HWP·PDF·Office 검색",
       "inLanguage": "ko",
       "dateModified": "2026-11-13",
-      "about": { "@id": "https://baryonlabs.github.io/baryon-ax/#app" },
-      "publisher": { "@id": "https://baryonlabs.github.io/baryon-ax/#org" },
-      "primaryImageOfPage": "https://baryonlabs.github.io/baryon-ax/assets/og.jpg"
+      "about": {
+        "@id": "https://baryonlabs.github.io/baryon-ax/#app"
+      },
+      "publisher": {
+        "@id": "https://baryonlabs.github.io/baryon-ax/#org"
+      },
+      "primaryImageOfPage": "https://baryonlabs.github.io/baryon-ax/assets/og.jpg",
+      "description": "Baryon AX는 문서·암묵지·메모리를 연결해 출처를 인용하는 온프레미스 AI 에이전트 플랫폼입니다. HWP·HWPX·PDF·Office를 파싱하고, 조직·역할 ACL과 감사 로그로 권한을 통제하며, Docker로 사내 서버에 설치하는 MIT 오픈소스입니다.",
+      "isPartOf": {
+        "@id": "https://baryonlabs.github.io/baryon-ax/#website"
+      }
     },
     {
       "@type": "FAQPage",
@@ -73,39 +92,158 @@
       "mainEntity": [
         {
           "@type": "Question",
+          "name": "Baryon AX는 무엇인가요?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Baryon AX는 사내 문서와 암묵지를 검색해 출처가 있는 답을 만드는 온프레미스 AI 에이전트 플랫폼입니다. RAG 검색 결과를 근거로 답변마다 출처와 청크를 인용하고, 조직·역할 기반 ACL과 감사 로그로 거버넌스를 유지합니다. MIT 라이선스 오픈소스이며 Docker Compose로 고객 환경에 직접 설치합니다."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "어떤 문서를 지원하나요?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "HWP·HWPX·PDF·Word·Excel·PowerPoint 등 Office 문서와 이미지·텍스트를 지원합니다. kordoc·docling·Tika 파서가 MIME 유형에 따라 자동 라우팅하고, 표·제목 같은 문서 구조를 인식해 청킹합니다. 검색과 인용은 사용자에게 부여된 문서 ACL 권한 범위 안에서만 이뤄집니다."
+          }
+        },
+        {
+          "@type": "Question",
           "name": "최소 하드웨어 사양은 무엇인가요?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Basic Core는 2 vCPU, 4GB RAM, 10GB 디스크로 데모 모델을 실행할 수 있습니다. Qdrant·PostgreSQL·Redis·Langfuse·Mem0를 포함하는 Full stack은 8 vCPU, 16GB RAM(권장 32GB), 100GB 디스크를 권장합니다. GPU 추론은 7B 모델 기준 RTX 4090 24GB 1장부터 시작합니다." }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Basic Core는 2 vCPU, 4GB RAM, 10GB 디스크로 데모 모델을 실행할 수 있습니다. Qdrant·PostgreSQL·Redis·Langfuse·Mem0를 포함하는 Full stack은 8 vCPU, 16GB RAM(권장 32GB), 100GB 디스크를 권장합니다. GPU 추론은 7B 모델 기준 RTX 4090 24GB 1장부터 시작합니다. 전체 표는 하드웨어 요구사항 에 있습니다."
+          }
         },
         {
           "@type": "Question",
           "name": "폐쇄망에서도 동작하나요?",
-          "acceptedAnswer": { "@type": "Answer", "text": "외부 인터넷은 필수가 아닙니다. Docker 이미지·모델 가중치·패키지를 사전에 미러링하면 폐쇄망에서 동작합니다. 자세한 내용은 저장소의 에어갭 가이드를 참고하세요." }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "외부 인터넷은 필수가 아닙니다. Docker 이미지·모델 가중치·패키지를 사전에 미러링하면 폐쇄망에서 동작합니다. 모델 서버와 데이터 저장소도 고객 네트워크 안에 둘 수 있습니다. 에어갭 구성은 저장소의 기능 문서를 참고하세요."
+          }
         },
         {
           "@type": "Question",
           "name": "어떤 모델을 지원하나요?",
-          "acceptedAnswer": { "@type": "Answer", "text": "OpenAI 호환 API를 제공하는 모델이면 연결할 수 있습니다. Ollama qwen2.5:7b와 vLLM Qwen3.5-27B(B300 GPU 7) 구성이 검증되어 있고, 모델이 없을 때는 demo-local 폴백으로 UI를 확인할 수 있습니다." }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "OpenAI 호환 API를 제공하는 모델이면 연결할 수 있습니다. Ollama qwen2.5:7b 와 vLLM Qwen3.5-27B (B300 GPU 7) 구성이 검증되어 있습니다. 모델이 없을 때는 demo-local 폴백으로 UI와 흐름을 확인할 수 있습니다."
+          }
         },
         {
           "@type": "Question",
           "name": "HWP/HWPX 문서도 처리할 수 있나요?",
-          "acceptedAnswer": { "@type": "Answer", "text": "네. kordoc 사이드카가 HWP/HWPX를 파싱하고, docling이 PDF·Office·이미지를, Tika가 레거시 형식을 보완합니다. parser 프로필을 함께 실행해야 하며, MIME 기반으로 파서가 자동 라우팅됩니다." }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "네. kordoc 사이드카가 HWP/HWPX를 파싱하고, docling이 PDF·Office·이미지를, Tika가 레거시 형식을 보완합니다. parser 프로필을 함께 실행해야 하며, MIME 기반으로 파서가 자동 라우팅됩니다."
+          }
         },
         {
           "@type": "Question",
           "name": "데이터는 어디에 저장되나요?",
-          "acceptedAnswer": { "@type": "Answer", "text": "문서 원본과 파싱 텍스트는 DOCUMENT_STORE에, 벡터는 Qdrant에, 감사 이벤트는 PostgreSQL과 JSONL 미러에, 메모리는 Mem0/Qdrant에 저장됩니다. 모든 저장소는 고객 환경 안에서 운영됩니다." }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "문서 원본과 파싱 텍스트는 DOCUMENT_STORE 에, 벡터는 Qdrant에, 감사 이벤트는 PostgreSQL과 JSONL 미러에, 메모리는 Mem0/Qdrant에 저장됩니다. 피드백·암묵지·지식 공백은 각각의 JSONL 저장소에 남습니다. 모든 저장소는 고객 환경 안에서 운영됩니다."
+          }
         },
         {
           "@type": "Question",
           "name": "보안은 어떻게 관리되나요?",
-          "acceptedAnswer": { "@type": "Answer", "text": "모든 PR은 security-sweep로 의존성 CVE·비밀값·설정 오류를 검사하고 P0/P1이면 머지를 차단합니다. 주 1회 이미지·SBOM·전체 git 히스토리 비밀값 스캔을 실행합니다. 운영 전 OIDC/JWT와 시크릿 관리 등은 docs/security.md를 따르세요." }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "모든 PR은 security-sweep 로 의존성 CVE·비밀값·설정 오류를 검사하고, P0/P1이면 머지를 차단합니다. 주 1회 이미지·SBOM·전체 git 히스토리 비밀값 스캔을 실행합니다. 운영 전 OIDC/JWT와 시크릿 관리 등은 보안 베이스라인 을 따르세요."
+          }
+        }
+      ]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#website",
+      "url": "https://baryonlabs.github.io/baryon-ax/",
+      "name": "Baryon AX",
+      "description": "On-premises AI agent and grounded RAG platform with citations, tacit knowledge, and governance.",
+      "inLanguage": [
+        "ko",
+        "en"
+      ],
+      "publisher": {
+        "@id": "https://baryonlabs.github.io/baryon-ax/#org"
+      }
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#source",
+      "name": "Baryon AX",
+      "description": "MIT-licensed on-premises AI agent and grounded RAG platform.",
+      "codeRepository": "https://github.com/baryonlabs/baryon-ax",
+      "license": "https://opensource.org/licenses/MIT",
+      "programmingLanguage": [
+        "Python",
+        "TypeScript"
+      ],
+      "runtimePlatform": "Docker, Kubernetes"
+    },
+    {
+      "@type": "HowTo",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#quickstart",
+      "name": "Docker로 Baryon AX 실행하기",
+      "totalTime": "PT10M",
+      "tool": [
+        {
+          "@type": "HowToTool",
+          "name": "Docker Compose"
+        }
+      ],
+      "step": [
+        {
+          "@type": "HowToStep",
+          "position": 1,
+          "name": "저장소 복제",
+          "text": "git clone https://github.com/baryonlabs/baryon-ax.git"
+        },
+        {
+          "@type": "HowToStep",
+          "position": 2,
+          "name": "환경 변수 준비",
+          "text": "cp .env.example .env"
+        },
+        {
+          "@type": "HowToStep",
+          "position": 3,
+          "name": "스택 실행",
+          "text": "docker compose up --build"
+        },
+        {
+          "@type": "HowToStep",
+          "position": 4,
+          "name": "접속",
+          "text": "http://localhost:3001 을 연다"
+        }
+      ]
+    },
+    {
+      "@type": "BreadcrumbList",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#breadcrumb",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Baryon AX",
+          "item": "https://baryonlabs.github.io/baryon-ax/"
         }
       ]
     }
   ]
-}
-</script>
+}</script>
+<meta property="og:image:secure_url" content="https://baryonlabs.github.io/baryon-ax/assets/og.jpg">
+<meta property="og:image:type" content="image/jpeg">
+<meta name="twitter:image:alt" content="Baryon AX — 근거로 답하는 온프레미스 AI 에이전트 플랫폼">
+<meta name="application-name" content="Baryon AX">
+<meta name="apple-mobile-web-app-title" content="Baryon AX">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="format-detection" content="telephone=no">
+<link rel="alternate" type="text/plain" href="https://baryonlabs.github.io/baryon-ax/llms.txt" title="LLM brief">
+<link rel="alternate" type="text/plain" href="https://baryonlabs.github.io/baryon-ax/llms-full.txt" title="Extended LLM brief">
 </head>
 <body>
 <a class="skip" href="#main">본문으로 바로가기</a>
@@ -140,7 +278,7 @@
       <div>
         <p class="release"><a href="https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0">v0.6.0 첫 릴리스</a> · Security CI 내장 · MIT</p>
         <h1>기업의 지식을,<br><span>근거로 답하는</span><br>온프레미스 AI로.</h1>
-        <p class="lead">Baryon AX는 문서·암묵지·메모리를 연결해 <strong>출처가 있는 답</strong>을 만드는 온프레미스 AI 에이전트 플랫폼입니다.</p>
+        <p class="lead">Baryon AX는 문서·암묵지·메모리를 연결해 <strong>출처가 있는 답</strong>을 만드는 온프레미스 AI 에이전트 플랫폼입니다. RAG로 사내 지식을 검색해 답변마다 출처를 인용하고, 암묵지 지식화와 조직 단위 거버넌스를 하나의 워크스페이스에서 운영합니다.</p>
         <p class="sub">Ollama·vLLM 등 OpenAI 호환 모델이면 무엇이든. 데이터는 고객 환경에 두고, 모든 답에는 검증 가능한 근거를 붙입니다.</p>
         <div class="cta">
           <a class="btn btn-primary" href="#start">빠른 시작</a>
@@ -156,7 +294,7 @@
       <div class="hero-visual">
         <div class="browser">
           <div class="browser-bar" aria-hidden="true"><span></span><span></span><span></span><em>baryon-ax · 근거 기반 채팅</em></div>
-          <img src="assets/screenshots/chat.webp" width="1200" height="974" alt="Baryon AX 근거 기반 채팅 화면. 답변 아래에 출처와 청크 번호가 표시됩니다.">
+          <img src="assets/screenshots/chat.webp" width="1200" height="974" loading="eager" fetchpriority="high" decoding="async" alt="Baryon AX 근거 기반 채팅 화면. 답변 아래에 출처와 청크 번호가 표시됩니다.">
         </div>
         <div class="float-card float-citations"><strong>출처 3건</strong><span>문서 · 청크 단위 인용</span></div>
         <div class="float-card float-mascot"><img src="assets/mascots/chat.svg" alt="" width="34" height="34"><span>근거 기반<br>답변</span></div>
@@ -248,19 +386,19 @@
       </div>
       <div class="gallery">
         <figure>
-          <img src="assets/screenshots/chat.webp" width="1200" height="974" alt="근거 기반 채팅과 출처, 처리 과정 패널" loading="lazy">
+          <img src="assets/screenshots/chat.webp" width="1200" height="974" alt="Baryon AX 근거 기반 채팅 화면: 답변 아래 출처·청크 인용과 처리 과정별 지연 시간" loading="lazy">
           <figcaption><strong>근거 기반 채팅</strong>답변 아래 출처·청크, 처리 과정별 지연 시간.</figcaption>
         </figure>
         <figure>
-          <img src="assets/screenshots/knowledge.webp" width="1200" height="792" alt="지식 라이브러리와 지원 형식 배지" loading="lazy">
+          <img src="assets/screenshots/knowledge.webp" width="1200" height="792" alt="Baryon AX 지식 라이브러리 화면: 업로드된 문서 목록과 HWP·PDF·Office 형식 배지, 청크 수" loading="lazy">
           <figcaption><strong>지식 라이브러리</strong>드래그 앤 드롭 업로드, 형식 배지, 청크 수.</figcaption>
         </figure>
         <figure>
-          <img src="assets/screenshots/tacit.webp" width="1100" height="1051" alt="암묵지 생성 근거와 게시 상태" loading="lazy">
+          <img src="assets/screenshots/tacit.webp" width="1100" height="1051" alt="Baryon AX 암묵지 생성 화면: 질문 큐, 생성된 답변, 게시된 문서와 생성 근거 경로" loading="lazy">
           <figcaption><strong>암묵지 · 생성 근거</strong>질문 큐, 답변, 게시 문서, 생성 경로.</figcaption>
         </figure>
         <figure>
-          <img src="assets/screenshots/governance.webp" width="1200" height="792" alt="감사 로그와 거버넌스 화면" loading="lazy">
+          <img src="assets/screenshots/governance.webp" width="1200" height="792" alt="Baryon AX 거버넌스 화면: 조직 감사 이벤트 목록과 추적 ID, 사용자, 지연 시간" loading="lazy">
           <figcaption><strong>거버넌스 · 감사</strong>조직 이벤트, 추적 ID, 사용자, 지연 시간.</figcaption>
         </figure>
       </div>
@@ -382,6 +520,14 @@ docker compose down
       <div class="faq">
         <h3>자주 묻는 질문</h3>
         <details>
+          <summary>Baryon AX는 무엇인가요?</summary>
+          <p>Baryon AX는 사내 문서와 암묵지를 검색해 출처가 있는 답을 만드는 온프레미스 AI 에이전트 플랫폼입니다. RAG 검색 결과를 근거로 답변마다 출처와 청크를 인용하고, 조직·역할 기반 ACL과 감사 로그로 거버넌스를 유지합니다. MIT 라이선스 오픈소스이며 Docker Compose로 고객 환경에 직접 설치합니다.</p>
+        </details>
+        <details>
+          <summary>어떤 문서를 지원하나요?</summary>
+          <p>HWP·HWPX·PDF·Word·Excel·PowerPoint 등 Office 문서와 이미지·텍스트를 지원합니다. kordoc·docling·Tika 파서가 MIME 유형에 따라 자동 라우팅하고, 표·제목 같은 문서 구조를 인식해 청킹합니다. 검색과 인용은 사용자에게 부여된 문서 ACL 권한 범위 안에서만 이뤄집니다.</p>
+        </details>
+        <details>
           <summary>최소 하드웨어 사양은 무엇인가요?</summary>
           <p>Basic Core는 2 vCPU, 4GB RAM, 10GB 디스크로 데모 모델을 실행할 수 있습니다. Qdrant·PostgreSQL·Redis·Langfuse·Mem0를 포함하는 Full stack은 8 vCPU, 16GB RAM(권장 32GB), 100GB 디스크를 권장합니다. GPU 추론은 7B 모델 기준 RTX 4090 24GB 1장부터 시작합니다. 전체 표는 <a href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md">하드웨어 요구사항</a>에 있습니다.</p>
         </details>
@@ -467,6 +613,7 @@ docker compose down
         <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/features.md"><span>기능 인벤토리</span><span>08</span></a>
         <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md"><span>하드웨어 요구사항</span><span>09</span></a>
         <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/screenshots.md"><span>화면 갤러리</span><span>10</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/open-source.md"><span>오픈소스 구성 요소 · 라이선스</span><span>11</span></a>
       </div>
     </div>
   </section>
@@ -483,15 +630,18 @@ docker compose down
         <p>온프레미스 AI 에이전트와 근거 기반 채팅을 위한 오픈소스 Basic Core. 데이터는 고객 환경에, 답에는 근거를.</p>
       </div>
       <nav class="footer-links" aria-label="푸터 링크">
-        <a href="https://github.com/baryonlabs/baryon-ax">GitHub</a>
-        <a href="https://github.com/baryonlabs/baryon-ax/releases">Releases</a>
-        <a href="https://github.com/baryonlabs/baryon-ax/issues">Issues</a>
-        <a href="https://github.com/baryonlabs/baryon-ax/blob/main/SECURITY.md">Security</a>
-        <a href="https://github.com/baryonlabs/baryon-ax/blob/main/LICENSE">MIT License</a>
+        <a href="https://github.com/baryonlabs/baryon-ax">Baryon AX GitHub 저장소</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/releases">릴리스 노트</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/issues">이슈 트래커</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/security-ci.md">Security CI 런북</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/open-source.md">오픈소스 구성 요소 가이드</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/blob/main/SECURITY.md">보안 정책</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/blob/main/LICENSE">MIT 라이선스</a>
       </nav>
     </div>
     <div class="footer-bottom">
       <span>© 2026 Baryon Labs</span>
+      <span>최종 업데이트: <time datetime="2026-11-13">2026-11-13</time> · Baryon Labs</span>
       <span>Built with FastAPI · React · Qdrant · LangGraph · Mem0</span>
     </div>
   </div>

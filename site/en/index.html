@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Baryon AX — On-premises AI agents with grounded answers</title>
-<meta name="description" content="Baryon AX is an on-premises AI agent platform that connects documents, tacit knowledge, and memory to produce answers with verifiable sources. OpenAI-compatible models, Qdrant retrieval, governance, and security CI in one stack.">
+<title>Baryon AX — On-premises AI Agents with Grounded RAG</title>
+<meta name="description" content="Baryon AX: MIT-licensed on-premises AI agent platform on Docker with grounded RAG citations, HWP/HWPX/PDF/Office parsing, org and role ACLs, and audit logs.">
 <link rel="canonical" href="https://baryonlabs.github.io/baryon-ax/en/">
 <link rel="alternate" hreflang="ko" href="https://baryonlabs.github.io/baryon-ax/">
 <link rel="alternate" hreflang="en" href="https://baryonlabs.github.io/baryon-ax/en/">
@@ -15,59 +15,235 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Baryon AX">
 <meta property="og:locale" content="en_US">
-<meta property="og:title" content="Baryon AX — On-premises AI agents with grounded answers">
-<meta property="og:description" content="Connect documents, tacit knowledge, and memory to produce answers with verifiable sources. OpenAI-compatible models, Qdrant retrieval, governance, and security CI.">
+<meta property="og:title" content="Baryon AX — On-premises AI Agents with Grounded RAG">
+<meta property="og:description" content="Baryon AX: MIT-licensed on-premises AI agent platform on Docker with grounded RAG citations, HWP/HWPX/PDF/Office parsing, org and role ACLs, and audit logs.">
 <meta property="og:url" content="https://baryonlabs.github.io/baryon-ax/en/">
-<meta property="og:image" content="https://baryonlabs.github.io/baryon-ax/assets/og.jpg">
+<meta property="og:image" content="https://baryonlabs.github.io/baryon-ax/assets/og-en.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Baryon AX — On-premises AI agents with grounded answers">
+<meta property="og:image:alt" content="Baryon AX — on-premises AI agents with grounded RAG and citations">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Baryon AX — On-premises AI agents with grounded answers">
-<meta name="twitter:description" content="Connect documents, tacit knowledge, and memory to produce answers with verifiable sources.">
-<meta name="twitter:image" content="https://baryonlabs.github.io/baryon-ax/assets/og.jpg">
+<meta name="twitter:title" content="Baryon AX — On-premises AI Agents with Grounded RAG">
+<meta name="twitter:description" content="Baryon AX: MIT-licensed on-premises AI agent platform on Docker with grounded RAG citations, HWP/HWPX/PDF/Office parsing, org and role ACLs, and audit logs.">
+<meta name="twitter:image" content="https://baryonlabs.github.io/baryon-ax/assets/og-en.jpg">
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../assets/style.css">
-<script type="application/ld+json">
-{
+<script type="application/ld+json">{
   "@context": "https://schema.org",
   "@graph": [
     {
       "@type": "Organization",
       "@id": "https://baryonlabs.github.io/baryon-ax/#org",
       "name": "Baryon Labs",
-      "url": "https://github.com/baryonlabs"
+      "url": "https://github.com/baryonlabs",
+      "sameAs": "https://github.com/baryonlabs"
     },
     {
       "@type": "SoftwareApplication",
       "@id": "https://baryonlabs.github.io/baryon-ax/#app",
       "name": "Baryon AX",
       "description": "On-premises AI agent platform for grounded chat, document knowledge, tacit-knowledge capture, and governance.",
-      "url": "https://baryonlabs.github.io/baryon-ax/en/",
+      "url": "https://baryonlabs.github.io/baryon-ax/",
       "downloadUrl": "https://github.com/baryonlabs/baryon-ax",
       "applicationCategory": "BusinessApplication",
       "applicationSubCategory": "AI agents and grounded chat",
       "operatingSystem": "Linux, macOS",
       "softwareVersion": "0.6.0",
       "datePublished": "2026-11-13",
-      "image": "https://baryonlabs.github.io/baryon-ax/assets/og.jpg",
+      "image": "https://baryonlabs.github.io/baryon-ax/assets/og-en.jpg",
       "license": "https://opensource.org/licenses/MIT",
-      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-      "author": { "@id": "https://baryonlabs.github.io/baryon-ax/#org" }
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": {
+        "@id": "https://baryonlabs.github.io/baryon-ax/#org"
+      },
+      "screenshot": "https://baryonlabs.github.io/baryon-ax/assets/og-en.jpg",
+      "sameAs": "https://github.com/baryonlabs/baryon-ax",
+      "softwareHelp": "https://baryonlabs.github.io/baryon-ax/en/"
     },
     {
       "@type": "WebPage",
       "@id": "https://baryonlabs.github.io/baryon-ax/en/#page",
       "url": "https://baryonlabs.github.io/baryon-ax/en/",
-      "name": "Baryon AX — On-premises AI agents with grounded answers",
+      "name": "Baryon AX — On-premises AI Agents with Grounded RAG",
       "inLanguage": "en",
       "dateModified": "2026-11-13",
-      "about": { "@id": "https://baryonlabs.github.io/baryon-ax/#app" },
-      "primaryImageOfPage": "https://baryonlabs.github.io/baryon-ax/assets/og.jpg"
+      "about": {
+        "@id": "https://baryonlabs.github.io/baryon-ax/#app"
+      },
+      "primaryImageOfPage": "https://baryonlabs.github.io/baryon-ax/assets/og-en.jpg",
+      "description": "Baryon AX: MIT-licensed on-premises AI agent platform on Docker with grounded RAG citations, HWP/HWPX/PDF/Office parsing, org and role ACLs, and audit logs.",
+      "isPartOf": {
+        "@id": "https://baryonlabs.github.io/baryon-ax/#website"
+      }
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#website",
+      "url": "https://baryonlabs.github.io/baryon-ax/",
+      "name": "Baryon AX",
+      "description": "On-premises AI agent and grounded RAG platform with citations, tacit knowledge, and governance.",
+      "inLanguage": [
+        "ko",
+        "en"
+      ],
+      "publisher": {
+        "@id": "https://baryonlabs.github.io/baryon-ax/#org"
+      }
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#source",
+      "name": "Baryon AX",
+      "description": "MIT-licensed on-premises AI agent and grounded RAG platform.",
+      "codeRepository": "https://github.com/baryonlabs/baryon-ax",
+      "license": "https://opensource.org/licenses/MIT",
+      "programmingLanguage": [
+        "Python",
+        "TypeScript"
+      ],
+      "runtimePlatform": "Docker, Kubernetes"
+    },
+    {
+      "@type": "HowTo",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#quickstart",
+      "name": "Run Baryon AX with Docker",
+      "totalTime": "PT10M",
+      "tool": [
+        {
+          "@type": "HowToTool",
+          "name": "Docker Compose"
+        }
+      ],
+      "step": [
+        {
+          "@type": "HowToStep",
+          "position": 1,
+          "name": "Clone the repository",
+          "text": "git clone https://github.com/baryonlabs/baryon-ax.git"
+        },
+        {
+          "@type": "HowToStep",
+          "position": 2,
+          "name": "Prepare environment variables",
+          "text": "cp .env.example .env"
+        },
+        {
+          "@type": "HowToStep",
+          "position": 3,
+          "name": "Start the stack",
+          "text": "docker compose up --build"
+        },
+        {
+          "@type": "HowToStep",
+          "position": 4,
+          "name": "Open the UI",
+          "text": "http://localhost:3001"
+        }
+      ]
+    },
+    {
+      "@type": "BreadcrumbList",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#breadcrumb",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Baryon AX",
+          "item": "https://baryonlabs.github.io/baryon-ax/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "English",
+          "item": "https://baryonlabs.github.io/baryon-ax/en/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is Baryon AX?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Baryon AX is an open-source, on-premises AI agent platform that runs grounded RAG over your own documents, tacit knowledge, and memory, then answers with source citations. It ships with organization and role access control, audit logging, and model-agnostic inference, so enterprise knowledge is retrieved, cited, and audited without leaving your network."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What are the minimum hardware requirements?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The Basic Core runs on 2 vCPU, 4GB RAM, and 10GB disk with the demo model. The full stack (Qdrant, PostgreSQL, Redis, Langfuse, Mem0) recommends 8 vCPU, 16GB RAM (32GB recommended), and 100GB disk. GPU inference starts with an RTX 4090 24GB for a 7B model. See hardware requirements ."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does it work in an air-gapped network?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Baryon AX runs fully offline with no outbound calls required. Mirror the Docker images, model weights, and packages, then keep the model, vector store, and document stores inside your network. See the open-source component and license inventory for what to mirror."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which models are supported?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Any model that exposes an OpenAI-compatible API. Ollama qwen2.5:7b and vLLM Qwen3.5-27B on B300 GPU 7 are validated. Without a model, the demo-local fallback still demonstrates the UI and flow."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which document formats are supported?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "HWP and HWPX through the kordoc parser, PDF, Office formats (DOCX, XLSX, PPTX), images, and plain text through docling, and legacy formats through Tika, all selected by MIME type. Parsed text is chunked with structure awareness before indexing in Qdrant, and original files stay in your own document store."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do answers stay grounded, and can I check the citations?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Every answer carries document- and chunk-level citations pointing at the exact passage used, and the pipeline trace shows each retrieval and generation step with its latency. When retrieval finds no usable grounding, Baryon AX says so instead of guessing, and source files open only after the requester passes the organization and role ACL check."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can it parse HWP/HWPX documents?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. The kordoc sidecar parses HWP/HWPX, docling handles PDF, Office, and images, and Tika covers legacy formats. Start the parser profile; MIME-based routing selects the parser automatically."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Where is data stored?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Original files and parsed text live in DOCUMENT_STORE , vectors in Qdrant, audit events in PostgreSQL plus a JSONL mirror, and memory in Mem0/Qdrant. Feedback, tacit knowledge, and knowledge gaps use their own JSONL stores. All stores remain inside your environment."
+          }
+        }
+      ]
     }
   ]
-}
-</script>
+}</script>
+<meta property="og:image:secure_url" content="https://baryonlabs.github.io/baryon-ax/assets/og-en.jpg">
+<meta property="og:image:type" content="image/jpeg">
+<meta name="twitter:image:alt" content="Baryon AX — on-premises AI agents with grounded RAG and citations">
+<meta name="application-name" content="Baryon AX">
+<meta name="apple-mobile-web-app-title" content="Baryon AX">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="format-detection" content="telephone=no">
+<link rel="alternate" type="text/plain" href="https://baryonlabs.github.io/baryon-ax/llms.txt" title="LLM brief">
+<link rel="alternate" type="text/plain" href="https://baryonlabs.github.io/baryon-ax/llms-full.txt" title="Extended LLM brief">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -102,7 +278,7 @@
       <div>
         <p class="release"><a href="https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0">v0.6.0 first release</a> · Security CI included · MIT</p>
         <h1>Enterprise knowledge,<br><span>answered with evidence</span><br>on your premises.</h1>
-        <p class="lead">Baryon AX is an on-premises AI agent platform that connects documents, tacit knowledge, and memory to produce <strong>answers with verifiable sources</strong>.</p>
+        <p class="lead"><strong>Baryon AX is an on-premises AI agent platform for grounded RAG.</strong> It retrieves from your own documents, tacit knowledge, and memory, then answers with source citations under organization-level access control and audit.</p>
         <p class="sub">Any OpenAI-compatible model — Ollama, vLLM, or your own gateway. Keep data inside your environment and attach evidence to every answer.</p>
         <div class="cta">
           <a class="btn btn-primary" href="#start">Quick start</a>
@@ -118,7 +294,7 @@
       <div class="hero-visual">
         <div class="browser">
           <div class="browser-bar" aria-hidden="true"><span></span><span></span><span></span><em>baryon-ax · grounded chat</em></div>
-          <img src="../assets/screenshots/chat.webp" width="1200" height="974" alt="Baryon AX grounded chat with citations and a pipeline trace.">
+          <img src="../assets/screenshots/chat.webp" width="1200" height="974" loading="eager" fetchpriority="high" decoding="async" alt="Baryon AX grounded chat showing a cited answer with three numbered document sources and a per-step retrieval and generation trace.">
         </div>
         <div class="float-card float-citations"><strong>3 sources</strong><span>document · chunk citations</span></div>
         <div class="float-card float-mascot"><img src="../assets/mascots/chat.svg" alt="" width="34" height="34"><span>Grounded<br>answers</span></div>
@@ -185,10 +361,10 @@
         <p>Qwen3.5-27B (vLLM), Qdrant, PostgreSQL, Redis, Langfuse, and Mem0 connected, captured as an administrator.</p>
       </div>
       <div class="gallery">
-        <figure><img src="../assets/screenshots/chat.webp" width="1200" height="974" alt="Grounded chat with citations and pipeline trace" loading="lazy"><figcaption><strong>Grounded chat</strong>Sources and chunks under each answer, with per-step latency.</figcaption></figure>
-        <figure><img src="../assets/screenshots/knowledge.webp" width="1200" height="792" alt="Knowledge library with format badges" loading="lazy"><figcaption><strong>Knowledge library</strong>Drag-and-drop upload, format badges, and chunk counts.</figcaption></figure>
-        <figure><img src="../assets/screenshots/tacit.webp" width="1100" height="1051" alt="Tacit knowledge provenance" loading="lazy"><figcaption><strong>Tacit knowledge</strong>Question queue, answers, published docs, and provenance.</figcaption></figure>
-        <figure><img src="../assets/screenshots/governance.webp" width="1200" height="792" alt="Governance and audit log" loading="lazy"><figcaption><strong>Governance & audit</strong>Organization events, trace ids, users, and latency.</figcaption></figure>
+        <figure><img src="../assets/screenshots/chat.webp" width="1200" height="974" alt="Baryon AX grounded chat answer with source and chunk citations plus per-step latency in the pipeline trace" loading="lazy"><figcaption><strong>Grounded chat</strong>Sources and chunks under each answer, with per-step latency.</figcaption></figure>
+        <figure><img src="../assets/screenshots/knowledge.webp" width="1200" height="792" alt="Baryon AX knowledge library with drag-and-drop upload, HWP, PDF, and Office format badges, and chunk counts" loading="lazy"><figcaption><strong>Knowledge library</strong>Drag-and-drop upload, format badges, and chunk counts.</figcaption></figure>
+        <figure><img src="../assets/screenshots/tacit.webp" width="1100" height="1051" alt="Baryon AX tacit knowledge queue listing questions, reviewed answers, published documents, and provenance" loading="lazy"><figcaption><strong>Tacit knowledge</strong>Question queue, answers, published docs, and provenance.</figcaption></figure>
+        <figure><img src="../assets/screenshots/governance.webp" width="1200" height="792" alt="Baryon AX governance and audit log with organization events, trace ids, users, and request latency" loading="lazy"><figcaption><strong>Governance & audit</strong>Organization events, trace ids, users, and latency.</figcaption></figure>
       </div>
       <p class="center"><a class="text-link" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/screenshots.md">Open the full gallery</a></p>
     </div>
@@ -257,9 +433,12 @@ docker compose down
       </div>
       <div class="faq">
         <h3>Frequently asked questions</h3>
+        <details><summary>What is Baryon AX?</summary><p>Baryon AX is an open-source, on-premises AI agent platform that runs grounded RAG over your own documents, tacit knowledge, and memory, then answers with source citations. It ships with organization and role access control, audit logging, and model-agnostic inference, so enterprise knowledge is retrieved, cited, and audited without leaving your network.</p></details>
         <details><summary>What are the minimum hardware requirements?</summary><p>The Basic Core runs on 2 vCPU, 4GB RAM, and 10GB disk with the demo model. The full stack (Qdrant, PostgreSQL, Redis, Langfuse, Mem0) recommends 8 vCPU, 16GB RAM (32GB recommended), and 100GB disk. GPU inference starts with an RTX 4090 24GB for a 7B model. See <a href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md">hardware requirements</a>.</p></details>
-        <details><summary>Does it work in an air-gapped network?</summary><p>Yes. Internet access is optional. Mirror the Docker images, model weights, and packages, and keep the model and data stores inside your network. See the repository's air-gap guidance.</p></details>
+        <details><summary>Does it work in an air-gapped network?</summary><p>Yes. Baryon AX runs fully offline with no outbound calls required. Mirror the Docker images, model weights, and packages, then keep the model, vector store, and document stores inside your network. See the <a href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/open-source.md">open-source component and license inventory</a> for what to mirror.</p></details>
         <details><summary>Which models are supported?</summary><p>Any model that exposes an OpenAI-compatible API. Ollama <code>qwen2.5:7b</code> and vLLM <code>Qwen3.5-27B</code> on B300 GPU 7 are validated. Without a model, the <code>demo-local</code> fallback still demonstrates the UI and flow.</p></details>
+        <details><summary>Which document formats are supported?</summary><p>HWP and HWPX through the kordoc parser, PDF, Office formats (DOCX, XLSX, PPTX), images, and plain text through docling, and legacy formats through Tika, all selected by MIME type. Parsed text is chunked with structure awareness before indexing in Qdrant, and original files stay in your own document store.</p></details>
+        <details><summary>How do answers stay grounded, and can I check the citations?</summary><p>Every answer carries document- and chunk-level citations pointing at the exact passage used, and the pipeline trace shows each retrieval and generation step with its latency. When retrieval finds no usable grounding, Baryon AX says so instead of guessing, and source files open only after the requester passes the organization and role ACL check.</p></details>
         <details><summary>Can it parse HWP/HWPX documents?</summary><p>Yes. The kordoc sidecar parses HWP/HWPX, docling handles PDF, Office, and images, and Tika covers legacy formats. Start the parser profile; MIME-based routing selects the parser automatically.</p></details>
         <details><summary>Where is data stored?</summary><p>Original files and parsed text live in <code>DOCUMENT_STORE</code>, vectors in Qdrant, audit events in PostgreSQL plus a JSONL mirror, and memory in Mem0/Qdrant. Feedback, tacit knowledge, and knowledge gaps use their own JSONL stores. All stores remain inside your environment.</p></details>
         <details><summary>How is security handled?</summary><p>Every pull request runs <a href="https://github.com/baryonlabs/security-sweep">security-sweep</a> for dependency CVEs, secrets, and configuration errors; P0/P1 findings block the merge. A weekly job scans images, SBOMs, and the full git history. For production, follow the <a href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/security.md">security baseline</a> for OIDC/JWT and secret management.</p></details>
@@ -314,6 +493,8 @@ docker compose down
         <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/features.md"><span>Feature inventory</span><span>08</span></a>
         <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md"><span>Hardware requirements</span><span>09</span></a>
         <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/screenshots.md"><span>Screenshot gallery</span><span>10</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/open-source.md"><span>Open-source components and licenses</span><span>11</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax"><span>Source code on GitHub</span><span>12</span></a>
       </div>
     </div>
   </section>
@@ -327,14 +508,16 @@ docker compose down
         <p>An open-source Basic Core for on-premises AI agents and grounded chat. Data inside, evidence in every answer.</p>
       </div>
       <nav class="footer-links" aria-label="Footer links">
-        <a href="https://github.com/baryonlabs/baryon-ax">GitHub</a>
+        <a href="https://github.com/baryonlabs/baryon-ax">Baryon AX source code on GitHub</a>
         <a href="https://github.com/baryonlabs/baryon-ax/releases">Releases</a>
         <a href="https://github.com/baryonlabs/baryon-ax/issues">Issues</a>
-        <a href="https://github.com/baryonlabs/baryon-ax/blob/main/SECURITY.md">Security</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/security-ci.md">Security CI runbook</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/open-source.md">Open-source components and licenses</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/blob/main/SECURITY.md">Security policy</a>
         <a href="https://github.com/baryonlabs/baryon-ax/blob/main/LICENSE">MIT License</a>
       </nav>
     </div>
-    <div class="footer-bottom"><span>© 2026 Baryon Labs</span><span>Built with FastAPI · React · Qdrant · LangGraph · Mem0</span></div>
+    <div class="footer-bottom"><span>© 2026 Baryon Labs</span><span>Last updated: 2026-11-13 · Baryon Labs</span><span>Built with FastAPI · React · Qdrant · LangGraph · Mem0</span></div>
   </div>
 </footer>
 
