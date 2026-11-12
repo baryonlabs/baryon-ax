@@ -3,6 +3,8 @@
 [![CI](https://github.com/baryonlabs/baryon-ax/actions/workflows/ci.yml/badge.svg)](https://github.com/baryonlabs/baryon-ax/actions/workflows/ci.yml)
 [![security-sweep](https://github.com/baryonlabs/baryon-ax/actions/workflows/security-sweep.yml/badge.svg)](https://github.com/baryonlabs/baryon-ax/actions/workflows/security-sweep.yml)
 
+[Website](https://baryonlabs.github.io/baryon-ax/) · [도움말](https://baryonlabs.github.io/baryon-ax/#help) · [빠른 시작](#quick-start) · [릴리스](https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0)
+
 **Baryon AX** is an on-premises, model-agnostic foundation for enterprise AI agents and grounded chat.
 
 > Connect models. Orchestrate agents. Ground knowledge. Observe everything.
@@ -184,6 +186,7 @@ See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/b300-v
 | --- | --- |
 | `GET /health` | Liveness and configured adapter status |
 | `GET /v1/models` | Models visible to the caller |
+| `GET /v1/open-source` | License inventory for the Settings → Open Source screen |
 | `POST /v1/chat/completions` | OpenAI-style chat completion, including SSE streaming |
 | `POST /v1/documents` | Upload a document (MIME-routed; `?async=true` returns a job id) |
 | `GET /v1/jobs/{job_id}` | Async ingest job state and chunk count |
@@ -217,6 +220,7 @@ apps/api/       FastAPI control plane and API
 apps/web/       React + Vite chat UI
 deploy/         Compose and Kubernetes deployment assets
 docs/           Architecture, operations, security, full-stack, B300 deployment, research, inventory
+site/           Introduction, help, and GitHub Pages site
 scripts/        Ollama proxy, B300 vLLM serve/tunnel, full-stack smoke
 ```
 

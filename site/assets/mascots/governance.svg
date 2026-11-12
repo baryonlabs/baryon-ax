@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Governance shiba mascot">
+  <rect width="64" height="64" rx="16" fill="#172a44"/>
+  <circle cx="54" cy="10" r="16" fill="#7fe0b4" opacity=".18"/>
+  <path d="M17 24 15 10l12 7zM47 24 49 10 37 17z" fill="#e8c691"/>
+  <path d="M18.5 21 17.5 14l6 3.8zM45.5 21 46.5 14l-6 3.8z" fill="#ffd9b5"/>
+  <ellipse cx="32" cy="35" rx="19" ry="17" fill="#f1d3a3"/>
+  <ellipse cx="32" cy="42" rx="12" ry="8.5" fill="#fff4df"/>
+  <circle cx="24.5" cy="33" r="2.7" fill="#2a2118"/>
+  <circle cx="39.5" cy="33" r="2.7" fill="#2a2118"/>
+  <circle cx="25.3" cy="32.2" r=".9" fill="#fff"/>
+  <circle cx="40.3" cy="32.2" r=".9" fill="#fff"/>
+  <circle cx="21" cy="29" r="2" fill="#fff4df"/>
+  <circle cx="43" cy="29" r="2" fill="#fff4df"/>
+  <path d="M29 38h6l-3 3z" fill="#3a2a1d"/>
+  <path d="M32 41c-.7 1.8-2.8 2-3.8.7M32 41c.7 1.8 2.8 2 3.8.7" fill="none" stroke="#3a2a1d" stroke-width="1.5" stroke-linecap="round"/>
+  <g transform="translate(45 43)">
+    <path d="M0 0h13v8c0 6-6.5 10-6.5 10S0 14 0 8z" fill="#64d9a5"/>
+    <path d="M4 8l2 2 3.5-4" fill="none" stroke="#0b1220" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

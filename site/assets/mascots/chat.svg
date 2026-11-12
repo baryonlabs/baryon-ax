@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Chat cat mascot">
+  <rect width="64" height="64" rx="16" fill="#172a44"/>
+  <circle cx="54" cy="10" r="16" fill="#7fb0ff" opacity=".18"/>
+  <path d="M18 23 16 9l14 8z" fill="#f0a35e"/>
+  <path d="M46 23 48 9 34 17z" fill="#f0a35e"/>
+  <path d="M19.5 20 18.5 13l7 4.5z" fill="#ffc9a3"/>
+  <path d="M44.5 20 45.5 13l-7 4.5z" fill="#ffc9a3"/>
+  <ellipse cx="32" cy="35" rx="20" ry="17" fill="#f0a35e"/>
+  <ellipse cx="32" cy="41" rx="11.5" ry="8" fill="#ffe3c7"/>
+  <circle cx="25" cy="33" r="2.8" fill="#172033"/>
+  <circle cx="39" cy="33" r="2.8" fill="#172033"/>
+  <circle cx="25.9" cy="32.1" r=".9" fill="#fff"/>
+  <circle cx="39.9" cy="32.1" r=".9" fill="#fff"/>
+  <path d="M30 39h4l-2 2.6z" fill="#8a4b2a"/>
+  <path d="M32 41.6c-.8 2-3.2 2.2-4.4.8M32 41.6c.8 2 3.2 2.2 4.4.8" fill="none" stroke="#8a4b2a" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M14 36h7M14 41h7M43 36h7M43 41h7" stroke="#b86a3a" stroke-width="1.4" stroke-linecap="round"/>
+  <g>
+    <rect x="44" y="7" width="14" height="10" rx="5" fill="#dceaff"/>
+    <path d="M49 16l-1 4 4-3z" fill="#dceaff"/>
+    <circle cx="48.5" cy="12" r="1" fill="#4a6fa5"/>
+    <circle cx="51.5" cy="12" r="1" fill="#4a6fa5"/>
+    <circle cx="54.5" cy="12" r="1" fill="#4a6fa5"/>
+  </g>
+</svg>

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Tacit knowledge otter mascot">
+  <rect width="64" height="64" rx="16" fill="#172a44"/>
+  <circle cx="54" cy="10" r="16" fill="#f0b45a" opacity=".2"/>
+  <circle cx="16" cy="24" r="6" fill="#b97a4e"/>
+  <circle cx="48" cy="24" r="6" fill="#b97a4e"/>
+  <circle cx="32" cy="32" r="19" fill="#b97a4e"/>
+  <ellipse cx="32" cy="39" rx="12" ry="9" fill="#f2d3b3"/>
+  <circle cx="25" cy="30" r="2.7" fill="#251a14"/>
+  <circle cx="39" cy="30" r="2.7" fill="#251a14"/>
+  <circle cx="25.8" cy="29.2" r=".9" fill="#fff"/>
+  <circle cx="39.8" cy="29.2" r=".9" fill="#fff"/>
+  <path d="M29.5 36h5l-2.5 2.8z" fill="#4b2e1e"/>
+  <path d="M32 38.8v1.7M32 40.5c-1.2 1.6-3 1.4-4 .2M32 40.5c1.2 1.6 3 1.4 4 .2" fill="none" stroke="#4b2e1e" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M15 37h6M15 41h6M43 37h6M43 41h6" stroke="#8f5a38" stroke-width="1.3" stroke-linecap="round"/>
+  <g transform="rotate(10 48 50)">
+    <rect x="41" y="44" width="16" height="13" rx="2.5" fill="#ffe2a8"/>
+    <rect x="41" y="44" width="16" height="13" rx="2.5" fill="none" stroke="#d9a945" stroke-width="1.2"/>
+    <path d="M45 48h8M45 51h8M45 54h5" stroke="#c98f2e" stroke-width="1.2" stroke-linecap="round"/>
+  </g>
+  <circle cx="42" cy="46" r="3.2" fill="#8f5a38"/>
+</svg>

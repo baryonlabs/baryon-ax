@@ -379,6 +379,21 @@ async function main() {
     }
   });
 
+  await step("settings open-source tab lists licenses and links", async () => {
+    await page.getByRole("tab", { name: "오픈소스" }).click();
+    await page.waitForTimeout(600);
+    await expectText(".open-source-panel", "FastAPI");
+    await expectText(".open-source-panel", "MIT");
+    const href = await page.locator(".os-row", { hasText: "FastAPI" }).locator("a").getAttribute("href");
+    if (href !== "https://github.com/fastapi/fastapi") throw new Error(`unexpected link: ${href}`);
+    await page.locator(".search-field input").fill("kordoc");
+    await page.waitForTimeout(300);
+    const rows = await page.locator(".os-row").count();
+    if (rows !== 1) throw new Error(`expected 1 filtered row, got ${rows}`);
+    await page.locator(".search-field input").fill("");
+    await page.waitForTimeout(300);
+  });
+
   await step("settings quick link navigates", async () => {
     await page.locator(".quick-links").getByRole("button", { name: "채팅", exact: true }).click();
     await expectText("header h1", "근거 기반 채팅");

@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Baryon AX — 근거로 답하는 온프레미스 AI 에이전트</title>
+<meta name="description" content="Baryon AX는 문서·암묵지·메모리를 연결해 출처가 있는 답을 만드는 온프레미스 AI 에이전트 플랫폼입니다. OpenAI 호환 모델, Qdrant 검색, 조직·역할 거버넌스, PR 보안 CI를 한 구성으로 제공합니다.">
+<link rel="canonical" href="https://baryonlabs.github.io/baryon-ax/">
+<link rel="alternate" hreflang="ko" href="https://baryonlabs.github.io/baryon-ax/">
+<link rel="alternate" hreflang="en" href="https://baryonlabs.github.io/baryon-ax/en/">
+<link rel="alternate" hreflang="x-default" href="https://baryonlabs.github.io/baryon-ax/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0b1020">
+<meta name="author" content="Baryon Labs">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Baryon AX">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:title" content="Baryon AX — 근거로 답하는 온프레미스 AI 에이전트">
+<meta property="og:description" content="문서·암묵지·메모리를 연결해 출처가 있는 답을 만드는 온프레미스 AI 에이전트 플랫폼. OpenAI 호환 모델, Qdrant 검색, 거버넌스, 보안 CI를 포함합니다.">
+<meta property="og:url" content="https://baryonlabs.github.io/baryon-ax/">
+<meta property="og:image" content="https://baryonlabs.github.io/baryon-ax/assets/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Baryon AX — On-premises AI agents with grounded answers">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Baryon AX — 근거로 답하는 온프레미스 AI 에이전트">
+<meta name="twitter:description" content="문서·암묵지·메모리를 연결해 출처가 있는 답을 만드는 온프레미스 AI 에이전트 플랫폼.">
+<meta name="twitter:image" content="https://baryonlabs.github.io/baryon-ax/assets/og.jpg">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#org",
+      "name": "Baryon Labs",
+      "url": "https://github.com/baryonlabs"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#app",
+      "name": "Baryon AX",
+      "description": "Baryon AX는 문서·암묵지·메모리를 연결해 출처가 있는 답을 만드는 온프레미스 AI 에이전트 플랫폼입니다.",
+      "url": "https://baryonlabs.github.io/baryon-ax/",
+      "downloadUrl": "https://github.com/baryonlabs/baryon-ax",
+      "applicationCategory": "BusinessApplication",
+      "applicationSubCategory": "AI agents and grounded chat",
+      "operatingSystem": "Linux, macOS",
+      "softwareVersion": "0.6.0",
+      "datePublished": "2026-11-13",
+      "image": "https://baryonlabs.github.io/baryon-ax/assets/og.jpg",
+      "license": "https://opensource.org/licenses/MIT",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": { "@id": "https://baryonlabs.github.io/baryon-ax/#org" },
+      "publisher": { "@id": "https://baryonlabs.github.io/baryon-ax/#org" }
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#page",
+      "url": "https://baryonlabs.github.io/baryon-ax/",
+      "name": "Baryon AX — 근거로 답하는 온프레미스 AI 에이전트",
+      "inLanguage": "ko",
+      "dateModified": "2026-11-13",
+      "about": { "@id": "https://baryonlabs.github.io/baryon-ax/#app" },
+      "publisher": { "@id": "https://baryonlabs.github.io/baryon-ax/#org" },
+      "primaryImageOfPage": "https://baryonlabs.github.io/baryon-ax/assets/og.jpg"
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "최소 하드웨어 사양은 무엇인가요?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Basic Core는 2 vCPU, 4GB RAM, 10GB 디스크로 데모 모델을 실행할 수 있습니다. Qdrant·PostgreSQL·Redis·Langfuse·Mem0를 포함하는 Full stack은 8 vCPU, 16GB RAM(권장 32GB), 100GB 디스크를 권장합니다. GPU 추론은 7B 모델 기준 RTX 4090 24GB 1장부터 시작합니다." }
+        },
+        {
+          "@type": "Question",
+          "name": "폐쇄망에서도 동작하나요?",
+          "acceptedAnswer": { "@type": "Answer", "text": "외부 인터넷은 필수가 아닙니다. Docker 이미지·모델 가중치·패키지를 사전에 미러링하면 폐쇄망에서 동작합니다. 자세한 내용은 저장소의 에어갭 가이드를 참고하세요." }
+        },
+        {
+          "@type": "Question",
+          "name": "어떤 모델을 지원하나요?",
+          "acceptedAnswer": { "@type": "Answer", "text": "OpenAI 호환 API를 제공하는 모델이면 연결할 수 있습니다. Ollama qwen2.5:7b와 vLLM Qwen3.5-27B(B300 GPU 7) 구성이 검증되어 있고, 모델이 없을 때는 demo-local 폴백으로 UI를 확인할 수 있습니다." }
+        },
+        {
+          "@type": "Question",
+          "name": "HWP/HWPX 문서도 처리할 수 있나요?",
+          "acceptedAnswer": { "@type": "Answer", "text": "네. kordoc 사이드카가 HWP/HWPX를 파싱하고, docling이 PDF·Office·이미지를, Tika가 레거시 형식을 보완합니다. parser 프로필을 함께 실행해야 하며, MIME 기반으로 파서가 자동 라우팅됩니다." }
+        },
+        {
+          "@type": "Question",
+          "name": "데이터는 어디에 저장되나요?",
+          "acceptedAnswer": { "@type": "Answer", "text": "문서 원본과 파싱 텍스트는 DOCUMENT_STORE에, 벡터는 Qdrant에, 감사 이벤트는 PostgreSQL과 JSONL 미러에, 메모리는 Mem0/Qdrant에 저장됩니다. 모든 저장소는 고객 환경 안에서 운영됩니다." }
+        },
+        {
+          "@type": "Question",
+          "name": "보안은 어떻게 관리되나요?",
+          "acceptedAnswer": { "@type": "Answer", "text": "모든 PR은 security-sweep로 의존성 CVE·비밀값·설정 오류를 검사하고 P0/P1이면 머지를 차단합니다. 주 1회 이미지·SBOM·전체 git 히스토리 비밀값 스캔을 실행합니다. 운영 전 OIDC/JWT와 시크릿 관리 등은 docs/security.md를 따르세요." }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 바로가기</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="./" aria-label="Baryon AX 홈">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z" fill="currentColor"/><circle cx="19" cy="5" r="1.6" fill="#64d9a5"/></svg>
+      </span>
+      <span>Baryon AX</span>
+    </a>
+    <button class="nav-toggle" type="button" aria-label="메뉴 열기" aria-expanded="false" aria-controls="site-nav">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <nav class="site-nav" id="site-nav" aria-label="주요 메뉴">
+      <a href="#why">소개</a>
+      <a href="#features">기능</a>
+      <a href="#start">시작하기</a>
+      <a href="#help">도움말</a>
+      <a href="#security">보안</a>
+      <a href="#docs">문서</a>
+      <a href="https://github.com/baryonlabs/baryon-ax">GitHub</a>
+      <a class="lang" href="en/" hreflang="en" lang="en">English</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="release"><a href="https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0">v0.6.0 첫 릴리스</a> · Security CI 내장 · MIT</p>
+        <h1>기업의 지식을,<br><span>근거로 답하는</span><br>온프레미스 AI로.</h1>
+        <p class="lead">Baryon AX는 문서·암묵지·메모리를 연결해 <strong>출처가 있는 답</strong>을 만드는 온프레미스 AI 에이전트 플랫폼입니다.</p>
+        <p class="sub">Ollama·vLLM 등 OpenAI 호환 모델이면 무엇이든. 데이터는 고객 환경에 두고, 모든 답에는 검증 가능한 근거를 붙입니다.</p>
+        <div class="cta">
+          <a class="btn btn-primary" href="#start">빠른 시작</a>
+          <a class="btn btn-ghost" href="https://github.com/baryonlabs/baryon-ax">GitHub에서 보기</a>
+        </div>
+        <ul class="facts" aria-label="프로젝트 현황">
+          <li><b>0</b><span>P0/P1/P2/P3<br>현재 스캔 결과</span></li>
+          <li><b>4</b><span>lockfile 기반<br>의존성 스캔</span></li>
+          <li><b>119</b><span>API 테스트<br>통과</span></li>
+          <li><b>MIT</b><span>오픈소스<br>라이선스</span></li>
+        </ul>
+      </div>
+      <div class="hero-visual">
+        <div class="browser">
+          <div class="browser-bar" aria-hidden="true"><span></span><span></span><span></span><em>baryon-ax · 근거 기반 채팅</em></div>
+          <img src="assets/screenshots/chat.webp" width="1200" height="974" alt="Baryon AX 근거 기반 채팅 화면. 답변 아래에 출처와 청크 번호가 표시됩니다.">
+        </div>
+        <div class="float-card float-citations"><strong>출처 3건</strong><span>문서 · 청크 단위 인용</span></div>
+        <div class="float-card float-mascot"><img src="assets/mascots/chat.svg" alt="" width="34" height="34"><span>근거 기반<br>답변</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="why">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Why Baryon AX</p>
+        <h2>데이터는 안에, 답에는 근거를.</h2>
+        <p>챗봇을 하나 더 얹는 것이 아니라, 조직의 지식이 실제로 검색되고 인용되고 감사되는 운영 모델을 만듭니다.</p>
+      </div>
+      <div class="grid-3">
+        <article class="card">
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/><path d="M17 17l2 2 3-3"/></svg></div>
+          <h3>온프레미스 · 모델 비종속</h3>
+          <p>Ollama, vLLM, OpenAI 호환 엔드포인트를 그대로 연결합니다. 데이터와 모델 선택을 고객이 통제하고, 특정 SaaS에 종속되지 않습니다.</p>
+        </article>
+        <article class="card">
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5v-16z"/><path d="M8 7h8M8 11h6"/></svg></div>
+          <h3>근거 기반 답변</h3>
+          <p>Qdrant + FastEmbed로 문서를 검색하고, 답변마다 출처와 청크를 표시합니다. 근거가 없으면 경고하고, 원문·원본 파일까지 권한 안에서 확인합니다.</p>
+        </article>
+        <article class="card">
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg></div>
+          <h3>거버넌스 내장</h3>
+          <p>조직·역할·문서 ACL, PostgreSQL 감사 이벤트, PII 마스킹, Langfuse 트레이스를 기본 구성에 포함합니다. 보안 CI가 PR마다 이를 검증합니다.</p>
+        </article>
+      </div>
+      <figure class="overview">
+        <img src="assets/screenshots/overview.webp" width="1400" height="788" alt="Baryon AX 플랫폼 개요: 사용자 흐름, 계층 아키텍처, 핵심 엔진" loading="lazy">
+        <figcaption>사용자 흐름 · 계층 아키텍처 · 정책·검색·모델·메모리 엔진을 한 장으로 정리한 플랫폼 개요.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="section alt" id="features">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">One workspace</p>
+        <h2>채팅에서 지식화까지, 하나의 흐름.</h2>
+        <p>문서 업로드, 검색, 답변, 피드백, 지식 공백, 암묵지 게시가 같은 워크스페이스에서 이어집니다.</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature" style="--accent:#6c9dec">
+          <span class="feature-icon"><img src="assets/mascots/chat.svg" alt="" width="30" height="30" loading="lazy"></span>
+          <div><h3>근거 기반 채팅</h3><p>스트리밍, 모델 선택, RAG 토글, 생성 중지·재생성·복사, 👍/👎 피드백, 처리 과정 trace.</p></div>
+        </article>
+        <article class="feature" style="--accent:#7fc7a8">
+          <span class="feature-icon"><img src="assets/mascots/knowledge.svg" alt="" width="30" height="30" loading="lazy"></span>
+          <div><h3>지식 라이브러리</h3><p>HWP·HWPX·PDF·Office·이미지·텍스트를 MIME 기반으로 라우팅하고, 구조를 인식해 청킹합니다.</p></div>
+        </article>
+        <article class="feature" style="--accent:#f0b45a">
+          <span class="feature-icon"><img src="assets/mascots/tacit.svg" alt="" width="30" height="30" loading="lazy"></span>
+          <div><h3>암묵지 지식화</h3><p>지식 공백 → 질문 → 답변 → 게시 → 검증 → 환류. 판단 기준과 예외 조건을 검색 가능한 지식으로 만듭니다.</p></div>
+        </article>
+        <article class="feature" style="--accent:#d99b6c">
+          <span class="feature-icon"><img src="assets/mascots/gaps.svg" alt="" width="30" height="30" loading="lazy"></span>
+          <div><h3>지식 공백·온톨로지</h3><p>근거를 찾지 못한 질문을 클러스터링하고, 필요한 데이터를 힌트로 제시하며 온톨로지 팩 초안을 만듭니다.</p></div>
+        </article>
+        <article class="feature" style="--accent:#b79cf0">
+          <span class="feature-icon"><img src="assets/mascots/memory.svg" alt="" width="30" height="30" loading="lazy"></span>
+          <div><h3>사용자 메모리</h3><p>Mem0 기반 장기 기억을 저장·검색하고, 다음 답변에 관련도순으로 주입합니다.</p></div>
+        </article>
+        <article class="feature" style="--accent:#64d9a5">
+          <span class="feature-icon"><img src="assets/mascots/governance.svg" alt="" width="30" height="30" loading="lazy"></span>
+          <div><h3>거버넌스·감사</h3><p>조직·역할 ACL, 문서 권한 변경 감사, 최근 이벤트, 관리자 설정과 시스템 상태를 한 화면에서.</p></div>
+        </article>
+        <article class="feature" style="--accent:#8cb3f2">
+          <span class="feature-icon"><img src="assets/mascots/settings.svg" alt="" width="30" height="30" loading="lazy"></span>
+          <div><h3>운영·관측</h3><p>Langfuse 트레이스, 파이프라인 단계별 지연, 저장소·메모리·CPU·컨테이너 상태 카드.</p></div>
+        </article>
+        <article class="feature" style="--accent:#f08a8a">
+          <span class="feature-icon"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg></span>
+          <div><h3>B300 · GPU 배포</h3><p>B300 GPU 7 vLLM Qwen3.5-27B 검증, full-stack Compose, Kubernetes 스타터 매니페스트.</p></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="screens">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Real screens</p>
+        <h2>실제 B300 온프레미스 배포 화면.</h2>
+        <p>Qwen3.5-27B(vLLM), Qdrant, PostgreSQL, Redis, Langfuse, Mem0가 연결된 상태에서 촬영했습니다.</p>
+      </div>
+      <div class="gallery">
+        <figure>
+          <img src="assets/screenshots/chat.webp" width="1200" height="974" alt="근거 기반 채팅과 출처, 처리 과정 패널" loading="lazy">
+          <figcaption><strong>근거 기반 채팅</strong>답변 아래 출처·청크, 처리 과정별 지연 시간.</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/screenshots/knowledge.webp" width="1200" height="792" alt="지식 라이브러리와 지원 형식 배지" loading="lazy">
+          <figcaption><strong>지식 라이브러리</strong>드래그 앤 드롭 업로드, 형식 배지, 청크 수.</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/screenshots/tacit.webp" width="1100" height="1051" alt="암묵지 생성 근거와 게시 상태" loading="lazy">
+          <figcaption><strong>암묵지 · 생성 근거</strong>질문 큐, 답변, 게시 문서, 생성 경로.</figcaption>
+        </figure>
+        <figure>
+          <img src="assets/screenshots/governance.webp" width="1200" height="792" alt="감사 로그와 거버넌스 화면" loading="lazy">
+          <figcaption><strong>거버넌스 · 감사</strong>조직 이벤트, 추적 ID, 사용자, 지연 시간.</figcaption>
+        </figure>
+      </div>
+      <p class="center"><a class="text-link" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/screenshots.md">전체 화면 갤러리 보기</a></p>
+    </div>
+  </section>
+
+  <section class="section alt" id="start">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Quick start</p>
+        <h2>Docker가 있으면, 지금 바로.</h2>
+        <p>기본 구성은 외부 모델 없이 <code>demo-local</code>로 동작합니다. 실제 모델은 OpenAI 호환 엔드포인트를 지정하면 됩니다.</p>
+      </div>
+      <div class="start-grid">
+        <div>
+          <ol class="steps">
+            <li><b>저장소 받기</b><span>Git으로 클론하거나 릴리스 소스를 내려받습니다.</span></li>
+            <li><b>환경 파일 준비</b><span><code>.env.example</code>을 복사합니다. 기본값으로 바로 실행됩니다.</span></li>
+            <li><b>Compose 실행</b><span>이미지를 빌드하고 UI와 API를 시작합니다.</span></li>
+          </ol>
+          <div class="code-block">
+            <div class="code-head"><span>Terminal</span><button class="copy" type="button">복사</button></div>
+            <pre><code>git clone https://github.com/baryonlabs/baryon-ax.git
+cd baryon-ax
+cp .env.example .env
+docker compose up --build</code></pre>
+          </div>
+          <p class="note">UI <code>http://localhost:3001</code> · API <code>http://localhost:8000</code> · 상태 확인 <code>GET /health</code></p>
+        </div>
+        <aside class="start-side">
+          <div class="card">
+            <h3>요구사항</h3>
+            <ul>
+              <li>Docker 24+ · Docker Compose v2.20+</li>
+              <li>Basic Core: 2 vCPU · 4GB RAM · 10GB 디스크</li>
+              <li>Full stack: 8 vCPU · 16GB RAM(권장 32GB) · 100GB</li>
+              <li>GPU 추론은 NVIDIA 드라이버 + container toolkit</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>HWP/HWPX까지 쓰려면</h3>
+            <p>parser 프로필을 함께 실행합니다. kordoc·docling·Tika가 MIME에 따라 자동 라우팅됩니다.</p>
+            <div class="code-block">
+              <div class="code-head"><span>Parser profile</span><button class="copy" type="button">복사</button></div>
+              <pre><code>docker compose -f docker-compose.yml \
+  -f docker-compose.parsers.yml \
+  --profile parsers up -d --build</code></pre>
+            </div>
+          </div>
+          <div class="card">
+            <h3>실제 모델 연결</h3>
+            <p><code>MODEL_BASE_URL</code>과 <code>MODEL_NAME</code>을 지정합니다. Ollama가 <code>127.0.0.1</code>에 바인딩되어 있으면 저장소의 프록시를 사용하세요.</p>
+            <p><a class="text-link" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/full-stack.md">Full stack 가이드</a></p>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="help">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Help</p>
+        <h2>막히면 여기서 시작하세요.</h2>
+        <p>설치·모델·파서·검색·권한에서 가장 자주 만나는 문제와 해결 방법입니다. 더 자세한 내용은 저장소 문서에 있습니다.</p>
+      </div>
+      <div class="help-grid">
+        <article class="help-card">
+          <span class="help-num">01 · MODEL</span>
+          <h3>모델이 demo-local로만 보여요</h3>
+          <p><code>MODEL_BASE_URL</code>이 비어 있으면 데모 모델로 동작합니다. OpenAI 호환 엔드포인트와 모델 이름을 지정하세요. Ollama는 기본적으로 <code>127.0.0.1</code>에만 바인딩되므로 컨테이너에서는 프록시가 필요합니다.</p>
+          <div class="code-block"><div class="code-head"><span>.env</span><button class="copy" type="button">복사</button></div><pre><code>MODEL_BASE_URL=http://host.docker.internal:11435/v1
+MODEL_NAME=qwen2.5:7b</code></pre></div>
+        </article>
+        <article class="help-card">
+          <span class="help-num">02 · PARSER</span>
+          <h3>HWP/HWPX 업로드가 실패해요</h3>
+          <p>기본 Compose에는 파서 사이드카가 포함되지 않습니다. parser 프로필을 함께 실행하고, <code>KORDOC_URL</code>·<code>DOCLING_URL</code>이 설정되어 있는지 확인하세요.</p>
+          <div class="code-block"><div class="code-head"><span>Terminal</span><button class="copy" type="button">복사</button></div><pre><code>docker compose -f docker-compose.yml \
+  -f docker-compose.parsers.yml \
+  --profile parsers up -d --build</code></pre></div>
+        </article>
+        <article class="help-card">
+          <span class="help-num">03 · RETRIEVAL</span>
+          <h3>검색 결과가 비어 있어요</h3>
+          <p><code>QDRANT_URL</code>이 비어 있으면 lexical 폴백으로 동작합니다. Qdrant 연결 후 관리자 재색인을 실행하고, 문서 ACL·카테고리·태그 필터도 확인하세요.</p>
+          <div class="code-block"><div class="code-head"><span>API</span><button class="copy" type="button">복사</button></div><pre><code>curl -X POST http://localhost:8000/v1/admin/reindex \
+  -H 'X-User-Id: admin' \
+  -H 'X-Organization-Id: demo' \
+  -H 'X-Roles: admin'</code></pre></div>
+        </article>
+        <article class="help-card">
+          <span class="help-num">04 · ACCESS</span>
+          <h3>관리자 메뉴가 안 보여요</h3>
+          <p>개발 환경에서는 <code>X-Roles: admin</code> 헤더로 역할을 지정합니다. 운영 환경에서는 이 개발용 identity 헤더를 OIDC/JWT로 교체해야 합니다.</p>
+          <div class="code-block"><div class="code-head"><span>Headers</span><button class="copy" type="button">복사</button></div><pre><code>X-User-Id: demo-admin
+X-Organization-Id: demo
+X-Roles: admin</code></pre></div>
+        </article>
+        <article class="help-card">
+          <span class="help-num">05 · PORTS</span>
+          <h3>포트가 충돌해요</h3>
+          <p>UI는 3001, API는 8000, Langfuse는 3000, PostgreSQL은 5433, Redis는 6379, Qdrant는 6333을 사용합니다. 기존 서비스가 있으면 <code>docker-compose.yml</code>의 포트를 바꾸세요.</p>
+          <div class="code-block"><div class="code-head"><span>Terminal</span><button class="copy" type="button">복사</button></div><pre><code>lsof -i :3001
+lsof -i :8000
+docker compose ps</code></pre></div>
+        </article>
+        <article class="help-card">
+          <span class="help-num">06 · DATA</span>
+          <h3>데이터를 초기화하거나 백업하고 싶어요</h3>
+          <p>문서·감사·피드백·암묵지 저장소는 Compose 볼륨과 <code>/data</code> 아래에 있습니다. 초기화 전에 반드시 백업하고, 운영 데이터에는 삭제 명령을 바로 쓰지 마세요.</p>
+          <div class="code-block"><div class="code-head"><span>Terminal</span><button class="copy" type="button">복사</button></div><pre><code>docker compose logs -f api web
+docker compose down
+# 볼륨 삭제는 데이터 손실입니다. 백업 후 진행하세요.</code></pre></div>
+        </article>
+      </div>
+
+      <div class="faq">
+        <h3>자주 묻는 질문</h3>
+        <details>
+          <summary>최소 하드웨어 사양은 무엇인가요?</summary>
+          <p>Basic Core는 2 vCPU, 4GB RAM, 10GB 디스크로 데모 모델을 실행할 수 있습니다. Qdrant·PostgreSQL·Redis·Langfuse·Mem0를 포함하는 Full stack은 8 vCPU, 16GB RAM(권장 32GB), 100GB 디스크를 권장합니다. GPU 추론은 7B 모델 기준 RTX 4090 24GB 1장부터 시작합니다. 전체 표는 <a href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md">하드웨어 요구사항</a>에 있습니다.</p>
+        </details>
+        <details>
+          <summary>폐쇄망에서도 동작하나요?</summary>
+          <p>외부 인터넷은 필수가 아닙니다. Docker 이미지·모델 가중치·패키지를 사전에 미러링하면 폐쇄망에서 동작합니다. 모델 서버와 데이터 저장소도 고객 네트워크 안에 둘 수 있습니다. 에어갭 구성은 저장소의 기능 문서를 참고하세요.</p>
+        </details>
+        <details>
+          <summary>어떤 모델을 지원하나요?</summary>
+          <p>OpenAI 호환 API를 제공하는 모델이면 연결할 수 있습니다. Ollama <code>qwen2.5:7b</code>와 vLLM <code>Qwen3.5-27B</code>(B300 GPU 7) 구성이 검증되어 있습니다. 모델이 없을 때는 <code>demo-local</code> 폴백으로 UI와 흐름을 확인할 수 있습니다.</p>
+        </details>
+        <details>
+          <summary>HWP/HWPX 문서도 처리할 수 있나요?</summary>
+          <p>네. kordoc 사이드카가 HWP/HWPX를 파싱하고, docling이 PDF·Office·이미지를, Tika가 레거시 형식을 보완합니다. parser 프로필을 함께 실행해야 하며, MIME 기반으로 파서가 자동 라우팅됩니다.</p>
+        </details>
+        <details>
+          <summary>데이터는 어디에 저장되나요?</summary>
+          <p>문서 원본과 파싱 텍스트는 <code>DOCUMENT_STORE</code>에, 벡터는 Qdrant에, 감사 이벤트는 PostgreSQL과 JSONL 미러에, 메모리는 Mem0/Qdrant에 저장됩니다. 피드백·암묵지·지식 공백은 각각의 JSONL 저장소에 남습니다. 모든 저장소는 고객 환경 안에서 운영됩니다.</p>
+        </details>
+        <details>
+          <summary>보안은 어떻게 관리되나요?</summary>
+          <p>모든 PR은 <a href="https://github.com/baryonlabs/security-sweep">security-sweep</a>로 의존성 CVE·비밀값·설정 오류를 검사하고, P0/P1이면 머지를 차단합니다. 주 1회 이미지·SBOM·전체 git 히스토리 비밀값 스캔을 실행합니다. 운영 전 OIDC/JWT와 시크릿 관리 등은 <a href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/security.md">보안 베이스라인</a>을 따르세요.</p>
+        </details>
+        <details>
+          <summary>라이선스는 무엇인가요?</summary>
+          <p>MIT 라이선스입니다. 상업적 사용과 수정·배포가 가능하며, 저작권 고지를 유지해야 합니다. 자세한 내용은 <a href="https://github.com/baryonlabs/baryon-ax/blob/main/LICENSE">LICENSE</a>를 참고하세요.</p>
+        </details>
+        <details>
+          <summary>기여하거나 버그를 신고하려면?</summary>
+          <p>GitHub Issues에 재현 절차와 기대 동작을 적어 주세요. 보안 취약점은 공개 이슈 대신 <a href="https://github.com/baryonlabs/baryon-ax/blob/main/SECURITY.md">SECURITY.md</a>의 비공개 절차를 따라 주세요. 코드 기여는 <a href="https://github.com/baryonlabs/baryon-ax/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>를 참고하세요.</p>
+        </details>
+      </div>
+      <div class="help-more">
+        <a class="btn btn-ghost" href="https://github.com/baryonlabs/baryon-ax/issues">GitHub Issues</a>
+        <a class="btn btn-ghost" href="https://github.com/baryonlabs/baryon-ax/blob/main/README.md">README</a>
+        <a class="btn btn-ghost" href="https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0">v0.6.0 릴리스</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="security" id="security">
+    <div class="wrap security-grid">
+      <div>
+        <p class="eyebrow">Security CI</p>
+        <h2>보안은 분기별 점검이 아니라,<br>PR마다 증명됩니다.</h2>
+        <p>알려진 취약점을 사람의 기억에 맡기지 않습니다. 모든 PR에서 의존성 CVE·비밀값·설정 오류를 결정적 스캐너로 검사하고, OSV로 실재를 확인한 뒤 P0/P1이면 머지를 막습니다.</p>
+        <p>주 1회 이미지와 SBOM, 전체 git 히스토리까지 추적합니다. 결과는 Job Summary와 아티팩트로 남아 감사 근거가 됩니다.</p>
+        <div class="cta">
+          <a class="btn btn-ghost" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/security-ci.md">Security CI runbook</a>
+          <a class="btn btn-ghost" href="https://github.com/baryonlabs/security-sweep">security-sweep</a>
+        </div>
+      </div>
+      <div class="security-panel">
+        <div class="pipe" aria-label="보안 파이프라인">
+          <span>PR</span><span>security-sweep</span><span>P0/P1 gate</span><span>merge</span>
+        </div>
+        <ul class="sec-stats">
+          <li><b>0</b><span>P0/P1/P2/P3</span></li>
+          <li><b>4</b><span>lockfile 프로젝트</span></li>
+          <li><b>7d</b><span>주간 이미지·SBOM</span></li>
+          <li><b>0</b><span>gitleaks findings</span></li>
+        </ul>
+        <p class="small">스캐너 커밋·Trivy action SHA·osv-scanner 체크섬 고정 · <code>contents: read</code> · 시크릿 미사용 · fail-closed. 보안 인증이 아닌 베이스라인이며, 로직 결함은 별도 SAST/리뷰가 필요합니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section alt" id="docs">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Documentation</p>
+        <h2>더 깊이 들어가기.</h2>
+        <p>설치부터 아키텍처, 운영, 보안, UX 원칙까지 저장소 문서에 정리되어 있습니다.</p>
+      </div>
+      <div class="doc-grid">
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax#readme"><span>README · 빠른 시작</span><span>01</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/full-stack.md"><span>Full stack 가이드</span><span>02</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/architecture.md"><span>아키텍처</span><span>03</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/operations.md"><span>운영 가이드</span><span>04</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/security-ci.md"><span>Security CI runbook</span><span>05</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/security.md"><span>보안 베이스라인</span><span>06</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/ux-principles.md"><span>UX · AI 인터페이스 원칙</span><span>07</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/features.md"><span>기능 인벤토리</span><span>08</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md"><span>하드웨어 요구사항</span><span>09</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/screenshots.md"><span>화면 갤러리</span><span>10</span></a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="./">
+          <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z" fill="currentColor"/><circle cx="19" cy="5" r="1.6" fill="#64d9a5"/></svg></span>
+          <span>Baryon AX</span>
+        </a>
+        <p>온프레미스 AI 에이전트와 근거 기반 채팅을 위한 오픈소스 Basic Core. 데이터는 고객 환경에, 답에는 근거를.</p>
+      </div>
+      <nav class="footer-links" aria-label="푸터 링크">
+        <a href="https://github.com/baryonlabs/baryon-ax">GitHub</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/releases">Releases</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/issues">Issues</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/blob/main/SECURITY.md">Security</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/blob/main/LICENSE">MIT License</a>
+      </nav>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Baryon Labs</span>
+      <span>Built with FastAPI · React · Qdrant · LangGraph · Mem0</span>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/app.js" defer></script>
+</body>
+</html>
