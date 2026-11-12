@@ -124,10 +124,11 @@ python3 scripts/check_site_live.py
 - [x] 인증서 approved + HTTPS 강제 (2026-11-13, 만료 2027-02-11)
 - [x] `check_site_live.py` 0 failures
 - [x] `submit_indexnow.py` 새 도메인 제출 (4개 URL, 200/200)
-- [ ] Search Console sitemap 제출 (사람 로그인)
+- [x] Search Console sitemap 제출 (4개 발견, 핵심 URL 색인)
 - [x] Naver 소유확인 메타 배포 (2026-11-13)
-- [ ] Naver 콘솔 소유확인 + sitemap 제출 (사람 로그인)
-- [ ] Bing/Daum 새 URL 등록 (사람 로그인)
+- [x] Naver 콘솔 소유확인 + sitemap 제출 (2026-11-13)
+- [x] Daum 검색등록 신청 (2026-11-13, 검토 대기)
+- [ ] Bing Webmaster Tools 등록 (IndexNow는 완료)
 
 ---
 
@@ -144,6 +145,9 @@ python3 scripts/check_site_live.py
 | 라이브 검증 | `check_site_live.py` failures 0, warnings 0 |
 | IndexNow | 4개 URL, `api.indexnow.org` 200, `www.bing.com` 200 |
 | Google 인증 | `baryon.ai` DNS TXT 확인 (도메인 속성) |
-| Naver 인증 | 소유확인 메타 배포 완료, 콘솔 확인 대기 |
+| Google 등록 | sitemap 4개 발견, 핵심 URL 색인 완료 |
+| Naver 인증 | 소유확인 완료, sitemap 제출 완료 (2026-11-13 03:22) |
+| Daum 등록 | 신청 완료, 검토 결과 이메일 대기 |
+| Bing | IndexNow 4개 URL 200/200, BWT 대시보드는 보류 |
 
 남은 일은 검색엔진 콘솔 로그인 후 sitemap 제출·소유확인뿐입니다. 절차는 [docs/promotion-playbook.md](promotion-playbook.md)의 14장을 참고하세요.
