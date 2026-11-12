@@ -12,7 +12,6 @@ env:
   TRIVY_VERSION: v0.76.1
   SECURITY_SWEEP_REF: main
   SECURITY_FAIL_ON: P0,P1
-  SECURITY_SWEEP_OUT: ${{ runner.temp }}/security-sweep-out
 
 jobs:
   sweep:
@@ -49,24 +48,25 @@ jobs:
         run: |
           set -euo pipefail
           S="$RUNNER_TEMP/security-sweep/skills/security-sweep/scripts"
-          OUT="$SECURITY_SWEEP_OUT"
+          OUT="$RUNNER_TEMP/security-sweep-out"
           bash "$S/discover.sh" "$GITHUB_WORKSPACE" --out "$OUT"
           bash "$S/sweep.sh" --targets "$OUT/targets.json" --out "$OUT" --jobs 4
           python3 "$S/verify_cves.py" "$OUT"
           python3 "$S/report.py" "$OUT"
 
       - name: Gate on blocking findings
-        run: python3 .github/scripts/security_gate.py "$SECURITY_SWEEP_OUT/findings.json"
+        run: python3 .github/scripts/security_gate.py "$RUNNER_TEMP/security-sweep-out/findings.json"
 
       - name: Job summary
         if: always()
         run: |
-          if [ -f "$SECURITY_SWEEP_OUT/REPORT.md" ]; then
+          OUT="$RUNNER_TEMP/security-sweep-out"
+          if [ -f "$OUT/REPORT.md" ]; then
             {
               echo ""
               echo "---"
               echo ""
-              sed -n '1,80p' "$SECURITY_SWEEP_OUT/REPORT.md"
+              sed -n '1,80p' "$OUT/REPORT.md"
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
@@ -75,6 +75,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: security-sweep-report
-          path: ${{ env.SECURITY_SWEEP_OUT }}
+          path: ${{ runner.temp }}/security-sweep-out
           if-no-files-found: warn
           retention-days: 14
