@@ -1,5 +1,5 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, Bot, Boxes, Brain, ChevronRight, Cpu, ExternalLink, FileCode, FileImage, FileSpreadsheet, FileText, FileType, FileUp, Globe2, HardDrive, MessagesSquare, Network, Paperclip, Plus, RefreshCw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Trash2, UploadCloud, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Bot, Boxes, Brain, ChevronRight, Copy, Cpu, ExternalLink, FileCode, FileImage, FileSpreadsheet, FileText, FileType, FileUp, Globe2, HardDrive, Menu, MessagesSquare, Network, Paperclip, Plus, RefreshCw, RotateCcw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, UploadCloud, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
@@ -185,7 +185,16 @@ const copy = {
     groundedChat: "근거 기반 채팅", knowledgeLibrary: "지식 라이브러리", sources: "출처", ask: "무엇이든 질문하거나 업로드한 문서를 검색하세요…",
     traceTitle: "처리 과정", traceRateLimit: "속도 제한", tracePolicy: "정책 검사", traceMemory: "메모리 검색", traceRetrieval: "문서 검색", traceModel: "모델 생성", traceAudit: "감사 기록", traceMs: "ms", traceSkipped: "건너뜀",
     scope: "문서는 조직 및 역할 권한 범위 안에서만 검색됩니다.", indexedDocs: "색인된 문서", visibleDocs: "내 조직과 역할에서 조회 가능한 문서만 표시됩니다.",
-    sendHint: "Shift+Enter로 전송",
+    sendHint: "Shift+Enter로 전송", stop: "생성 중지", regenerate: "다시 생성", copy: "복사", copied: "복사했습니다",
+    helpful: "도움이 됐어요", notHelpful: "도움이 안 됐어요", feedbackThanks: "피드백 감사합니다.",
+    clearChat: "대화 지우기", clearChatConfirm: "현재 대화를 모두 지울까요?", newChatConfirm: "새 대화를 시작할까요?",
+    suggestions: "이렇게 물어보세요", suggestionOne: "업로드한 문서의 핵심 내용을 요약해 줘",
+    suggestionTwo: "이번 분기 예산 편성 기준은?", suggestionThree: "계약 갱신 절차를 단계별로 알려줘",
+    suggestionFour: "최근 감사 로그에서 이상한 점을 찾아줘",
+    noGrounding: "이 답변에는 검색 근거가 없습니다. 중요한 결정 전에 출처를 확인하세요.",
+    groundedIn: (count: number) => `근거 ${count}건`, working: "검색·생성 중…", stopped: "생성을 중지했습니다.",
+    menu: "메뉴", closeMenu: "메뉴 닫기", skipToContent: "본문으로 건너뛰기", deleteConfirm: "이 문서를 삭제할까요?",
+    context: "현재 컨텍스트", you: "나", assistant: "어시스턴트", retry: "다시 시도",
     upload: "문서 업로드", category: "카테고리", tags: "태그", allCategories: "전체 카테고리", filterTag: "태그 필터",
     categoryPlaceholder: "카테고리 (예: 계약, 인사, 연구)", tagsPlaceholder: "태그 (쉼표 구분: 2026, 예산)",
     editMetadata: "분류 편집", metadataUpdated: "카테고리와 태그를 저장했습니다.", metadataFailed: "분류를 저장할 수 없습니다.",
@@ -262,7 +271,16 @@ const copy = {
     groundedChat: "Grounded chat", knowledgeLibrary: "Knowledge library", sources: "Sources", ask: "Ask anything, or query an uploaded document…",
     traceTitle: "Pipeline", traceRateLimit: "Rate limit", tracePolicy: "Policy check", traceMemory: "Memory search", traceRetrieval: "Document search", traceModel: "Model generation", traceAudit: "Audit log", traceMs: "ms", traceSkipped: "skipped",
     scope: "Documents are searched only within your organization and role scope.", indexedDocs: "Indexed documents", visibleDocs: "Only documents visible to your organization and role are shown.",
-    sendHint: "Shift+Enter to send",
+    sendHint: "Shift+Enter to send", stop: "Stop generating", regenerate: "Regenerate", copy: "Copy", copied: "Copied",
+    helpful: "Helpful", notHelpful: "Not helpful", feedbackThanks: "Thanks for the feedback.",
+    clearChat: "Clear conversation", clearChatConfirm: "Clear this conversation?", newChatConfirm: "Start a new conversation?",
+    suggestions: "Try asking", suggestionOne: "Summarize the key points of my uploaded documents",
+    suggestionTwo: "What are this quarter's budgeting rules?", suggestionThree: "Walk me through the contract renewal process",
+    suggestionFour: "Find anything unusual in recent audit events",
+    noGrounding: "This answer has no retrieved sources. Verify before relying on it.",
+    groundedIn: (count: number) => `${count} source(s)`, working: "Retrieving and generating…", stopped: "Generation stopped.",
+    menu: "Menu", closeMenu: "Close menu", skipToContent: "Skip to content", deleteConfirm: "Delete this document?",
+    context: "Context", you: "You", assistant: "Assistant", retry: "Retry",
     upload: "Upload document", category: "Category", tags: "Tags", allCategories: "All categories", filterTag: "Filter by tag",
     categoryPlaceholder: "Category (e.g. contracts, HR, research)", tagsPlaceholder: "Tags (comma separated: 2026, budget)",
     editMetadata: "Edit classification", metadataUpdated: "Category and tags saved.", metadataFailed: "Could not save classification.",
@@ -334,15 +352,33 @@ function initialRole(): Role {
   return localStorage.getItem("baryon-role") === "admin" ? "admin" : "member";
 }
 
+function initialChatMessages(locale: Locale): ChatMessage[] {
+  try {
+    const raw = localStorage.getItem("baryon-chat");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed as ChatMessage[];
+    }
+  } catch {
+    // ignore corrupted history and start fresh
+  }
+  return [{ role: "assistant", content: copy[locale].welcome }];
+}
+
 export default function App() {
   const [locale, setLocale] = useState<Locale>(initialLocale);
   const t = copy[locale];
   const [role, setRole] = useState<Role>(initialRole);
-  const [messages, setMessages] = useState<ChatMessage[]>([{ role: "assistant", content: t.welcome }]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => initialChatMessages(locale));
   const [input, setInput] = useState("");
   const [model, setModel] = useState("demo-local");
   const [retrieval, setRetrieval] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [toast, setToast] = useState("");
+  const [feedbackByIndex, setFeedbackByIndex] = useState<Record<number, 1 | -1>>({});
+  const controllerRef = useRef<AbortController | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const [view, setView] = useState<View>("chat");
   const [knowledge, setKnowledge] = useState<KnowledgeDocument[]>([]);
   const [uploadBusy, setUploadBusy] = useState(false);
@@ -395,6 +431,37 @@ export default function App() {
   useEffect(() => { fetch(`${API}/v1/models`).then(response => response.json()).then(result => result.data?.[0] && setModel(result.data[0].id)).catch(() => undefined); }, []);
   useEffect(() => { document.documentElement.lang = locale; localStorage.setItem("baryon-locale", locale); }, [locale]);
   useEffect(() => { localStorage.setItem("baryon-role", role); }, [role]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("baryon-chat", JSON.stringify(messages));
+    } catch {
+      // storage can be full or disabled; chat still works for this session
+    }
+  }, [messages]);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(""), 2800);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [view]);
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSidebarOpen(false);
+        setSource(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  useEffect(() => {
+    const element = composerRef.current;
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${Math.min(element.scrollHeight, 180)}px`;
+  }, [input]);
 
   function changeLocale(next: Locale) {
     setLocale(next);
@@ -843,27 +910,40 @@ export default function App() {
     }
   }
 
-  async function send(event: FormEvent) {
-    event.preventDefault(); if (!input.trim() || busy) return;
-    const question = input.trim(); setInput(""); setBusy(true);
-    // Drop in-flight/empty assistant placeholders: sending one fails validation
-    // with 422 and the user just sees "request failed".
-    const history = messages.filter(message => message.content.trim().length > 0);
-    const next = [...history, { role: "user" as const, content: question }];
+  async function submitQuestion(question: string, baseMessages?: ChatMessage[]) {
+    const trimmed = question.trim();
+    if (!trimmed || busy) return;
+    setBusy(true);
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    const history = (baseMessages ?? messages).filter(message => message.content.trim().length > 0);
+    const next = [...history, { role: "user" as const, content: trimmed }];
     setMessages([...next, { role: "assistant", content: "" }]);
     try {
-      const response = await fetch(`${API}/v1/chat/completions`, { method: "POST", headers: { "Content-Type": "application/json", ...identity(role) }, body: JSON.stringify({ model, messages: next, stream: true, use_retrieval: retrieval, locale }) });
+      const response = await fetch(`${API}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...identity(role) },
+        body: JSON.stringify({ model, messages: next, stream: true, use_retrieval: retrieval, locale }),
+        signal: controller.signal,
+      });
       if (!response.ok || !response.body) throw new Error("Chat request failed");
-      const reader = response.body.getReader(), decoder = new TextDecoder(); let buffer = "";
+      const reader = response.body.getReader(), decoder = new TextDecoder();
+      let buffer = "";
       while (true) {
-        const { value, done } = await reader.read(); if (done) break;
-        buffer += decoder.decode(value, { stream: true }); const frames = buffer.split("\n\n"); buffer = frames.pop() || "";
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() || "";
         for (const frame of frames) {
-          const raw = frame.replace(/^data: /, ""); if (raw === "[DONE]") continue;
+          const raw = frame.replace(/^data: /, "");
+          if (raw === "[DONE]") continue;
           const item = JSON.parse(raw);
           if (item.type === "error") throw new Error(item.message);
           setMessages(previous => {
-            const copied = [...previous]; const last = copied.length - 1; const current = copied[last];
+            const copied = [...previous];
+            const last = copied.length - 1;
+            const current = copied[last];
             copied[last] = {
               ...current,
               content: current.content + (item.type === "token" ? item.content : ""),
@@ -874,15 +954,102 @@ export default function App() {
           });
         }
       }
-    } catch {
-      setMessages(previous => {
-        const copied = [...previous]; const last = copied.length - 1;
-        const partial = copied[last]?.content.trim();
-        copied[last] = { role: "assistant", content: partial ? `${partial}\n\n${t.failed}` : t.failed };
-        return copied;
-      });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        setToast(t.stopped);
+      } else {
+        setMessages(previous => {
+          const copied = [...previous];
+          const last = copied.length - 1;
+          const partial = copied[last]?.content.trim();
+          copied[last] = { role: "assistant", content: partial ? `${partial}\n\n${t.failed}` : t.failed };
+          return copied;
+        });
+      }
+    } finally {
+      setBusy(false);
+      controllerRef.current = null;
     }
-    finally { setBusy(false); }
+  }
+
+  function send(event: FormEvent) {
+    event.preventDefault();
+    const question = input.trim();
+    if (!question || busy) return;
+    setInput("");
+    void submitQuestion(question);
+  }
+
+  function stopGenerating() {
+    controllerRef.current?.abort();
+  }
+
+  function regenerate(index: number) {
+    const user = messages[index - 1];
+    if (!user || user.role !== "user" || busy) return;
+    const base = messages.slice(0, index);
+    setMessages(base);
+    void submitQuestion(user.content, base);
+  }
+
+  async function copyMessage(content: string) {
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(content);
+      copied = true;
+    } catch {
+      // Clipboard API is unavailable in some browsers/permissions; fall back.
+      try {
+        const area = document.createElement("textarea");
+        area.value = content;
+        area.style.position = "fixed";
+        area.style.opacity = "0";
+        document.body.appendChild(area);
+        area.select();
+        copied = document.execCommand("copy");
+        area.remove();
+      } catch {
+        copied = false;
+      }
+    }
+    setToast(copied ? t.copied : t.failed);
+  }
+
+  async function sendFeedback(index: number, rating: 1 | -1) {
+    const message = messages[index];
+    const question = [...messages.slice(0, index)].reverse().find(item => item.role === "user")?.content ?? "";
+    setFeedbackByIndex(previous => ({ ...previous, [index]: rating }));
+    setToast(t.feedbackThanks);
+    if (!message.trace?.trace_id) return;
+    try {
+      await fetch(`${API}/v1/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...identity(role) },
+        body: JSON.stringify({
+          trace_id: message.trace.trace_id,
+          rating,
+          question,
+          answer_excerpt: message.content.slice(0, 500),
+          citations: message.citations?.length ?? 0,
+          model,
+        }),
+      });
+    } catch {
+      // feedback is best-effort; the local state already reflects the choice
+    }
+  }
+
+  function startNewChat() {
+    if (messages.length > 1 && !window.confirm(t.newChatConfirm)) return;
+    setMessages([{ role: "assistant", content: t.welcome }]);
+    setFeedbackByIndex({});
+    setView("chat");
+  }
+
+  function clearChat() {
+    if (!window.confirm(t.clearChatConfirm)) return;
+    setMessages([{ role: "assistant", content: t.welcome }]);
+    setFeedbackByIndex({});
   }
 
   function title() {
@@ -927,9 +1094,13 @@ export default function App() {
   }
 
   return <main className={`shell theme-${view} ${role === "admin" ? "admin" : ""}`}>
-    <aside className="sidebar">
-      <div className="brand"><div className="brand-mark"><Sparkles size={17}/></div><span>Baryon AX</span></div>
-      <button className="new-chat" onClick={() => { setView("chat"); setMessages([{ role: "assistant", content: t.welcome }]); }}>{t.newChat}</button>
+    <a className="skip-link" href="#main-content">{t.skipToContent}</a>
+    <button className={`sidebar-backdrop ${sidebarOpen ? "open" : ""}`} aria-label={t.closeMenu} onClick={() => setSidebarOpen(false)}/>
+    <aside className={`sidebar ${sidebarOpen ? "open" : ""}`} id="app-sidebar">
+      <div className="brand"><div className="brand-mark"><Sparkles size={17}/></div><span>Baryon AX</span>
+        <button className="icon-button sidebar-close" aria-label={t.closeMenu} onClick={() => setSidebarOpen(false)}><X size={18}/></button>
+      </div>
+      <button className="new-chat" onClick={startNewChat}><Plus size={16}/>{t.newChat}</button>
       <nav>
         <button className={view === "chat" ? "active" : ""} onClick={() => setView("chat")}><img className="nav-mascot" src={MENU_MASCOTS.chat.src} alt=""/>{t.chat}</button>
         <button className={view === "knowledge" ? "active" : ""} onClick={() => setView("knowledge")}><img className="nav-mascot" src={MENU_MASCOTS.knowledge.src} alt=""/>{t.knowledge}</button>
@@ -945,23 +1116,40 @@ export default function App() {
         {role === "admin" && <span className="admin-badge">ADMIN</span>}
       </div>
     </aside>
-    <section className="workspace">
+    <section className="workspace" id="main-content">
       <div className="menu-ribbon">
         <img className="menu-ribbon-mascot" src={MENU_MASCOTS[view].src} alt=""/>
-        <strong>{title()}</strong>
         <span>{MENU_MASCOTS[view].tagline[locale]}</span>
       </div>
       <header>
-        <div><p className="eyebrow">{t.workspace}</p><h1>{title()}</h1></div>
+        <div className="header-title">
+          <button className="icon-button menu-toggle" aria-label={t.menu} aria-expanded={sidebarOpen} aria-controls="app-sidebar" onClick={() => setSidebarOpen(value => !value)}><Menu size={18}/></button>
+          <div><p className="eyebrow">{t.workspace}</p><h1>{title()}</h1></div>
+        </div>
+        <div className="context-chips" aria-label={t.context}>
+          <span className="pill"><span className="dot"/> {t.onPremises}</span>
+          <span className="pill">{t.profile}</span>
+          <span className="pill">{t[role]}</span>
+          {view === "chat" && <span className="pill">{model}</span>}
+        </div>
         <div className="header-actions">
           <label className="locale-select role-select"><ShieldCheck size={15}/><span className="sr-only">{t.role}</span><select aria-label={t.role} value={role} onChange={event => setRole(event.target.value as Role)}><option value="member">{t.member}</option><option value="admin">{t.admin}</option></select></label>
           <label className="locale-select"><Globe2 size={15}/><span className="sr-only">{t.language}</span><select aria-label={t.language} value={locale} onChange={event => changeLocale(event.target.value as Locale)}><option value="ko">한국어</option><option value="en">English</option></select></label>
-          {view === "chat" && <><select aria-label={t.modelLabel} value={model} onChange={event => setModel(event.target.value)}><option value={model}>{model}</option></select><label className="toggle"><input type="checkbox" checked={retrieval} onChange={event => setRetrieval(event.target.checked)}/><span/>RAG</label></>}
+          {view === "chat" && <><select aria-label={t.modelLabel} value={model} onChange={event => setModel(event.target.value)}><option value={model}>{model}</option></select><label className="toggle"><input type="checkbox" checked={retrieval} onChange={event => setRetrieval(event.target.checked)}/><span/>RAG</label>
+            <button className="icon-button" title={t.clearChat} aria-label={t.clearChat} onClick={clearChat}><Trash2 size={16}/></button></>}
         </div>
       </header>
       {view === "chat" && <>
-        <div className="conversation">
-          {messages.map((message, index) => <article className={`message ${message.role}`} key={index}>
+        <div className="conversation" aria-live="polite">
+          {messages.length <= 1 && !busy && <section className="prompt-panel">
+            <h2><Sparkles size={16}/>{t.suggestions}</h2>
+            <p className="prompt-intro">{t.welcome}</p>
+            <div className="prompt-grid">
+              {[t.suggestionOne, t.suggestionTwo, t.suggestionThree, t.suggestionFour].map(prompt =>
+                <button type="button" key={prompt} onClick={() => void submitQuestion(prompt)}>{prompt}<ChevronRight size={14}/></button>)}
+            </div>
+          </section>}
+          {messages.length > 1 && messages.map((message, index) => <article className={`message ${message.role}`} key={index}>
             <div className="avatar">{message.role === "user" ? "U" : <Sparkles size={15}/>}</div>
             <div className="message-body">
               <div className="markdown">
@@ -983,17 +1171,36 @@ export default function App() {
                   </li>)}
                 </ol>
               </details>}
+              {message.role === "assistant" && message.trace && message.content && retrieval && (!message.citations || message.citations.length === 0) &&
+                <div className="grounding-warning" role="note"><AlertTriangle size={14}/><span>{t.noGrounding}</span></div>}
               {message.citations && message.citations.length > 0
-                ? <div className="sources"><span>{t.sources} {message.citations.length}</span>{message.citations.map((citation, citationIndex) => <button key={`${citation.document_id}-${citation.chunk}`} onClick={() => void openSource(citation)} title={`${citation.title} · chunk ${citation.chunk}`}><span className="source-index">{citationIndex + 1}</span><BookOpen size={13}/>{citation.title}<small>#{citation.chunk}</small><ChevronRight size={13}/></button>)}</div>
-                : message.role === "assistant" && message.content && typeof message.trace?.total_ms === "number" && <p className="no-sources">{t.noSources}</p>}
+                ? <div className="sources"><span>{t.groundedIn(message.citations.length)}</span>{message.citations.map((citation, citationIndex) => <button key={`${citation.document_id}-${citation.chunk}`} onClick={() => void openSource(citation)} title={`${citation.title} · chunk ${citation.chunk}`}><span className="source-index">{citationIndex + 1}</span><BookOpen size={13}/>{citation.title}<small>#{citation.chunk}</small><ChevronRight size={13}/></button>)}</div>
+                : message.role === "assistant" && message.content && typeof message.trace?.total_ms === "number" && !retrieval && <p className="no-sources">{t.noSources}</p>}
+              {message.role === "assistant" && message.content && (!busy || index < messages.length - 1) && <div className="message-actions">
+                <button type="button" onClick={() => void copyMessage(message.content)} aria-label={t.copy} title={t.copy}><Copy size={14}/></button>
+                {index === messages.length - 1 && <button type="button" onClick={() => regenerate(index)} aria-label={t.regenerate} title={t.regenerate}><RotateCcw size={14}/></button>}
+                <button type="button" className={feedbackByIndex[index] === 1 ? "active" : ""} onClick={() => void sendFeedback(index, 1)} aria-label={t.helpful} title={t.helpful}><ThumbsUp size={14}/></button>
+                <button type="button" className={feedbackByIndex[index] === -1 ? "active" : ""} onClick={() => void sendFeedback(index, -1)} aria-label={t.notHelpful} title={t.notHelpful}><ThumbsDown size={14}/></button>
+              </div>}
             </div>
           </article>)}
         </div>
-        <footer>
+        <footer className="composer">
           <input ref={fileInput} type="file" accept={UPLOAD_ACCEPT} hidden onChange={event => event.target.files?.[0] && upload(event.target.files[0])}/>
-          <button className="upload" title={t.upload} aria-label={t.upload} onClick={() => openFilePicker()}><FileUp size={18}/></button>
-          <form onSubmit={send}><textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={composerKeyDown} placeholder={t.ask} rows={1}/><button aria-label={t.chat} aria-keyshortcuts="Shift+Enter" disabled={busy || !input.trim()}><Send size={17}/></button></form>
-          <p>{t.scope} · {t.sendHint}</p>
+          <div className="composer-box">
+            <button className="upload" title={t.upload} aria-label={t.upload} onClick={() => openFilePicker()}><FileUp size={18}/></button>
+            <form onSubmit={send}>
+              <textarea ref={composerRef} value={input} onChange={event => setInput(event.target.value)} onKeyDown={composerKeyDown} placeholder={t.ask} rows={1} aria-describedby="composer-hint"/>
+              {busy
+                ? <button type="button" className="stop" onClick={stopGenerating} aria-label={t.stop} title={t.stop}><Square size={15}/></button>
+                : <button type="submit" aria-label={t.chat} aria-keyshortcuts="Shift+Enter" disabled={!input.trim()}><Send size={17}/></button>}
+            </form>
+          </div>
+          <div className="composer-meta" id="composer-hint">
+            <span>{t.scope}</span>
+            <span>{t.sendHint}</span>
+            {busy && <span className="live" role="status"><span className="spinner"/>{t.working}</span>}
+          </div>
         </footer>
       </>}
       {view === "knowledge" && <div className="knowledge">
@@ -1304,7 +1511,7 @@ export default function App() {
               <div><dt>{t.providerAdapter}</dt><dd>{settings.model.adapter}</dd></div>
               <div><dt>{t.providerModel}</dt><dd>{settings.model.name}</dd></div>
               <div><dt>{t.providerEndpoint}</dt><dd>{settings.model.base_url_configured ? t.connected : t.notConnected}</dd></div>
-              <div><dt>{t.thinking}</dt><dd>{settings.model.thinking_disabled ? t.disabled : t.enabled}</dd></div>
+              <div><dt>{t.working}</dt><dd>{settings.model.thinking_disabled ? t.disabled : t.enabled}</dd></div>
               <div><dt>{t.promptProfile}</dt><dd>{settings.model.prompt_profile}</dd></div>
               <div><dt>{t.timeoutLabel}</dt><dd>{settings.model.timeout_seconds}s</dd></div>
             </dl>
@@ -1416,5 +1623,6 @@ export default function App() {
         </> : null}
       </aside>
     </div>}
+    {toast && <div className="toast" role="status">{toast}</div>}
   </main>;
 }

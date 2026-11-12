@@ -31,6 +31,7 @@ from .ingest.adapters import register_default_adapters
 from .ingest.mime import sniff_mime
 from .ingest.parsers import ParseError
 from .ingest.pipeline import PipelineConfig, PermanentError, run_pipeline
+from .feedback import FeedbackStore
 from .gaps import GapStore, PackStore, build_pack, cluster_gaps, verify_pack
 from .tacit import QUESTION_TEMPLATES, TacitStore, suggest_questions
 
@@ -103,6 +104,16 @@ class ChatRequest(BaseModel):
 class OntologyPackRequest(BaseModel):
     gap_ids: list[str] = Field(min_length=1, max_length=100)
     name: str = Field(default="", max_length=120)
+
+
+class FeedbackCreate(BaseModel):
+    trace_id: str = Field(min_length=1, max_length=120)
+    rating: Literal[-1, 1]
+    reason: str = Field(default="", max_length=200)
+    question: str = Field(default="", max_length=500)
+    answer_excerpt: str = Field(default="", max_length=500)
+    citations: int = Field(default=0, ge=0, le=100)
+    model: str = Field(default="", max_length=120)
 
 
 class TacitEntryCreate(BaseModel):
@@ -1365,6 +1376,7 @@ JOBS_LOCK = threading.Lock()
 gap_store = GapStore()
 pack_store = PackStore()
 tacit_store = TacitStore()
+feedback_store = FeedbackStore()
 ONTOLOGY_COVERAGE_THRESHOLD = float(os.getenv("ONTOLOGY_COVERAGE_THRESHOLD", "0.8"))
 INGEST_PIPELINE_CONFIG = PipelineConfig(
     queue_maxsize=int(os.getenv("INGEST_QUEUE_MAXSIZE", "32")),
@@ -2141,6 +2153,46 @@ async def publish_tacit_entry(
         attachments=len(entry.attachments), gap_id=entry.gap_id,
     )
     return tacit_entry_payload(published or entry)
+
+
+@app.post("/v1/feedback")
+async def record_feedback(
+    payload: FeedbackCreate,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    item = feedback_store.add(
+        organization_id=principal.organization_id,
+        user_id=principal.user_id,
+        trace_id=payload.trace_id,
+        rating=payload.rating,
+        reason=payload.reason,
+        question=payload.question,
+        answer_excerpt=payload.answer_excerpt,
+        citations=payload.citations,
+        model=payload.model,
+    )
+    trace_id = str(uuid.uuid4())
+    audit.emit(
+        "feedback.recorded", principal, trace_id,
+        feedback_id=item.id, answer_trace_id=item.trace_id, rating=item.rating,
+        citations=item.citations, reason=item.reason,
+    )
+    return item.as_dict()
+
+
+@app.get("/v1/admin/feedback")
+async def list_feedback(
+    limit: int = Query(100, ge=1, le=500),
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if "admin" not in principal.roles:
+        raise HTTPException(403, "Administrator role required")
+    return {
+        "data": [item.as_dict() for item in feedback_store.list(principal.organization_id, limit)],
+        "summary": feedback_store.summary(principal.organization_id),
+    }
 
 
 @app.get("/v1/audit-events")

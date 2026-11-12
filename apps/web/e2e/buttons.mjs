@@ -77,7 +77,7 @@ async function makeFile(dir, name, content) {
 
 async function main() {
   const browser = await chromium.launch();
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: ["clipboard-read", "clipboard-write"] });
   page = await context.newPage();
   page.on("console", (message) => {
     if (message.type() === "error") consoleErrors.push(message.text());
@@ -184,6 +184,25 @@ async function main() {
     await expectVisible(".source-panel");
     await page.locator(".source-close").click();
     await expectHidden(".source-panel");
+  });
+
+  await step("copy and feedback controls respond", async () => {
+    const last = page.locator(".message.assistant").last();
+    await last.hover();
+    await last.locator('button[aria-label="복사"]').click();
+    await expectText(".toast", "복사했습니다", 5000);
+    await page.waitForTimeout(300);
+    await last.locator('button[aria-label="도움이 됐어요"]').click();
+    await expectText(".toast", "피드백 감사합니다", 5000);
+  });
+
+  await step("stop generation responds", async () => {
+    await page.locator("footer textarea").fill("아주 긴 설명을 1000단어로 작성해 주세요.");
+    await page.locator('footer button[aria-label="채팅"]').last().click();
+    const stop = page.locator(".composer button.stop");
+    await stop.waitFor({ state: "visible", timeout: 30000 });
+    await stop.click();
+    await expectText(".toast", "생성을 중지했습니다", 5000);
   });
 
   // ----------------------------------------------------------------- knowledge
@@ -363,6 +382,19 @@ async function main() {
   await step("settings quick link navigates", async () => {
     await page.locator(".quick-links").getByRole("button", { name: "채팅", exact: true }).click();
     await expectText("header h1", "근거 기반 채팅");
+  });
+
+  await step("mobile navigation drawer opens and closes", async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload({ waitUntil: "networkidle" });
+    await page.waitForTimeout(400);
+    await page.getByRole("button", { name: "메뉴", exact: true }).click();
+    await page.locator(".sidebar.open").waitFor({ state: "visible", timeout: 5000 });
+    await page.locator(".sidebar-backdrop.open").click();
+    await page.waitForTimeout(300);
+    await page.locator(".sidebar.open").waitFor({ state: "detached", timeout: 5000 });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.reload({ waitUntil: "networkidle" });
   });
 
   // -------------------------------------------------------------------- cleanup
