@@ -12,4 +12,6 @@ ROOT = Path(tempfile.mkdtemp(prefix="baryon-ax-tests-"))
 
 os.environ.setdefault("GAP_STORE", str(ROOT / "gaps" / "gaps.jsonl"))
 os.environ.setdefault("ONTOLOGY_STORE", str(ROOT / "ontology"))
+os.environ.setdefault("FEEDBACK_STORE", str(ROOT / "feedback" / "feedback.jsonl"))
+os.environ.setdefault("TACIT_STORE", str(ROOT / "tacit" / "tacit.jsonl"))
 os.environ.setdefault("SYSTEM_METRICS_ENABLED", "false")

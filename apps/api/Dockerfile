@@ -19,7 +19,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HF_HOME=/data/fastembed FASTEMB
 
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
-RUN mkdir -p /data/fastembed /data/documents /data/audit /data/mem0 /data/gaps /data/ontology /data/tacit \
+RUN mkdir -p /data/fastembed /data/documents /data/audit /data/mem0 /data/gaps /data/ontology /data/tacit /data/feedback \
     && useradd --create-home --uid 10001 baryon \
     && chown -R baryon:baryon /data \
     && if [ "$PRELOAD_EMBEDDINGS" = "true" ]; then python -c "from fastembed import TextEmbedding; model = TextEmbedding('$EMBEDDING_MODEL'); list(model.embed(['warmup']))"; fi

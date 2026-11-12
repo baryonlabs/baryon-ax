@@ -10,6 +10,7 @@ services:
       - /data/baryon-ax/data/fastembed:/data/fastembed
       - /data/baryon-ax/data/gaps:/data/gaps
       - /data/baryon-ax/data/tacit:/data/tacit
+      - /data/baryon-ax/data/feedback:/data/feedback
       - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
     environment:
