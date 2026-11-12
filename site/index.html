@@ -262,11 +262,13 @@
     <nav class="site-nav" id="site-nav" aria-label="주요 메뉴">
       <a href="#why">소개</a>
       <a href="#features">기능</a>
+      <a href="#formats">지원 형식</a>
       <a href="#tacit">암묵지</a>
       <a href="#start">시작하기</a>
       <a href="#help">도움말</a>
       <a href="#security">보안</a>
       <a href="#docs">문서</a>
+      <a href="open-source/">오픈소스</a>
       <a href="https://github.com/baryonlabs/baryon-ax">GitHub</a>
       <a class="lang" href="en/" hreflang="en" lang="en">English</a>
     </nav>
@@ -348,7 +350,7 @@
         </article>
         <article class="feature" style="--accent:#7fc7a8">
           <span class="feature-icon"><img src="assets/mascots/knowledge.svg" alt="" width="30" height="30" loading="lazy"></span>
-          <div><h3>지식 라이브러리</h3><p>HWP·HWPX·PDF·Office·이미지·텍스트를 MIME 기반으로 라우팅하고, 구조를 인식해 청킹합니다.</p></div>
+          <div><h3>지식 라이브러리</h3><p>HWP·HWPX·PDF·Office·이미지·텍스트를 MIME 기반으로 라우팅하고, 구조를 인식해 청킹합니다.</p><a class="text-link" href="#formats">지원 형식 전체 보기</a></div>
         </article>
         <article class="feature" style="--accent:#f0b45a">
           <span class="feature-icon"><img src="assets/mascots/tacit.svg" alt="" width="30" height="30" loading="lazy"></span>
@@ -375,6 +377,68 @@
           <div><h3>최소 하드웨어로 시작</h3><p>Basic Core는 <strong>2 vCPU · 4GB RAM · GPU 없이</strong> 동작합니다. Full stack은 8 vCPU · 16GB, 7B GPU는 RTX 4090 24GB 1장부터. 필요할 때 B300·27B로 확장하세요.</p><a class="text-link" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md">하드웨어 요구사항</a></div>
         </article>
       </div>
+    </div>
+  </section>
+
+  <section class="section formats-section" id="formats">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Supported formats</p>
+        <h2>어떤 파일까지 읽을 수 있나.</h2>
+        <p>확장자가 아니라 <strong>파일 내용(MIME)</strong>을 먼저 확인해 파서를 고릅니다. 확장자가 잘못된 파일도 내용에 맞는 파서로 라우팅됩니다.</p>
+      </div>
+
+      <div class="format-callout">
+        <div>
+          <strong>확장자는 힌트일 뿐입니다.</strong>
+          <p>예를 들어 <code>.pdf</code> 확장자를 가진 HWP 파일도 바이트 검사로 HWP를 감지해 kordoc으로 보냅니다. ZIP 기반 형식은 내부 구조를 열어 DOCX·XLSX·PPTX·HWPX를 구분합니다.</p>
+        </div>
+        <span class="format-badge">MIME first</span>
+      </div>
+
+      <div class="table-wrap format-table">
+        <table>
+          <thead>
+            <tr><th>파서</th><th>지원 형식</th><th>확장자</th><th>필요 구성</th><th>비고</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>내장 텍스트</strong></td>
+              <td>TXT, Markdown, CSV, JSON, XML, 일반 UTF-8 텍스트</td>
+              <td><code>.txt</code> <code>.md</code> <code>.markdown</code> <code>.mdown</code> <code>.csv</code> <code>.json</code> <code>.xml</code></td>
+              <td><span class="format-need basic">Basic Core</span></td>
+              <td>Markdown은 제목·목록·표를 구조로 보존합니다. CSV/JSON/XML은 텍스트로 추출하며, 표·스키마 구조화는 아직 하지 않습니다.</td>
+            </tr>
+            <tr>
+              <td><strong>kordoc</strong></td>
+              <td>HWP, HWPX, HWPML</td>
+              <td><code>.hwp</code> <code>.hwpx</code> <code>.hwpml</code></td>
+              <td><span class="format-need parsers">parser profile</span></td>
+              <td>한글 문서 전용. HWP 바이너리, HWPX ZIP, HWPML XML을 처리합니다.</td>
+            </tr>
+            <tr>
+              <td><strong>docling</strong></td>
+              <td>PDF, DOCX, XLSX, PPTX, HTML, PNG, JPEG, WebP, TIFF</td>
+              <td><code>.pdf</code> <code>.docx</code> <code>.xlsx</code> <code>.pptx</code> <code>.html</code> <code>.htm</code> <code>.png</code> <code>.jpg</code> <code>.jpeg</code> <code>.webp</code> <code>.tif</code> <code>.tiff</code></td>
+              <td><span class="format-need parsers">parser profile</span></td>
+              <td>레이아웃·표·OCR 모델을 사용합니다. 첫 실행 시 모델을 내려받으며, 폐쇄망에서는 <code>/models</code> 캐시를 마운트합니다.</td>
+            </tr>
+            <tr>
+              <td><strong>Apache Tika</strong></td>
+              <td>DOC, XLS, PPT, RTF, OLE2/ZIP 컨테이너</td>
+              <td><code>.doc</code> <code>.xls</code> <code>.ppt</code> <code>.rtf</code> (MIME 기반)</td>
+              <td><span class="format-need tika">Tika sidecar</span></td>
+              <td>레거시 형식 폴백. Tika가 텍스트를 추출하고, 구조화는 텍스트 수준에서 이뤄집니다.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="format-note">
+        <strong>현재 라우팅되지 않는 형식</strong>
+        <p>GIF, BMP, SVG, ODT/ODS/ODP, EPUB, EML/MSG는 현재 파서 목록에 없습니다. GIF는 MIME 인식만 되고 파서가 연결되어 있지 않습니다. 필요하면 어댑터를 추가할 수 있습니다.</p>
+      </div>
+      <p class="note">파서 사이드카 실행: <code>docker compose -f docker-compose.yml -f docker-compose.parsers.yml --profile parsers up -d --build</code> · <a class="text-link" href="#start">빠른 시작</a></p>
     </div>
   </section>
 
@@ -643,7 +707,7 @@ docker compose down
         </details>
         <details>
           <summary>HWP/HWPX 문서도 처리할 수 있나요?</summary>
-          <p>네. kordoc 사이드카가 HWP/HWPX를 파싱하고, docling이 PDF·Office·이미지를, Tika가 레거시 형식을 보완합니다. parser 프로필을 함께 실행해야 하며, MIME 기반으로 파서가 자동 라우팅됩니다.</p>
+          <p>네. kordoc 사이드카가 HWP/HWPX를 파싱하고, docling이 PDF·Office·이미지를, Tika가 레거시 형식을 보완합니다. parser 프로필을 함께 실행해야 하며, MIME 기반으로 파서가 자동 라우팅됩니다. 전체 목록은 <a href="#formats">지원 형식</a>에서 확인하세요.</p>
         </details>
         <details>
           <summary>데이터는 어디에 저장되나요?</summary>
@@ -715,7 +779,7 @@ docker compose down
         <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/features.md"><span>기능 인벤토리</span><span>08</span></a>
         <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md"><span>하드웨어 요구사항</span><span>09</span></a>
         <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/screenshots.md"><span>화면 갤러리</span><span>10</span></a>
-        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/open-source.md"><span>오픈소스 구성 요소 · 라이선스</span><span>11</span></a>
+        <a class="doc-card" href="open-source/"><span>오픈소스 구성 요소 · 라이선스</span><span>11</span></a>
       </div>
     </div>
   </section>

@@ -55,6 +55,8 @@ Use these exact URLs when citing Baryon AX:
 
 - Homepage (Korean, default): https://baryonlabs.github.io/baryon-ax/
 - Homepage (English): https://baryonlabs.github.io/baryon-ax/en/
+- Supported parsing formats: https://baryonlabs.github.io/baryon-ax/#formats
+- Open source & licenses: https://baryonlabs.github.io/baryon-ax/open-source/
 - Machine brief (this file): https://baryonlabs.github.io/baryon-ax/llms.txt
 - Extended machine brief: https://baryonlabs.github.io/baryon-ax/llms-full.txt
 - Source repository: https://github.com/baryonlabs/baryon-ax

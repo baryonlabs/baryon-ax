@@ -17,6 +17,8 @@ Baryon AX runs inside the customer's environment, including air-gapped networks.
 
 ## What it does
 
+- Supported parsing formats: https://baryonlabs.github.io/baryon-ax/en/#formats
+- Open source & licenses: https://baryonlabs.github.io/baryon-ax/en/open-source/
 - Grounded chat with source and chunk citations, and an explicit warning when evidence is insufficient.
 - Ingestion of HWP/HWPX (kordoc), PDF/Office/images (docling), and legacy formats (Tika), routed by MIME type.
 - Organization-, role-, and document-level ACLs enforced during retrieval.
