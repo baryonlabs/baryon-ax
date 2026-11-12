@@ -125,7 +125,9 @@ python3 scripts/check_site_live.py
 - [x] `check_site_live.py` 0 failures
 - [x] `submit_indexnow.py` 새 도메인 제출 (4개 URL, 200/200)
 - [ ] Search Console sitemap 제출 (사람 로그인)
-- [ ] Naver/Bing/Daum 새 URL 등록 (사람 로그인)
+- [x] Naver 소유확인 메타 배포 (2026-11-13)
+- [ ] Naver 콘솔 소유확인 + sitemap 제출 (사람 로그인)
+- [ ] Bing/Daum 새 URL 등록 (사람 로그인)
 
 ---
 
@@ -142,5 +144,6 @@ python3 scripts/check_site_live.py
 | 라이브 검증 | `check_site_live.py` failures 0, warnings 0 |
 | IndexNow | 4개 URL, `api.indexnow.org` 200, `www.bing.com` 200 |
 | Google 인증 | `baryon.ai` DNS TXT 확인 (도메인 속성) |
+| Naver 인증 | 소유확인 메타 배포 완료, 콘솔 확인 대기 |
 
 남은 일은 검색엔진 콘솔 로그인 후 sitemap 제출·소유확인뿐입니다. 절차는 [docs/promotion-playbook.md](promotion-playbook.md)의 14장을 참고하세요.
