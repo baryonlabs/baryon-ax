@@ -103,7 +103,17 @@ UI에서는 **암묵지** 탭에서 질문 큐, 내 답변, 전체 답변, 게�
 
 > **하드웨어 최소사양**: Basic Core, Full stack, GPU 추론 구성별 CPU·RAM·GPU·스토리지 기준은 [docs/hardware-requirements.md](docs/hardware-requirements.md)에 정리되어 있습니다.
 
-### Basic Core (no external services)
+### One-line start (Mac mini)
+
+On an Apple Silicon Mac mini with Docker Desktop installed, paste this into Terminal:
+
+```bash
+git clone https://github.com/baryonlabs/baryon-ax.git && cd baryon-ax && cp .env.example .env && docker compose up --build
+```
+
+No GPU or API key is required; the `demo-local` model is used by default. The first build takes about 10–20 minutes. Open `http://localhost:3001` when it finishes.
+
+### Basic Core (already cloned, no external services)
 
 ```bash
 cp .env.example .env
