@@ -262,6 +262,7 @@
     <nav class="site-nav" id="site-nav" aria-label="주요 메뉴">
       <a href="#why">소개</a>
       <a href="#features">기능</a>
+      <a href="#tacit">암묵지</a>
       <a href="#start">시작하기</a>
       <a href="#help">도움말</a>
       <a href="#security">보안</a>
@@ -351,7 +352,7 @@
         </article>
         <article class="feature" style="--accent:#f0b45a">
           <span class="feature-icon"><img src="assets/mascots/tacit.svg" alt="" width="30" height="30" loading="lazy"></span>
-          <div><h3>암묵지 지식화</h3><p>지식 공백 → 질문 → 답변 → 게시 → 검증 → 환류. 판단 기준과 예외 조건을 검색 가능한 지식으로 만듭니다.</p></div>
+          <div><h3>암묵지 지식화</h3><p>지식 공백 → 질문 → 답변 → 게시 → 검증 → 환류. 판단 기준과 예외 조건을 검색 가능한 지식으로 만듭니다.</p><a class="text-link" href="#tacit">가능한 이유 보기</a></div>
         </article>
         <article class="feature" style="--accent:#d99b6c">
           <span class="feature-icon"><img src="assets/mascots/gaps.svg" alt="" width="30" height="30" loading="lazy"></span>
@@ -373,6 +374,105 @@
           <span class="feature-icon"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg></span>
           <div><h3>최소 하드웨어로 시작</h3><p>Basic Core는 <strong>2 vCPU · 4GB RAM · GPU 없이</strong> 동작합니다. Full stack은 8 vCPU · 16GB, 7B GPU는 RTX 4090 24GB 1장부터. 필요할 때 B300·27B로 확장하세요.</p><a class="text-link" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md">하드웨어 요구사항</a></div>
         </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tacit-section" id="tacit">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Tacit knowledge loop</p>
+        <h2>왜 암묵지 지식화가 가능한가.</h2>
+        <p>AI가 답을 지어내는 것이 아니라, 조직이 이미 가진 판단 기준을 꺼내 <strong>검색·인용·감사 가능한 문서</strong>로 만드는 구조입니다. 핵심은 게시된 암묵지가 일반 문서와 <strong>같은 파이프라인</strong>을 탄다는 점입니다.</p>
+      </div>
+
+      <ol class="loop-grid">
+        <li>
+          <span class="loop-num">01 · DETECT</span>
+          <h3>감지</h3>
+          <p>근거를 찾지 못했거나 모호한 답변을 <strong>지식 공백</strong>으로 기록합니다. 질문·감지 사유·발생 횟수가 쌓입니다.</p>
+          <span class="loop-api">record_knowledge_gap · /v1/admin/gaps</span>
+        </li>
+        <li>
+          <span class="loop-num">02 · ASK</span>
+          <h3>질문</h3>
+          <p>열린 공백을 최우선으로 질문 큐에 올리고, 판단 기준·온보딩·권한/예외·용어·문제 해결 템플릿으로 보완합니다.</p>
+          <span class="loop-api">suggest_questions · /v1/tacit/questions</span>
+        </li>
+        <li>
+          <span class="loop-num">03 · ANSWER</span>
+          <h3>답변</h3>
+          <p>전문가가 결론만이 아니라 <strong>이유와 예외 조건</strong>을 작성합니다. 기존 문서를 첨부해 맥락을 보강하고, 초안은 작성자·관리자만 수정합니다.</p>
+          <span class="loop-api">TacitStore · POST/PATCH /v1/tacit/entries</span>
+        </li>
+        <li>
+          <span class="loop-num">04 · PUBLISH</span>
+          <h3>게시</h3>
+          <p><code># 암묵지: {질문}</code> Markdown 문서를 만들고, 업로드 문서와 동일한 파싱·청킹·임베딩·Qdrant 색인을 실행합니다.</p>
+          <span class="loop-api">POST /v1/tacit/entries/{id}/publish</span>
+        </li>
+        <li>
+          <span class="loop-num">05 · VERIFY</span>
+          <h3>검증</h3>
+          <p>게시된 답변이 원래 공백을 해소했는지 확인하고, 온톨로지 팩이 있으면 수용 질문으로 커버리지를 재검증합니다.</p>
+          <span class="loop-api">knowledge.gap_resolved · verify_pack</span>
+        </li>
+        <li>
+          <span class="loop-num">06 · REUSE</span>
+          <h3>환류</h3>
+          <p>게시된 문서는 다음 채팅부터 출처와 함께 사용됩니다. 해결되지 않은 공백은 다시 질문 큐로 돌아가 사이클이 반복됩니다.</p>
+          <span class="loop-api">검색 · 인용 · GET /v1/tacit/entries</span>
+        </li>
+      </ol>
+
+      <div class="loop-key">
+        <div>
+          <p class="eyebrow">The key</p>
+          <h3>게시된 암묵지는 별도 FAQ가 아닙니다.</h3>
+          <p>게시 시 일반 문서와 같은 Markdown 문서가 생성되고, 동일한 ingest 파이프라인을 거칩니다. 그래서 다음 채팅에서 검색되고, 출처로 인용되고, 문서 ACL이 그대로 적용됩니다. 별도 지식 베이스를 따로 관리할 필요가 없습니다.</p>
+        </div>
+        <div class="pipeline" aria-label="암묵지 게시 파이프라인">
+          <span>질문</span><span>답변</span><span>Markdown</span><span>파싱</span><span>청킹</span><span>임베딩</span><span>Qdrant</span><span>인용</span>
+        </div>
+      </div>
+
+      <div class="why-grid">
+        <article class="card">
+          <h3>01 · 같은 수집 파이프라인</h3>
+          <p>암묵지를 위한 별도 저장소를 만들지 않습니다. 게시된 답변은 일반 문서와 같은 ingest 파이프라인을 타므로 검색·청킹·임베딩·출처 표시가 자동으로 따라옵니다.</p>
+        </article>
+        <article class="card">
+          <h3>02 · 끝까지 남는 provenance</h3>
+          <p>공백 → 질문 → 답변 → 게시 문서가 연결됩니다. UI의 <strong>생성 근거</strong> 패널에서 생성 경로, 원본 공백, 감지 사유, 발생 횟수, 핵심 용어, 게시 문서를 확인할 수 있습니다.</p>
+        </article>
+        <article class="card">
+          <h3>03 · 권한과 감사</h3>
+          <p>답변과 첨부는 조직·역할 ACL을 따르고, 초안은 작성자·관리자만 수정합니다. <code>tacit.recorded</code>, <code>tacit.published</code>, <code>knowledge.gap_resolved</code>가 감사 이벤트로 남습니다.</p>
+        </article>
+        <article class="card">
+          <h3>04 · 검증 가능한 루프</h3>
+          <p>게시된 답변이 원래 공백을 해소했는지 확인하고, 온톨로지 팩이 있으면 수용 질문으로 커버리지를 재검증합니다. 해결되지 않은 공백은 다음 질문 큐로 돌아갑니다.</p>
+        </article>
+      </div>
+
+      <div class="role-panel">
+        <h3>사람과 AI의 역할</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>주체</th><th>하는 일</th><th>하지 않는 일</th></tr></thead>
+            <tbody>
+              <tr><td><strong>AI</strong></td><td>공백 감지, 질문 제안, 파싱·청킹·임베딩, 검색·인용, 클러스터링</td><td>판단 기준을 지어내기</td></tr>
+              <tr><td><strong>전문가</strong></td><td>결론이 아니라 <strong>이유와 예외 조건</strong>을 작성, 기존 문서 첨부</td><td>검증 없이 게시</td></tr>
+              <tr><td><strong>관리자</strong></td><td>게시 검토, 공백 해소 확인, 온톨로지 팩 커버리지 검증</td><td>권한 밖 문서 열람</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tacit-links">
+        <a class="btn btn-ghost" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/research/knowledge-gap-loop.md">설계 배경 문서</a>
+        <a class="btn btn-ghost" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/features.md">기능 인벤토리</a>
+        <a class="btn btn-ghost" href="https://github.com/baryonlabs/baryon-ax#암묵지-지식화-사이클-tacit--explicit">README 사이클</a>
       </div>
     </div>
   </section>
