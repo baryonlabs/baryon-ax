@@ -172,7 +172,72 @@ Open http://localhost:3001. The demo model needs no API key.
 
 ---
 
-## 6. 게시 전 체크
+## 6. 홈페이지 개시 공지 (benefit-first)
+
+> 대상: DX·AX 담당자, 보안·IT 운영 리더. 기능 목록보다 **도입하면 무엇이 달라지는가**를 먼저 씁니다.
+
+### 6.1 LinkedIn (한국어)
+
+> AI 도입이 어려운 이유는 기술이 아니라, 신뢰였습니다.
+>
+> 직원은 답을 찾기 어려워하고, 전문가는 같은 질문에 반복해서 답하고, 보안팀은 사내 문서가 밖으로 나갈까 걱정합니다.
+>
+> **Baryon AX**는 이 세 가지를 한 번에 해결하는 온프레미스 AI입니다.
+>
+> - 흩어진 문서와 전문가 노하우를 연결해 **출처 있는 답**을 바로 제공
+> - 데이터는 회사 안에, 권한은 그대로, 모든 답은 감사 기록으로
+> - GPU 없이 **맥미니에서 한 줄**로 시작
+>
+> 설치·보안 질의서·사내 GPU 구성은 기술지원으로 안내합니다.
+>
+> 소개: https://baryon-ax.baryon.ai/?utm_source=linkedin&utm_medium=social&utm_campaign=launch_2026_11&utm_content=benefit_ko
+> 저장소: https://github.com/baryonlabs/baryon-ax
+>
+> #온프레미스 #RAG #AI에이전트 #DX #AX
+
+### 6.2 LinkedIn (English)
+
+> AI adoption is hard because of trust, not technology.
+>
+> Employees struggle to find answers, experts repeat the same explanations, and security teams worry about company documents leaving the building.
+>
+> **Baryon AX** solves all three with on-premises AI.
+>
+> - Connects documents and expert know-how to deliver **answers with sources**
+> - Data stays inside, permissions stay intact, every answer is auditable
+> - Starts on a **Mac mini in one line**, no GPU required
+>
+> Technical support covers installation, security questionnaires, and on-prem GPU setups.
+>
+> Site: https://baryon-ax.baryon.ai/en/?utm_source=linkedin&utm_medium=social&utm_campaign=launch_2026_11&utm_content=benefit_en
+> Code: https://github.com/baryonlabs/baryon-ax
+>
+> #OnPremises #RAG #AIAgents #DX #AX
+
+### 6.3 Naver 블로그 (짧은 공지)
+
+> **사내 AI, 답보다 중요한 건 '근거'였습니다**
+>
+> 문서는 많은데 답을 찾기 어렵고, 전문가가 떠나면 노하우도 사라지고, SaaS AI에는 사내 문서를 넣기 어렵습니다.
+>
+> Baryon AX는 문서·암묵지·메모리에서 근거를 찾아 **출처와 함께** 답하는 온프레미스 AI입니다. 데이터는 회사 안에 두고, 권한과 감사 기록도 기본으로 갖췄습니다.
+>
+> 맥미니와 Docker만 있으면 한 줄로 시작할 수 있습니다. GPU는 필요할 때 연결하세요.
+>
+> 자세히 보기: https://baryon-ax.baryon.ai/?utm_source=naver_blog&utm_medium=owned&utm_campaign=launch_2026_11&utm_content=benefit_post
+>
+> #온프레미스AI #RAG #사내문서검색 #AX #DX
+
+### 6.4 X / Threads
+
+> 사내 문서로 답하되, 출처 없이는 답하지 않습니다.
+> Baryon AX — 온프레미스 AI 에이전트. 데이터는 회사 안에, 모든 답은 감사 가능하게.
+> 맥미니에서 한 줄로 시작, GPU는 필요할 때.
+> https://baryon-ax.baryon.ai/?utm_source=x&utm_medium=social&utm_campaign=launch_2026_11&utm_content=benefit_thread
+
+---
+
+## 7. 게시 전 체크
 
 - [ ] 수치가 `docs/`와 일치하는가 (버전, 하드웨어, 모델명)
 - [ ] 링크가 라이브 200인가 (`check_site_live.py`)
