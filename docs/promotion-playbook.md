@@ -16,11 +16,11 @@
 | 호스팅 | ✅ | GitHub Pages, `main` push 시 `.github/workflows/pages.yml` 배포 |
 | HTTPS | ✅ | `https_enforced: true`, 인증서 approved (2027-02-11 만료, 자동 갱신) |
 | 커스텀 도메인 | ✅ | `https://baryon-ax.baryon.ai/` 라이브, `baryonlabs.github.io/baryon-ax/` → 301 |
-| Google Search Console | ⏳ | `sc-domain:baryon.ai` DNS TXT 인증 확인, sitemap 제출만 남음 |
-| Naver Search Advisor | 🟡 | 소유확인 메타 배포 완료(2026-11-13), 콘솔 소유확인·sitemap 제출 남음 |
-| Bing Webmaster Tools | ⏳ | Microsoft 로그인 후 등록 또는 GSC import 필요 |
+| Google Search Console | ✅ | `sc-domain:baryon.ai` sitemap 제출 완료(4개 발견), 핵심 URL 색인 완료 |
+| Naver Search Advisor | ✅ | 소유확인 완료, `sitemap.xml` 제출 완료(2026-11-13 03:22) |
+| Bing Webmaster Tools | 🟡 | IndexNow 200/200 완료. BWT 대시보드는 Microsoft 세션 미인식으로 보류 |
 | IndexNow | ✅ | 2026-11-13 새 도메인 4개 URL 제출, `api.indexnow.org`·`bing.com` 모두 200 |
-| Daum 검색등록 | ⏳ | Kakao 로그인 필요 |
+| Daum 검색등록 | 🟡 | 등록 신청 완료(2026-11-13), 검토 결과 이메일 대기 |
 | SEO/AEO/GEO 자산 | ✅ | title/description, canonical, hreflang, JSON-LD 8종, FAQ, `llms.txt` 3종, OG 2종 |
 | 자동 검증 | ✅ | `check_site_seo.py` 0/0, `check_site_live.py` 새 도메인 0 failures |
 | 분석 | ❌ | GA4 또는 Cloudflare Web Analytics 미연결 |
@@ -307,11 +307,12 @@ python3 scripts/apply_site_domain.py --domain baryon-ax.baryon.ai --write
 1. ~~커스텀 도메인 이전 + HTTPS 강제~~ (2026-11-13 완료, 인증서 approved)
 2. ~~`python3 scripts/check_site_live.py`~~ (2026-11-13 완료, 새 도메인 failures 0)
 3. ~~`python3 scripts/submit_indexnow.py`~~ (2026-11-13 완료, 4개 URL · 200/200)
-4. Google Search Console에서 `sitemap.xml` 제출 + 핵심 URL 색인 요청
-5. Naver Search Advisor 등록 → 토큰 주입 → 소유확인 → sitemap 제출
-6. Bing Webmaster(GSC import) · Daum 등록
-7. 분석 도구 연결 (GA4 또는 Cloudflare Web Analytics)
-8. LinkedIn·Naver 블로그 첫 글 발행 ([docs/promotion-drafts.md](promotion-drafts.md))
+4. ~~Google Search Console sitemap 제출 + 핵심 URL 색인 요청~~ (2026-11-13 완료, 4개 발견)
+5. ~~Naver Search Advisor 소유확인 + sitemap 제출~~ (2026-11-13 완료)
+6. ~~Daum 검색등록 신청~~ (2026-11-13 완료, 검토 대기)
+7. Bing Webmaster Tools 로그인·사이트 추가 (IndexNow는 완료, 대시보드는 선택)
+8. 분석 도구 연결 (GA4 또는 Cloudflare Web Analytics)
+9. LinkedIn·Naver 블로그 첫 글 발행 ([docs/promotion-drafts.md](promotion-drafts.md))
 
 ---
 
@@ -326,38 +327,28 @@ python3 scripts/apply_site_domain.py --domain baryon-ax.baryon.ai --write
 - [x] `python3 scripts/check_site_live.py` → failures 0, warnings 0
 - [x] `python3 scripts/submit_indexnow.py` → 4개 URL, `api.indexnow.org` 200, `www.bing.com` 200
 - [x] Google 도메인 속성 인증용 DNS TXT 확인 (`baryon.ai`)
+- [x] Google Search Console sitemap 제출(4개 발견) + 핵심 URL 색인
+- [x] Naver Search Advisor 소유확인 + sitemap 제출
+- [x] Daum 검색등록 신청 (검토 대기)
 - [x] title/description/canonical/hreflang, JSON-LD, FAQ, `llms.txt` 3종, OG 2종, sitemap 4개 URL
 - [x] `robots.txt` AI 크롤러 허용 + sitemap 명시
 - [x] 홍보 문안·UTM 링크 ([docs/promotion-drafts.md](promotion-drafts.md))
 
-### 사람이 직접 해야 하는 항목 (계정 로그인 필요)
+### 검색엔진 등록 결과 (2026-11-13)
 
-자동화할 수 없는 항목만 남았습니다. 아래 순서대로 진행하면 됩니다.
+| 엔진 | 결과 | 비고 |
+|---|---|---|
+| Google Search Console | ✅ sitemap 제출, **4개 발견**, `/`·`/en/`·`/open-source/` 색인 완료 | `/en/open-source/` 색인 생성 요청됨 |
+| Naver Search Advisor | ✅ 소유확인 완료, `sitemap.xml` 제출(03:22) | 수집·색인 리포트는 시간 필요 |
+| Daum 검색등록 | 🟡 신청 완료 | `ai.baryon.ai@gmail.com`으로 검토 결과 발송 예정 |
+| Bing IndexNow | ✅ 4개 URL, 200/200 | BWT 대시보드와 별개로 수집 진행 |
+| Bing Webmaster Tools | 🟡 보류 | Microsoft 세션이 BWT에서 인식되지 않음. IndexNow로 URL 제출은 완료 |
 
-#### 1) Google Search Console
+### 남은 항목
 
-1. `baryon.ai` 도메인 속성 → **Sitemaps** → `https://baryon-ax.baryon.ai/sitemap.xml` 제출
-2. 발견 URL **4개** 확인
-3. **URL 검사**에서 `/`, `/en/`, `/open-source/`, `/en/open-source/` 색인 생성 요청
+#### 1) Bing Webmaster Tools (선택)
 
-#### 2) Naver Search Advisor
-
-소유확인 메타태그는 이미 배포되어 있습니다(2026-11-13). 콘솔에서 확인만 하면 됩니다.
-
-1. https://searchadvisor.naver.com/console/board → 사이트 추가
-2. URL `https://baryon-ax.baryon.ai/` 입력
-3. **소유확인** 클릭 (CAPTCHA는 사람이 직접)
-4. **요청 → 사이트맵 제출** → `https://baryon-ax.baryon.ai/sitemap.xml`
-
-토큰을 교체해야 할 때만:
-
-```bash
-python3 scripts/set_site_verification.py --naver "<token>"
-python3 scripts/check_site_seo.py
-# PR → vulnerability sweep 통과 → 머지 → Pages 배포
-```
-
-#### 3) Bing Webmaster Tools
+Bing 수집은 IndexNow로 이미 진행 중입니다. 대시보드가 필요할 때만:
 
 1. https://www.bing.com/webmasters → Microsoft 로그인
 2. **Import from Google Search Console** 또는 **사이트 추가**
@@ -365,13 +356,15 @@ python3 scripts/check_site_seo.py
 4. sitemap 제출 → URL 검사
 5. 메타 검증이 필요할 때만 `python3 scripts/set_site_verification.py --bing "<token>"`
 
-#### 4) Daum 검색등록
+> 2026-11-13 확인 시 `chrome-k70n` 프로필은 Bing에는 `Seungwoo`로 로그인되어 있었지만, BWT 대시보드는 계속 `Sign In`을 표시했습니다. Microsoft 계정 쪽 로그인 루프로 보이며, IndexNow 제출은 정상입니다.
 
-1. https://register.daum.net/ → Kakao 로그인
-2. 사이트 추가: `https://baryon-ax.baryon.ai/`
-3. 소유확인 → sitemap 제출
+#### 2) Daum 검토 결과 확인
 
-#### 5) 분석 도구
+- `ai.baryon.ai@gmail.com` 메일함에서 Daum 검색등록 검토 결과 확인
+- 거절 시 사유에 따라 설명·디렉토리 보완 후 재신청
+- 신청 URL: `http://baryon-ax.baryon.ai/` (Daum 폼이 http prefix를 사용)
+
+#### 3) 분석 도구
 
 - Cloudflare Web Analytics: `baryon.ai` zone에 사이트 추가 후 JS 스니펫을 `site/index.html`·`site/en/index.html`의 `</body>` 앞에 삽입
 - 또는 GA4 측정 ID를 `gtag.js`로 삽입
@@ -388,7 +381,8 @@ python3 scripts/check_site_seo.py
    ```bash
    python3 scripts/submit_indexnow.py
    ```
-3. Google Search Console sitemap 제출 상태 확인
-4. Naver sitemap 제출 상태 확인
-5. LinkedIn·Naver 블로그·GitHub 릴리스 발행 ([docs/promotion-drafts.md](promotion-drafts.md))
-6. 24시간 후 `check_site_live.py`와 검색엔진 수집 현황 확인
+3. Google Search Console: 4개 URL 발견·색인 상태 확인
+4. Naver: 수집·색인 현황 확인 (리포트 생성까지 시간 필요)
+5. Daum 검토 결과 메일 확인
+6. LinkedIn·Naver 블로그·GitHub 릴리스 발행 ([docs/promotion-drafts.md](promotion-drafts.md))
+7. 24시간 후 `check_site_live.py`와 검색엔진 수집 현황 확인
