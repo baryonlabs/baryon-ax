@@ -46,9 +46,9 @@ COMPONENTS: tuple[dict[str, Any], ...] = (
     {"id": "ollama", "name": "Ollama", "group": "model", "role": "Local model runtime", "license": "MIT", "url": "https://github.com/ollama/ollama", "status": "active"},
     {"id": "vllm", "name": "vLLM", "group": "model", "role": "GPU model serving", "license": "Apache-2.0", "url": "https://github.com/vllm-project/vllm", "status": "active"},
     # ingestion
-    {"id": "kordoc", "name": "kordoc", "group": "ingestion", "role": "HWP/HWPX/PDF/Office parser sidecar", "license": "MIT", "url": "https://github.com/chrisryugj/kordoc", "status": "active"},
-    {"id": "docling", "name": "docling", "group": "ingestion", "role": "PDF/Office/image parser sidecar", "license": "MIT", "url": "https://github.com/docling-project/docling", "status": "active"},
-    {"id": "tika", "name": "Apache Tika", "group": "ingestion", "role": "Legacy format fallback", "license": "Apache-2.0", "url": "https://github.com/apache/tika", "status": "optional"},
+    {"id": "kordoc", "name": "kordoc", "group": "ingestion", "role": "HWP/HWPX/HWPML parser sidecar", "license": "MIT", "url": "https://github.com/chrisryugj/kordoc", "status": "active"},
+    {"id": "docling", "name": "docling", "group": "ingestion", "role": "PDF/Office/image/HTML parser sidecar", "license": "MIT", "url": "https://github.com/docling-project/docling", "status": "active"},
+    {"id": "tika", "name": "Apache Tika", "group": "ingestion", "role": "Legacy Office/RTF/ZIP fallback", "license": "Apache-2.0", "url": "https://github.com/apache/tika", "status": "optional"},
     # infrastructure and tooling
     {"id": "docker", "name": "Docker Engine (Moby)", "group": "infra", "role": "Container runtime", "license": "Apache-2.0", "url": "https://github.com/moby/moby", "status": "active", "note": "Docker Desktop has separate commercial terms."},
     {"id": "kubernetes", "name": "Kubernetes", "group": "infra", "role": "Deployment manifests", "license": "Apache-2.0", "url": "https://github.com/kubernetes/kubernetes", "status": "optional"},

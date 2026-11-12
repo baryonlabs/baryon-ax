@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open source &amp; licenses — Baryon AX</title>
+<meta name="description" content="Every open-source component and license used by Baryon AX, with MIT, Apache-2.0, BSD, LGPL, Redis, Langfuse, Docker, and model-weight caveats.">
+<link rel="canonical" href="https://baryonlabs.github.io/baryon-ax/en/open-source/">
+<link rel="alternate" hreflang="ko" href="https://baryonlabs.github.io/baryon-ax/open-source/">
+<link rel="alternate" hreflang="en" href="https://baryonlabs.github.io/baryon-ax/en/open-source/">
+<link rel="alternate" hreflang="x-default" href="https://baryonlabs.github.io/baryon-ax/open-source/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0b1020">
+<meta name="author" content="Baryon Labs">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Baryon AX">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Open source &amp; licenses — Baryon AX">
+<meta property="og:description" content="Every open-source component and license used by Baryon AX, with Redis, Langfuse, Docker, and model-weight caveats.">
+<meta property="og:url" content="https://baryonlabs.github.io/baryon-ax/en/open-source/">
+<meta property="og:image" content="https://baryonlabs.github.io/baryon-ax/assets/og-en.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Baryon AX open source and licenses">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Open source &amp; licenses — Baryon AX">
+<meta name="twitter:description" content="Every open-source component and license used by Baryon AX.">
+<meta name="twitter:image" content="https://baryonlabs.github.io/baryon-ax/assets/og-en.jpg">
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#org",
+      "name": "Baryon Labs",
+      "url": "https://github.com/baryonlabs"
+    },
+    {
+      "@type": "CollectionPage",
+      "@id": "https://baryonlabs.github.io/baryon-ax/en/open-source/#page",
+      "url": "https://baryonlabs.github.io/baryon-ax/en/open-source/",
+      "name": "Open source & licenses — Baryon AX",
+      "description": "Every open-source component and license used by Baryon AX.",
+      "inLanguage": "en",
+      "isPartOf": { "@id": "https://baryonlabs.github.io/baryon-ax/#website" },
+      "about": { "@id": "https://baryonlabs.github.io/baryon-ax/#app" }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "@id": "https://baryonlabs.github.io/baryon-ax/en/open-source/#breadcrumb",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Baryon AX", "item": "https://baryonlabs.github.io/baryon-ax/en/" },
+        { "@type": "ListItem", "position": 2, "name": "Open source & licenses", "item": "https://baryonlabs.github.io/baryon-ax/en/open-source/" }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body class="oss-page">
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="../" aria-label="Baryon AX home">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z" fill="currentColor"/><circle cx="19" cy="5" r="1.6" fill="#64d9a5"/></svg>
+      </span>
+      <span>Baryon AX</span>
+    </a>
+    <button class="nav-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <nav class="site-nav" id="site-nav" aria-label="Main menu">
+      <a href="../">Home</a>
+      <a href="../#formats">Formats</a>
+      <a href="../#tacit">Tacit</a>
+      <a href="../#start">Quick start</a>
+      <a href="../#help">Help</a>
+      <a href="./" aria-current="page">Open source</a>
+      <a href="https://github.com/baryonlabs/baryon-ax">GitHub</a>
+      <a class="lang" href="../../open-source/" hreflang="ko" lang="ko">한국어</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero oss-hero">
+    <div class="wrap">
+      <p class="eyebrow">Open source · Licenses</p>
+      <h1>Open source &amp; licenses</h1>
+      <p class="lead">Every open-source component and license used by Baryon AX, in one place. The page is generated from the same inventory as <strong>Settings → Open Source</strong> in the app.</p>
+      <p class="sub">Verify the exact LICENSE and notices of the version you deploy before redistribution. This page is not legal advice.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="../#start">Quick start</a>
+        <a class="btn btn-ghost" href="../#formats">Supported formats</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section oss-section">
+    <div class="wrap">
+      <!-- OSS_SUMMARY_START -->
+
+      <div class="oss-stats">
+        <div class="oss-stat"><b>42</b><span>Total components</span></div>
+        <div class="oss-stat"><b>33</b><span>Active</span></div>
+        <div class="oss-stat"><b>6</b><span>Optional</span></div>
+        <div class="oss-stat"><b>3</b><span>Test</span></div>
+      </div>
+      <div class="oss-license-chips" aria-label="License summary"><span class="oss-chip"><b>MIT</b><span>18</span></span><span class="oss-chip"><b>Apache-2.0</b><span>13</span></span><span class="oss-chip"><b>BSD-3-Clause</b><span>4</span></span><span class="oss-chip"><b>BSD-2-Clause</b><span>1</span></span><span class="oss-chip"><b>BSD-3-Clause / RSALv2 / SSPLv1 / AGPLv3</b><span>1</span></span><span class="oss-chip"><b>ISC</b><span>1</span></span><span class="oss-chip"><b>LGPL-3.0</b><span>1</span></span><span class="oss-chip"><b>MIT (core) + EE</b><span>1</span></span><span class="oss-chip"><b>PSF-2.0</b><span>1</span></span><span class="oss-chip"><b>PostgreSQL</b><span>1</span></span></div>
+      <p class="oss-summary-note">License strings follow the upstream projects. For compound licenses (Redis, Langfuse), also read the caveats below.</p>
+    
+<!-- OSS_SUMMARY_END -->
+
+      <div class="oss-toolbar" role="search">
+        <label class="oss-search">
+          <span class="sr-only">Search components</span>
+          <input id="oss-search" type="search" placeholder="Search component or role…" autocomplete="off">
+        </label>
+        <label>
+          <span class="sr-only">Status</span>
+          <select id="oss-status">
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="optional">Optional</option>
+            <option value="test">Test</option>
+          </select>
+        </label>
+        <label>
+          <span class="sr-only">License</span>
+          <select id="oss-license">
+            <option value="">All licenses</option>
+            <option value="MIT">MIT</option>
+            <option value="Apache-2.0">Apache-2.0</option>
+            <option value="BSD">BSD</option>
+            <option value="LGPL-3.0">LGPL-3.0</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <span class="oss-result">Showing <b id="oss-result-count">42</b></span>
+      </div>
+      <div id="oss-empty" class="oss-empty" hidden>No matching components. Try another search or filter.</div>
+
+      <!-- OSS_GROUPS_START -->
+
+      <section class="oss-group" data-group="frontend">
+        <div class="oss-group-head"><h2>Frontend</h2><span>9</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>Component</th><th>Role</th><th>License</th><th>Status</th></tr></thead>
+            <tbody><tr data-name="React / React DOM" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/facebook/react" target="_blank" rel="noreferrer"><strong>React / React DOM</strong></a></td><td>UI runtime</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="Vite" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/vitejs/vite" target="_blank" rel="noreferrer"><strong>Vite</strong></a></td><td>Build and dev server</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="TypeScript" data-status="active" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/microsoft/TypeScript" target="_blank" rel="noreferrer"><strong>TypeScript</strong></a></td><td>Type system</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="lucide-react" data-status="active" data-license="ISC" data-license-family="other"><td><a class="oss-name" href="https://github.com/lucide-icons/lucide" target="_blank" rel="noreferrer"><strong>lucide-react</strong></a></td><td>Icons</td><td><span class="oss-license">ISC</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="react-markdown" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/remarkjs/react-markdown" target="_blank" rel="noreferrer"><strong>react-markdown</strong></a></td><td>Markdown rendering</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="remark-gfm" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/remarkjs/remark-gfm" target="_blank" rel="noreferrer"><strong>remark-gfm</strong></a></td><td>GFM tables and task lists</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="remark-breaks" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/remarkjs/remark-breaks" target="_blank" rel="noreferrer"><strong>remark-breaks</strong></a></td><td>Line-break handling</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="Nginx" data-status="active" data-license="BSD-2-Clause" data-license-family="BSD"><td><a class="oss-name" href="https://nginx.org/" target="_blank" rel="noreferrer"><strong>Nginx</strong></a></td><td>Static serving and API proxy</td><td><span class="oss-license">BSD-2-Clause</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="Node.js" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/nodejs/node" target="_blank" rel="noreferrer"><strong>Node.js</strong></a></td><td>Web build runtime</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">Active</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="oss-group" data-group="backend">
+        <div class="oss-group-head"><h2>Backend</h2><span>9</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>Component</th><th>Role</th><th>License</th><th>Status</th></tr></thead>
+            <tbody><tr data-name="Python" data-status="active" data-license="PSF-2.0" data-license-family="other"><td><a class="oss-name" href="https://www.python.org/" target="_blank" rel="noreferrer"><strong>Python</strong></a></td><td>API runtime</td><td><span class="oss-license">PSF-2.0</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="FastAPI" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/fastapi/fastapi" target="_blank" rel="noreferrer"><strong>FastAPI</strong></a></td><td>HTTP API framework</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="Uvicorn" data-status="active" data-license="BSD-3-Clause" data-license-family="BSD"><td><a class="oss-name" href="https://github.com/encode/uvicorn" target="_blank" rel="noreferrer"><strong>Uvicorn</strong></a></td><td>ASGI server</td><td><span class="oss-license">BSD-3-Clause</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="Pydantic" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/pydantic/pydantic" target="_blank" rel="noreferrer"><strong>Pydantic</strong></a></td><td>Request and response validation</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="HTTPX" data-status="active" data-license="BSD-3-Clause" data-license-family="BSD"><td><a class="oss-name" href="https://github.com/encode/httpx" target="_blank" rel="noreferrer"><strong>HTTPX</strong></a></td><td>Model server HTTP client</td><td><span class="oss-license">BSD-3-Clause</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="psycopg" data-status="active" data-license="LGPL-3.0" data-license-family="LGPL-3.0"><td><a class="oss-name" href="https://github.com/psycopg/psycopg" target="_blank" rel="noreferrer"><strong>psycopg</strong></a></td><td>PostgreSQL driver</td><td><span class="oss-license">LGPL-3.0</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="redis-py" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/redis/redis-py" target="_blank" rel="noreferrer"><strong>redis-py</strong></a></td><td>Redis client</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="psutil" data-status="active" data-license="BSD-3-Clause" data-license-family="BSD"><td><a class="oss-name" href="https://github.com/giampaolo/psutil" target="_blank" rel="noreferrer"><strong>psutil</strong></a></td><td>System metrics</td><td><span class="oss-license">BSD-3-Clause</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="Docker SDK for Python" data-status="active" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/docker/docker-py" target="_blank" rel="noreferrer"><strong>Docker SDK for Python</strong></a></td><td>Container status cards</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge active">Active</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="oss-group" data-group="data">
+        <div class="oss-group-head"><h2>Data &amp; retrieval</h2><span>9</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>Component</th><th>Role</th><th>License</th><th>Status</th></tr></thead>
+            <tbody><tr data-name="Qdrant" data-status="active" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/qdrant/qdrant" target="_blank" rel="noreferrer"><strong>Qdrant</strong></a></td><td>Vector database</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="qdrant-client" data-status="active" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/qdrant/qdrant-client" target="_blank" rel="noreferrer"><strong>qdrant-client</strong></a></td><td>Vector client</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="FastEmbed" data-status="active" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/qdrant/fastembed" target="_blank" rel="noreferrer"><strong>FastEmbed</strong></a></td><td>Multilingual embeddings</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="ONNX Runtime" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/microsoft/onnxruntime" target="_blank" rel="noreferrer"><strong>ONNX Runtime</strong></a></td><td>Embedding inference</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="LlamaIndex Core" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/run-llama/llama_index" target="_blank" rel="noreferrer"><strong>LlamaIndex Core</strong></a></td><td>Sentence chunking</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="PostgreSQL" data-status="active" data-license="PostgreSQL" data-license-family="other"><td><a class="oss-name" href="https://github.com/postgres/postgres" target="_blank" rel="noreferrer"><strong>PostgreSQL</strong></a></td><td>Audit and metadata store</td><td><span class="oss-license">PostgreSQL</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="Redis" data-status="active" data-license="BSD-3-Clause / RSALv2 / SSPLv1 / AGPLv3" data-license-family="BSD"><td><a class="oss-name" href="https://github.com/redis/redis" target="_blank" rel="noreferrer"><strong>Redis</strong></a><small class="oss-note">License depends on the deployed version. Pin and verify; Valkey is a BSD alternative.</small></td><td>Rate limiting and cache</td><td><span class="oss-license">BSD-3-Clause / RSALv2 / SSPLv1 / AGPLv3</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="Milvus" data-status="optional" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/milvus-io/milvus" target="_blank" rel="noreferrer"><strong>Milvus</strong></a></td><td>Vector database alternative</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge optional">Optional</span></td></tr><tr data-name="Valkey" data-status="optional" data-license="BSD-3-Clause" data-license-family="BSD"><td><a class="oss-name" href="https://github.com/valkey-io/valkey" target="_blank" rel="noreferrer"><strong>Valkey</strong></a></td><td>BSD Redis alternative</td><td><span class="oss-license">BSD-3-Clause</span></td><td><span class="oss-badge optional">Optional</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="oss-group" data-group="orchestration">
+        <div class="oss-group-head"><h2>Orchestration</h2><span>1</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>Component</th><th>Role</th><th>License</th><th>Status</th></tr></thead>
+            <tbody><tr data-name="LangGraph" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/langchain-ai/langgraph" target="_blank" rel="noreferrer"><strong>LangGraph</strong></a></td><td>Policy and retrieval graph</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">Active</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="oss-group" data-group="observability">
+        <div class="oss-group-head"><h2>Observability &amp; memory</h2><span>2</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>Component</th><th>Role</th><th>License</th><th>Status</th></tr></thead>
+            <tbody><tr data-name="Langfuse" data-status="active" data-license="MIT (core) + EE" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/langfuse/langfuse" target="_blank" rel="noreferrer"><strong>Langfuse</strong></a><small class="oss-note">The /ee directory is commercially licensed; core self-hosting is MIT.</small></td><td>LLM tracing and evaluation</td><td><span class="oss-license">MIT (core) + EE</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="Mem0" data-status="active" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/mem0ai/mem0" target="_blank" rel="noreferrer"><strong>Mem0</strong></a></td><td>User memory</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge active">Active</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="oss-group" data-group="model">
+        <div class="oss-group-head"><h2>Model runtime</h2><span>4</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>Component</th><th>Role</th><th>License</th><th>Status</th></tr></thead>
+            <tbody><tr data-name="Ollama" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/ollama/ollama" target="_blank" rel="noreferrer"><strong>Ollama</strong></a></td><td>Local model runtime</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="vLLM" data-status="active" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/vllm-project/vllm" target="_blank" rel="noreferrer"><strong>vLLM</strong></a></td><td>GPU model serving</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="LiteLLM" data-status="optional" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/BerriAI/litellm" target="_blank" rel="noreferrer"><strong>LiteLLM</strong></a></td><td>Model gateway alternative</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge optional">Optional</span></td></tr><tr data-name="SGLang" data-status="optional" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/sgl-project/sglang" target="_blank" rel="noreferrer"><strong>SGLang</strong></a></td><td>High-throughput serving alternative</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge optional">Optional</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="oss-group" data-group="ingestion">
+        <div class="oss-group-head"><h2>Ingestion &amp; parsing</h2><span>3</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>Component</th><th>Role</th><th>License</th><th>Status</th></tr></thead>
+            <tbody><tr data-name="kordoc" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/chrisryugj/kordoc" target="_blank" rel="noreferrer"><strong>kordoc</strong></a></td><td>HWP/HWPX/HWPML parser sidecar</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="docling" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/docling-project/docling" target="_blank" rel="noreferrer"><strong>docling</strong></a></td><td>PDF/Office/image/HTML parser sidecar</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="Apache Tika" data-status="optional" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/apache/tika" target="_blank" rel="noreferrer"><strong>Apache Tika</strong></a></td><td>Legacy Office/RTF/ZIP fallback</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge optional">Optional</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="oss-group" data-group="infra">
+        <div class="oss-group-head"><h2>Infrastructure</h2><span>2</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>Component</th><th>Role</th><th>License</th><th>Status</th></tr></thead>
+            <tbody><tr data-name="Docker Engine (Moby)" data-status="active" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/moby/moby" target="_blank" rel="noreferrer"><strong>Docker Engine (Moby)</strong></a><small class="oss-note">Docker Desktop has separate commercial terms.</small></td><td>Container runtime</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge active">Active</span></td></tr><tr data-name="Kubernetes" data-status="optional" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/kubernetes/kubernetes" target="_blank" rel="noreferrer"><strong>Kubernetes</strong></a></td><td>Deployment manifests</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge optional">Optional</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="oss-group" data-group="dev">
+        <div class="oss-group-head"><h2>Development &amp; test</h2><span>3</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>Component</th><th>Role</th><th>License</th><th>Status</th></tr></thead>
+            <tbody><tr data-name="Playwright" data-status="test" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/microsoft/playwright" target="_blank" rel="noreferrer"><strong>Playwright</strong></a></td><td>Browser E2E tests</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge test">Test</span></td></tr><tr data-name="pytest" data-status="test" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/pytest-dev/pytest" target="_blank" rel="noreferrer"><strong>pytest</strong></a></td><td>Python tests</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge test">Test</span></td></tr><tr data-name="security-sweep" data-status="test" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/baryonlabs/security-sweep" target="_blank" rel="noreferrer"><strong>security-sweep</strong></a></td><td>PR vulnerability and secret scan</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge test">Test</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+<!-- OSS_GROUPS_END -->
+
+      <div class="oss-caveats">
+        <h2>License caveats</h2>
+        <div class="oss-caveat-grid">
+          <article>
+            <h3>Redis</h3>
+            <p>The license depends on the version. Redis 7.2 and earlier is BSD-3-Clause; 7.4–7.8 is RSALv2 or SSPLv1; Redis 8 and later offers RSALv2, SSPLv1, or AGPLv3. Pin and verify the deployed version. Consider Valkey if you need BSD terms.</p>
+          </article>
+          <article>
+            <h3>Langfuse</h3>
+            <p>The core is MIT; some enterprise features under <code>/ee</code> are commercially licensed. Self-hosting without EE features stays within the MIT scope.</p>
+          </article>
+          <article>
+            <h3>Docker</h3>
+            <p>Docker Engine/Moby is Apache-2.0. Docker Desktop may have separate commercial terms; use Docker Engine for server deployments.</p>
+          </article>
+          <article>
+            <h3>Model weights</h3>
+            <p>vLLM and Ollama are serving software; the actual model weights carry their own licenses. Verify the model license before commercial distribution.</p>
+          </article>
+          <article>
+            <h3>psycopg · LGPL-3.0</h3>
+            <p>The PostgreSQL driver is LGPL-3.0. Review dynamic-linking and redistribution obligations.</p>
+          </article>
+        </div>
+      </div>
+
+      <div class="oss-source-note">
+        <p>This page is generated from <a href="https://github.com/baryonlabs/baryon-ax/blob/main/apps/api/src/baryon/open_source.py">apps/api/src/baryon/open_source.py</a>, the same inventory as <strong>Settings → Open Source</strong> in the app. After changing it, run <code>python3 scripts/build_open_source_site.py</code>.</p>
+        <p><a class="text-link" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/open-source.md">Detailed license notes</a> · <a class="text-link" href="../#formats">Supported parsing formats</a></p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="../">
+          <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z" fill="currentColor"/><circle cx="19" cy="5" r="1.6" fill="#64d9a5"/></svg></span>
+          <span>Baryon AX</span>
+        </a>
+        <p>An open-source Basic Core for on-premises AI agents and grounded chat. Data inside, evidence in every answer.</p>
+      </div>
+      <nav class="footer-links" aria-label="Footer links">
+        <a href="../">Home</a>
+        <a href="../#formats">Formats</a>
+        <a href="https://github.com/baryonlabs/baryon-ax">GitHub</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/blob/main/LICENSE">MIT License</a>
+      </nav>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Baryon Labs</span>
+      <span>Licenses from upstream projects · verify the exact version you deploy</span>
+    </div>
+  </div>
+</footer>
+
+<script src="../../assets/app.js" defer></script>
+<script src="../../assets/open-source.js" defer></script>
+</body>
+</html>

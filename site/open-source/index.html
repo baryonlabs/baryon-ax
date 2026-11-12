@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>오픈소스 · 라이선스 — Baryon AX</title>
+<meta name="description" content="Baryon AX를 구성하는 오픈소스 컴포넌트와 라이선스를 한곳에 정리했습니다. MIT·Apache-2.0·BSD·LGPL과 Redis·Langfuse·Docker·모델 가중치 주의사항을 확인하세요.">
+<link rel="canonical" href="https://baryonlabs.github.io/baryon-ax/open-source/">
+<link rel="alternate" hreflang="ko" href="https://baryonlabs.github.io/baryon-ax/open-source/">
+<link rel="alternate" hreflang="en" href="https://baryonlabs.github.io/baryon-ax/en/open-source/">
+<link rel="alternate" hreflang="x-default" href="https://baryonlabs.github.io/baryon-ax/open-source/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0b1020">
+<meta name="author" content="Baryon Labs">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Baryon AX">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:title" content="오픈소스 · 라이선스 — Baryon AX">
+<meta property="og:description" content="Baryon AX를 구성하는 오픈소스 컴포넌트와 라이선스 총집합. MIT·Apache-2.0·BSD·LGPL과 Redis·Langfuse·Docker 주의사항.">
+<meta property="og:url" content="https://baryonlabs.github.io/baryon-ax/open-source/">
+<meta property="og:image" content="https://baryonlabs.github.io/baryon-ax/assets/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Baryon AX 오픈소스 · 라이선스">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="오픈소스 · 라이선스 — Baryon AX">
+<meta name="twitter:description" content="Baryon AX를 구성하는 오픈소스 컴포넌트와 라이선스 총집합.">
+<meta name="twitter:image" content="https://baryonlabs.github.io/baryon-ax/assets/og.jpg">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#org",
+      "name": "Baryon Labs",
+      "url": "https://github.com/baryonlabs"
+    },
+    {
+      "@type": "CollectionPage",
+      "@id": "https://baryonlabs.github.io/baryon-ax/open-source/#page",
+      "url": "https://baryonlabs.github.io/baryon-ax/open-source/",
+      "name": "오픈소스 · 라이선스 — Baryon AX",
+      "description": "Baryon AX를 구성하는 오픈소스 컴포넌트와 라이선스 총집합.",
+      "inLanguage": "ko",
+      "isPartOf": { "@id": "https://baryonlabs.github.io/baryon-ax/#website" },
+      "about": { "@id": "https://baryonlabs.github.io/baryon-ax/#app" }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "@id": "https://baryonlabs.github.io/baryon-ax/open-source/#breadcrumb",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Baryon AX", "item": "https://baryonlabs.github.io/baryon-ax/" },
+        { "@type": "ListItem", "position": 2, "name": "오픈소스 · 라이선스", "item": "https://baryonlabs.github.io/baryon-ax/open-source/" }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body class="oss-page">
+<a class="skip" href="#main">본문으로 바로가기</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="../" aria-label="Baryon AX 홈">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z" fill="currentColor"/><circle cx="19" cy="5" r="1.6" fill="#64d9a5"/></svg>
+      </span>
+      <span>Baryon AX</span>
+    </a>
+    <button class="nav-toggle" type="button" aria-label="메뉴 열기" aria-expanded="false" aria-controls="site-nav">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <nav class="site-nav" id="site-nav" aria-label="주요 메뉴">
+      <a href="../">홈</a>
+      <a href="../#formats">지원 형식</a>
+      <a href="../#tacit">암묵지</a>
+      <a href="../#start">시작하기</a>
+      <a href="../#help">도움말</a>
+      <a href="./" aria-current="page">오픈소스</a>
+      <a href="https://github.com/baryonlabs/baryon-ax">GitHub</a>
+      <a class="lang" href="../en/open-source/" hreflang="en" lang="en">English</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero oss-hero">
+    <div class="wrap">
+      <p class="eyebrow">Open source · Licenses</p>
+      <h1>오픈소스 · 라이선스</h1>
+      <p class="lead">Baryon AX를 구성하는 오픈소스 컴포넌트와 라이선스를 한곳에 모았습니다. 앱의 <strong>Settings → Open Source</strong> 탭과 동일한 인벤토리에서 생성됩니다.</p>
+      <p class="sub">배포·재배포 전에는 각 프로젝트의 정확한 버전 LICENSE와 고지를 직접 확인하세요. 이 페이지는 법률 자문이 아닙니다.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="../#start">빠른 시작</a>
+        <a class="btn btn-ghost" href="../#formats">지원 형식</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section oss-section">
+    <div class="wrap">
+      <!-- OSS_SUMMARY_START -->
+
+      <div class="oss-stats">
+        <div class="oss-stat"><b>42</b><span>전체 컴포넌트</span></div>
+        <div class="oss-stat"><b>33</b><span>사용 중</span></div>
+        <div class="oss-stat"><b>6</b><span>선택</span></div>
+        <div class="oss-stat"><b>3</b><span>개발·테스트</span></div>
+      </div>
+      <div class="oss-license-chips" aria-label="License summary"><span class="oss-chip"><b>MIT</b><span>18</span></span><span class="oss-chip"><b>Apache-2.0</b><span>13</span></span><span class="oss-chip"><b>BSD-3-Clause</b><span>4</span></span><span class="oss-chip"><b>BSD-2-Clause</b><span>1</span></span><span class="oss-chip"><b>BSD-3-Clause / RSALv2 / SSPLv1 / AGPLv3</b><span>1</span></span><span class="oss-chip"><b>ISC</b><span>1</span></span><span class="oss-chip"><b>LGPL-3.0</b><span>1</span></span><span class="oss-chip"><b>MIT (core) + EE</b><span>1</span></span><span class="oss-chip"><b>PSF-2.0</b><span>1</span></span><span class="oss-chip"><b>PostgreSQL</b><span>1</span></span></div>
+      <p class="oss-summary-note">라이선스는 업스트림 표기를 그대로 사용합니다. 복합 라이선스(Redis, Langfuse)는 아래 주의사항을 함께 확인하세요.</p>
+    
+<!-- OSS_SUMMARY_END -->
+
+      <div class="oss-toolbar" role="search">
+        <label class="oss-search">
+          <span class="sr-only">컴포넌트 검색</span>
+          <input id="oss-search" type="search" placeholder="컴포넌트·역할 검색…" autocomplete="off">
+        </label>
+        <label>
+          <span class="sr-only">상태</span>
+          <select id="oss-status">
+            <option value="">전체 상태</option>
+            <option value="active">사용 중</option>
+            <option value="optional">선택</option>
+            <option value="test">개발·테스트</option>
+          </select>
+        </label>
+        <label>
+          <span class="sr-only">라이선스</span>
+          <select id="oss-license">
+            <option value="">전체 라이선스</option>
+            <option value="MIT">MIT</option>
+            <option value="Apache-2.0">Apache-2.0</option>
+            <option value="BSD">BSD</option>
+            <option value="LGPL-3.0">LGPL-3.0</option>
+            <option value="other">기타</option>
+          </select>
+        </label>
+        <span class="oss-result">표시 <b id="oss-result-count">42</b>개</span>
+      </div>
+      <div id="oss-empty" class="oss-empty" hidden>검색 결과가 없습니다. 검색어나 필터를 바꿔 보세요.</div>
+
+      <!-- OSS_GROUPS_START -->
+
+      <section class="oss-group" data-group="frontend">
+        <div class="oss-group-head"><h2>프론트엔드</h2><span>9</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>컴포넌트</th><th>역할</th><th>라이선스</th><th>상태</th></tr></thead>
+            <tbody><tr data-name="React / React DOM" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/facebook/react" target="_blank" rel="noreferrer"><strong>React / React DOM</strong></a></td><td>UI 런타임</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="Vite" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/vitejs/vite" target="_blank" rel="noreferrer"><strong>Vite</strong></a></td><td>빌드·개발 서버</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="TypeScript" data-status="active" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/microsoft/TypeScript" target="_blank" rel="noreferrer"><strong>TypeScript</strong></a></td><td>타입 시스템</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="lucide-react" data-status="active" data-license="ISC" data-license-family="other"><td><a class="oss-name" href="https://github.com/lucide-icons/lucide" target="_blank" rel="noreferrer"><strong>lucide-react</strong></a></td><td>아이콘</td><td><span class="oss-license">ISC</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="react-markdown" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/remarkjs/react-markdown" target="_blank" rel="noreferrer"><strong>react-markdown</strong></a></td><td>Markdown 렌더링</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="remark-gfm" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/remarkjs/remark-gfm" target="_blank" rel="noreferrer"><strong>remark-gfm</strong></a></td><td>GFM 표·작업 목록</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="remark-breaks" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/remarkjs/remark-breaks" target="_blank" rel="noreferrer"><strong>remark-breaks</strong></a></td><td>줄바꿈 처리</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="Nginx" data-status="active" data-license="BSD-2-Clause" data-license-family="BSD"><td><a class="oss-name" href="https://nginx.org/" target="_blank" rel="noreferrer"><strong>Nginx</strong></a></td><td>정적 파일 서빙·API 프록시</td><td><span class="oss-license">BSD-2-Clause</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="Node.js" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/nodejs/node" target="_blank" rel="noreferrer"><strong>Node.js</strong></a></td><td>웹 빌드 런타임</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">사용 중</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="oss-group" data-group="backend">
+        <div class="oss-group-head"><h2>백엔드</h2><span>9</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>컴포넌트</th><th>역할</th><th>라이선스</th><th>상태</th></tr></thead>
+            <tbody><tr data-name="Python" data-status="active" data-license="PSF-2.0" data-license-family="other"><td><a class="oss-name" href="https://www.python.org/" target="_blank" rel="noreferrer"><strong>Python</strong></a></td><td>API 런타임</td><td><span class="oss-license">PSF-2.0</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="FastAPI" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/fastapi/fastapi" target="_blank" rel="noreferrer"><strong>FastAPI</strong></a></td><td>HTTP API 프레임워크</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="Uvicorn" data-status="active" data-license="BSD-3-Clause" data-license-family="BSD"><td><a class="oss-name" href="https://github.com/encode/uvicorn" target="_blank" rel="noreferrer"><strong>Uvicorn</strong></a></td><td>ASGI 서버</td><td><span class="oss-license">BSD-3-Clause</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="Pydantic" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/pydantic/pydantic" target="_blank" rel="noreferrer"><strong>Pydantic</strong></a></td><td>요청·응답 검증</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="HTTPX" data-status="active" data-license="BSD-3-Clause" data-license-family="BSD"><td><a class="oss-name" href="https://github.com/encode/httpx" target="_blank" rel="noreferrer"><strong>HTTPX</strong></a></td><td>모델 서버 HTTP 클라이언트</td><td><span class="oss-license">BSD-3-Clause</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="psycopg" data-status="active" data-license="LGPL-3.0" data-license-family="LGPL-3.0"><td><a class="oss-name" href="https://github.com/psycopg/psycopg" target="_blank" rel="noreferrer"><strong>psycopg</strong></a></td><td>PostgreSQL 드라이버</td><td><span class="oss-license">LGPL-3.0</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="redis-py" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/redis/redis-py" target="_blank" rel="noreferrer"><strong>redis-py</strong></a></td><td>Redis 클라이언트</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="psutil" data-status="active" data-license="BSD-3-Clause" data-license-family="BSD"><td><a class="oss-name" href="https://github.com/giampaolo/psutil" target="_blank" rel="noreferrer"><strong>psutil</strong></a></td><td>시스템 메트릭</td><td><span class="oss-license">BSD-3-Clause</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="Docker SDK for Python" data-status="active" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/docker/docker-py" target="_blank" rel="noreferrer"><strong>Docker SDK for Python</strong></a></td><td>컨테이너 상태 카드</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge active">사용 중</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="oss-group" data-group="data">
+        <div class="oss-group-head"><h2>데이터·검색</h2><span>9</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>컴포넌트</th><th>역할</th><th>라이선스</th><th>상태</th></tr></thead>
+            <tbody><tr data-name="Qdrant" data-status="active" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/qdrant/qdrant" target="_blank" rel="noreferrer"><strong>Qdrant</strong></a></td><td>벡터 데이터베이스</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="qdrant-client" data-status="active" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/qdrant/qdrant-client" target="_blank" rel="noreferrer"><strong>qdrant-client</strong></a></td><td>벡터 클라이언트</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="FastEmbed" data-status="active" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/qdrant/fastembed" target="_blank" rel="noreferrer"><strong>FastEmbed</strong></a></td><td>다국어 임베딩</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="ONNX Runtime" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/microsoft/onnxruntime" target="_blank" rel="noreferrer"><strong>ONNX Runtime</strong></a></td><td>임베딩 추론</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="LlamaIndex Core" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/run-llama/llama_index" target="_blank" rel="noreferrer"><strong>LlamaIndex Core</strong></a></td><td>문장 청킹</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="PostgreSQL" data-status="active" data-license="PostgreSQL" data-license-family="other"><td><a class="oss-name" href="https://github.com/postgres/postgres" target="_blank" rel="noreferrer"><strong>PostgreSQL</strong></a></td><td>감사·메타데이터 저장소</td><td><span class="oss-license">PostgreSQL</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="Redis" data-status="active" data-license="BSD-3-Clause / RSALv2 / SSPLv1 / AGPLv3" data-license-family="BSD"><td><a class="oss-name" href="https://github.com/redis/redis" target="_blank" rel="noreferrer"><strong>Redis</strong></a><small class="oss-note">배포 버전에 따라 라이선스가 다릅니다. 버전을 고정하고 확인하세요. Valkey는 BSD 대안입니다.</small></td><td>속도 제한·캐시</td><td><span class="oss-license">BSD-3-Clause / RSALv2 / SSPLv1 / AGPLv3</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="Milvus" data-status="optional" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/milvus-io/milvus" target="_blank" rel="noreferrer"><strong>Milvus</strong></a></td><td>벡터 DB 대안</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge optional">선택</span></td></tr><tr data-name="Valkey" data-status="optional" data-license="BSD-3-Clause" data-license-family="BSD"><td><a class="oss-name" href="https://github.com/valkey-io/valkey" target="_blank" rel="noreferrer"><strong>Valkey</strong></a></td><td>BSD Redis 대안</td><td><span class="oss-license">BSD-3-Clause</span></td><td><span class="oss-badge optional">선택</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="oss-group" data-group="orchestration">
+        <div class="oss-group-head"><h2>오케스트레이션</h2><span>1</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>컴포넌트</th><th>역할</th><th>라이선스</th><th>상태</th></tr></thead>
+            <tbody><tr data-name="LangGraph" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/langchain-ai/langgraph" target="_blank" rel="noreferrer"><strong>LangGraph</strong></a></td><td>정책·검색 그래프</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">사용 중</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="oss-group" data-group="observability">
+        <div class="oss-group-head"><h2>관측·메모리</h2><span>2</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>컴포넌트</th><th>역할</th><th>라이선스</th><th>상태</th></tr></thead>
+            <tbody><tr data-name="Langfuse" data-status="active" data-license="MIT (core) + EE" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/langfuse/langfuse" target="_blank" rel="noreferrer"><strong>Langfuse</strong></a><small class="oss-note">/ee 디렉터리의 일부 엔터프라이즈 기능은 상용 라이선스입니다. 코어는 MIT입니다.</small></td><td>LLM 트레이스·평가</td><td><span class="oss-license">MIT (core) + EE</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="Mem0" data-status="active" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/mem0ai/mem0" target="_blank" rel="noreferrer"><strong>Mem0</strong></a></td><td>사용자 메모리</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge active">사용 중</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="oss-group" data-group="model">
+        <div class="oss-group-head"><h2>모델 런타임</h2><span>4</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>컴포넌트</th><th>역할</th><th>라이선스</th><th>상태</th></tr></thead>
+            <tbody><tr data-name="Ollama" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/ollama/ollama" target="_blank" rel="noreferrer"><strong>Ollama</strong></a></td><td>로컬 모델 런타임</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="vLLM" data-status="active" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/vllm-project/vllm" target="_blank" rel="noreferrer"><strong>vLLM</strong></a></td><td>GPU 모델 서빙</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="LiteLLM" data-status="optional" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/BerriAI/litellm" target="_blank" rel="noreferrer"><strong>LiteLLM</strong></a></td><td>모델 게이트웨이 대안</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge optional">선택</span></td></tr><tr data-name="SGLang" data-status="optional" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/sgl-project/sglang" target="_blank" rel="noreferrer"><strong>SGLang</strong></a></td><td>고처리량 서빙 대안</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge optional">선택</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="oss-group" data-group="ingestion">
+        <div class="oss-group-head"><h2>수집·파싱</h2><span>3</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>컴포넌트</th><th>역할</th><th>라이선스</th><th>상태</th></tr></thead>
+            <tbody><tr data-name="kordoc" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/chrisryugj/kordoc" target="_blank" rel="noreferrer"><strong>kordoc</strong></a></td><td>HWP/HWPX/HWPML 파서 사이드카</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="docling" data-status="active" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/docling-project/docling" target="_blank" rel="noreferrer"><strong>docling</strong></a></td><td>PDF·Office·이미지·HTML 파서 사이드카</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="Apache Tika" data-status="optional" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/apache/tika" target="_blank" rel="noreferrer"><strong>Apache Tika</strong></a></td><td>레거시 Office·RTF·ZIP 폴백</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge optional">선택</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="oss-group" data-group="infra">
+        <div class="oss-group-head"><h2>인프라</h2><span>2</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>컴포넌트</th><th>역할</th><th>라이선스</th><th>상태</th></tr></thead>
+            <tbody><tr data-name="Docker Engine (Moby)" data-status="active" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/moby/moby" target="_blank" rel="noreferrer"><strong>Docker Engine (Moby)</strong></a><small class="oss-note">Docker Desktop은 별도 상용 약관이 적용될 수 있습니다.</small></td><td>컨테이너 런타임</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge active">사용 중</span></td></tr><tr data-name="Kubernetes" data-status="optional" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/kubernetes/kubernetes" target="_blank" rel="noreferrer"><strong>Kubernetes</strong></a></td><td>배포 매니페스트</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge optional">선택</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="oss-group" data-group="dev">
+        <div class="oss-group-head"><h2>개발·테스트</h2><span>3</span></div>
+        <div class="table-wrap">
+          <table class="oss-table">
+            <thead><tr><th>컴포넌트</th><th>역할</th><th>라이선스</th><th>상태</th></tr></thead>
+            <tbody><tr data-name="Playwright" data-status="test" data-license="Apache-2.0" data-license-family="Apache-2.0"><td><a class="oss-name" href="https://github.com/microsoft/playwright" target="_blank" rel="noreferrer"><strong>Playwright</strong></a></td><td>브라우저 E2E 테스트</td><td><span class="oss-license">Apache-2.0</span></td><td><span class="oss-badge test">개발·테스트</span></td></tr><tr data-name="pytest" data-status="test" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/pytest-dev/pytest" target="_blank" rel="noreferrer"><strong>pytest</strong></a></td><td>Python 테스트</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge test">개발·테스트</span></td></tr><tr data-name="security-sweep" data-status="test" data-license="MIT" data-license-family="MIT"><td><a class="oss-name" href="https://github.com/baryonlabs/security-sweep" target="_blank" rel="noreferrer"><strong>security-sweep</strong></a></td><td>PR 취약점·비밀값 스캔</td><td><span class="oss-license">MIT</span></td><td><span class="oss-badge test">개발·테스트</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+<!-- OSS_GROUPS_END -->
+
+      <div class="oss-caveats">
+        <h2>라이선스 주의사항</h2>
+        <div class="oss-caveat-grid">
+          <article>
+            <h3>Redis</h3>
+            <p>버전에 따라 라이선스가 다릅니다. 7.2 이하는 BSD-3-Clause, 7.4~7.8은 RSALv2/SSPLv1, 8 이상은 RSALv2/SSPLv1/AGPLv3 중 선택입니다. 배포 버전을 고정하고 확인하세요. BSD 조건이 필요하면 Valkey를 검토하세요.</p>
+          </article>
+          <article>
+            <h3>Langfuse</h3>
+            <p>코어는 MIT, <code>/ee</code> 디렉터리의 일부 엔터프라이즈 기능은 상용 라이선스입니다. EE 기능을 사용하지 않으면 MIT 범위로 셀프호스팅할 수 있습니다.</p>
+          </article>
+          <article>
+            <h3>Docker</h3>
+            <p>Docker Engine/Moby는 Apache-2.0입니다. Docker Desktop은 별도 상용 약관이 적용될 수 있으므로 서버 배포에는 Docker Engine을 사용하세요.</p>
+          </article>
+          <article>
+            <h3>모델 가중치</h3>
+            <p>vLLM·Ollama는 서빙 소프트웨어이며, 실제 모델 가중치는 별도 라이선스를 따릅니다. 상용 배포 전에 모델 라이선스를 확인하세요.</p>
+          </article>
+          <article>
+            <h3>psycopg · LGPL-3.0</h3>
+            <p>PostgreSQL 드라이버는 LGPL-3.0입니다. 동적 링크·재배포 시 의무 사항을 확인하세요.</p>
+          </article>
+        </div>
+      </div>
+
+      <div class="oss-source-note">
+        <p>이 페이지는 <a href="https://github.com/baryonlabs/baryon-ax/blob/main/apps/api/src/baryon/open_source.py">apps/api/src/baryon/open_source.py</a>의 인벤토리에서 생성됩니다. 앱의 <strong>Settings → Open Source</strong> 탭과 동일한 데이터이며, 변경 후 <code>python3 scripts/build_open_source_site.py</code>를 실행하세요.</p>
+        <p><a class="text-link" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/open-source.md">상세 라이선스 문서</a> · <a class="text-link" href="../#formats">지원 파싱 형식</a></p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="../">
+          <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z" fill="currentColor"/><circle cx="19" cy="5" r="1.6" fill="#64d9a5"/></svg></span>
+          <span>Baryon AX</span>
+        </a>
+        <p>온프레미스 AI 에이전트와 근거 기반 채팅을 위한 오픈소스 Basic Core. 데이터는 고객 환경에, 답에는 근거를.</p>
+      </div>
+      <nav class="footer-links" aria-label="푸터 링크">
+        <a href="../">소개</a>
+        <a href="../#formats">지원 형식</a>
+        <a href="https://github.com/baryonlabs/baryon-ax">GitHub</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/blob/main/LICENSE">MIT License</a>
+      </nav>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Baryon Labs</span>
+      <span>Licenses from upstream projects · verify the exact version you deploy</span>
+    </div>
+  </div>
+</footer>
+
+<script src="../assets/app.js" defer></script>
+<script src="../assets/open-source.js" defer></script>
+</body>
+</html>
