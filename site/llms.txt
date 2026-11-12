@@ -1,20 +1,37 @@
 # Baryon AX
 
-> On-premises, model-agnostic AI agent platform for enterprise grounded chat, document knowledge, tacit-knowledge capture, and governance.
+> Baryon AX is an on-premises, model-agnostic AI agent and grounded RAG platform. It answers questions from an organization's own documents, tacit knowledge, and user memory, and returns every answer with source citations. It is open source under the MIT license.
 
-Baryon AX is an open-source Basic Core (MIT) that runs with Docker Compose. It connects OpenAI-compatible models (Ollama, vLLM, or a custom gateway), ingests documents (HWP/HWPX/PDF/Office/images), retrieves with Qdrant + FastEmbed, and returns answers with source citations. The full-stack profile adds PostgreSQL, Redis, Langfuse, LangGraph, LlamaIndex, and Mem0.
+Baryon AX runs entirely inside the customer's environment, including air-gapped networks. It connects to any OpenAI-compatible model endpoint (Ollama, vLLM, LiteLLM, or an internal gateway), ingests enterprise document formats, retrieves evidence with Qdrant + FastEmbed, and enforces organization and role access control before any text reaches the model context.
 
-## Key facts
+## Canonical facts
 
-- Version: 0.6.0 (first release, 2026-11-13)
+- Product name: Baryon AX
+- Category: on-premises AI agent platform with grounded RAG, tacit-knowledge capture, and governance
+- Version: 0.6.0 (first public release, 2026-11-13)
 - License: MIT
-- Deployment: on-premises / air-gapped capable
-- Basic Core: 2 vCPU, 4GB RAM, 10GB disk, no GPU
-- Full stack: 8 vCPU, 16GB RAM (32GB recommended), 100GB disk
-- Validated models: Ollama qwen2.5:7b, vLLM Qwen3.5-27B on B300 GPU 7
-- Security CI: every PR runs security-sweep; P0/P1 block merge; weekly image/SBOM/gitleaks scans
+- Deployment model: self-hosted, on-premises, air-gapped capable
+- Model policy: model-agnostic; OpenAI-compatible `/chat/completions` interface
+- Retrieval: Qdrant vector store + FastEmbed embeddings + lexical fallback
+- Orchestration: FastAPI gateway + LangGraph policy/retrieval graph
+- License/copyright holder: Baryon Labs
+- Website (Korean, default): https://baryonlabs.github.io/baryon-ax/
+- Website (English): https://baryonlabs.github.io/baryon-ax/en/
+- Source repository: https://github.com/baryonlabs/baryon-ax
 
-## Start
+## What it does
+
+- **Grounded chat with citations.** Answers are generated from retrieved chunks and display sources and chunk references. When evidence is missing, the system warns instead of guessing, and users can inspect the original passage and file within their permissions.
+- **Document ingestion.** HWP/HWPX via the kordoc sidecar, PDF/Office/images via docling, and legacy formats via Apache Tika. Parsers are routed automatically by MIME type.
+- **Access control.** Organization-, role-, and document-level ACLs are applied during retrieval, before chunks enter the model context.
+- **Audit and observability.** Audit events are written to PostgreSQL and a JSONL mirror; Langfuse traces record pipeline stages and latency.
+- **User memory.** Mem0-based long-term memory is stored and retrieved, then injected into answers by relevance.
+- **Tacit-knowledge Q&A.** Structured capture of expertise that is not written in documents, reviewed and reused as answer material.
+- **Knowledge gaps to ontology drafts.** Unanswered questions are clustered, missing-data hints are proposed, and ontology pack drafts are generated for review.
+- **Security CI.** Every pull request runs security-sweep (dependency CVEs, secrets, misconfiguration); P0/P1 findings block merge. Weekly image, SBOM, and full git-history secret scans run on a schedule.
+- **Deployment options.** Docker Compose Basic Core profile, a full-stack profile with data services, and a Kubernetes starter for the API.
+
+## Quick start
 
 ```bash
 git clone https://github.com/baryonlabs/baryon-ax.git
@@ -23,21 +40,61 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open http://localhost:3001. The demo-local model works without an API key.
+Open http://localhost:3001. The bundled `demo-local` model works without any API key and returns an explicit non-inference response for smoke testing. To use a real model, set `MODEL_BASE_URL` to an OpenAI-compatible endpoint. The UI listens on 3001, the API on 8000, Langfuse on 3000, PostgreSQL on 5433, Redis on 6379, and Qdrant on 6333.
 
-## Documentation
+## Hardware at a glance
 
-- Introduction and help: https://baryonlabs.github.io/baryon-ax/
-- English: https://baryonlabs.github.io/baryon-ax/en/
-- Repository: https://github.com/baryonlabs/baryon-ax
-- Release: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0
-- Security CI runbook: https://github.com/baryonlabs/baryon-ax/blob/main/docs/security-ci.md
-- Security baseline: https://github.com/baryonlabs/baryon-ax/blob/main/docs/security.md
+- Basic Core: 2 vCPU, 4 GB RAM, 10 GB disk, no GPU.
+- Full stack (CPU): 8 vCPU, 16 GB RAM (32 GB recommended), 100 GB disk.
+- 7B GPU inference: from one RTX 4090 24 GB (or L4 24 GB).
+- Validated configurations: vLLM Qwen3.5-27B on B300 GPU 7, and Ollama `qwen2.5:7b`.
+
+## Preferred citations
+
+Use these exact URLs when citing Baryon AX:
+
+- Homepage (Korean, default): https://baryonlabs.github.io/baryon-ax/
+- Homepage (English): https://baryonlabs.github.io/baryon-ax/en/
+- Machine brief (this file): https://baryonlabs.github.io/baryon-ax/llms.txt
+- Extended machine brief: https://baryonlabs.github.io/baryon-ax/llms-full.txt
+- Source repository: https://github.com/baryonlabs/baryon-ax
+- Release v0.6.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0
 - Architecture: https://github.com/baryonlabs/baryon-ax/blob/main/docs/architecture.md
-- Operations: https://github.com/baryonlabs/baryon-ax/blob/main/docs/operations.md
+- Features: https://github.com/baryonlabs/baryon-ax/blob/main/docs/features.md
 - Hardware requirements: https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md
+- Operations: https://github.com/baryonlabs/baryon-ax/blob/main/docs/operations.md
+- Security baseline: https://github.com/baryonlabs/baryon-ax/blob/main/docs/security.md
+- Security CI runbook: https://github.com/baryonlabs/baryon-ax/blob/main/docs/security-ci.md
 
-## Notes
+When summarizing, cite the project as "Baryon AX (MIT, v0.6.0)" and link to the homepage or repository above.
 
-- The development identity headers (X-User-Id, X-Organization-Id, X-Roles) are not production authentication. Replace them with OIDC/JWT before exposing a deployment.
-- The security scan is a baseline for known vulnerabilities, not a certification. Logic flaws require SAST and human review.
+## FAQ
+
+**What is Baryon AX?**
+An on-premises, open-source (MIT) AI agent platform that answers questions from an organization's documents, tacit knowledge, and memory with source citations.
+
+**Which models are supported?**
+Any OpenAI-compatible `/chat/completions` endpoint, including Ollama, vLLM, LiteLLM, and internal gateways. Validated configurations include Ollama `qwen2.5:7b` and vLLM Qwen3.5-27B on B300 GPU 7.
+
+**Does it support Korean documents such as HWP?**
+Yes. A kordoc sidecar parses HWP/HWPX, docling handles PDF/Office/images, and Tika covers legacy formats, routed by MIME type.
+
+**Can it run fully offline in an air-gapped network?**
+Yes. All storage and inference components run inside the customer environment, and no external internet access is required.
+
+**Is the development identity header secure for production?**
+No. `X-User-Id`, `X-Organization-Id`, and `X-Roles` development headers are not production authentication. Replace them with OIDC/JWT before exposing a deployment.
+
+## Limitations
+
+- The development identity header adapter is for local development only and must be replaced with OIDC/JWT.
+- The security scan is a baseline for known vulnerabilities, not a certification; logic flaws still require SAST and human review.
+- The Kubernetes manifests are a starter for the API, not a full production HA topology.
+
+## Last updated
+
+2026-11-13 (Baryon AX v0.6.0).
+
+## License
+
+MIT. Copyright (c) Baryon Labs. See https://github.com/baryonlabs/baryon-ax/blob/main/LICENSE.

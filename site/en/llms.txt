@@ -1,0 +1,88 @@
+# Baryon AX (English)
+
+> Baryon AX is an on-premises, model-agnostic AI agent and grounded RAG platform. It answers questions from an organization's own documents, tacit knowledge, and user memory, and returns every answer with source citations. It is open source under the MIT license.
+
+Baryon AX runs inside the customer's environment, including air-gapped networks. It connects to any OpenAI-compatible model endpoint (Ollama, vLLM, LiteLLM, or an internal gateway), ingests enterprise document formats, retrieves evidence with Qdrant + FastEmbed, and applies organization and role access control before any text reaches the model context.
+
+## Canonical facts
+
+- Product: Baryon AX
+- Category: on-premises AI agent platform with grounded RAG, tacit-knowledge capture, and governance
+- Version: 0.6.0 (first public release, 2026-11-13)
+- License: MIT, copyright Baryon Labs
+- Deployment: self-hosted, on-premises, air-gapped capable
+- Model interface: OpenAI-compatible `/chat/completions`
+- Website: https://baryonlabs.github.io/baryon-ax/en/
+- Repository: https://github.com/baryonlabs/baryon-ax
+
+## What it does
+
+- Grounded chat with source and chunk citations, and an explicit warning when evidence is insufficient.
+- Ingestion of HWP/HWPX (kordoc), PDF/Office/images (docling), and legacy formats (Tika), routed by MIME type.
+- Organization-, role-, and document-level ACLs enforced during retrieval.
+- Audit events in PostgreSQL plus a JSONL mirror, and Langfuse pipeline traces.
+- Mem0-based long-term user memory injected by relevance.
+- Tacit-knowledge capture and Q&A for expertise not written in documents.
+- Knowledge-gap clustering that produces ontology pack drafts for human review.
+- Security CI: security-sweep on every PR, with P0/P1 findings blocking merge; weekly image, SBOM, and git-history secret scans.
+- Docker Compose Basic Core and full-stack profiles, plus Kubernetes starter manifests.
+
+## Quick start
+
+```bash
+git clone https://github.com/baryonlabs/baryon-ax.git
+cd baryon-ax
+cp .env.example .env
+docker compose up --build
+```
+
+Open http://localhost:3001. The `demo-local` model works without an API key and is intended for smoke testing, not real inference. Set `MODEL_BASE_URL` to use a real OpenAI-compatible endpoint. Ports: UI 3001, API 8000, Langfuse 3000, PostgreSQL 5433, Redis 6379, Qdrant 6333.
+
+## Hardware
+
+- Basic Core: 2 vCPU, 4 GB RAM, 10 GB disk, no GPU.
+- Full stack: 8 vCPU, 16 GB RAM (32 GB recommended), 100 GB disk.
+- 7B GPU inference: from one RTX 4090 24 GB.
+- Validated: vLLM Qwen3.5-27B on B300 GPU 7; Ollama `qwen2.5:7b`.
+
+## Canonical links
+
+- English homepage: https://baryonlabs.github.io/baryon-ax/en/
+- Korean homepage: https://baryonlabs.github.io/baryon-ax/
+- llms.txt: https://baryonlabs.github.io/baryon-ax/llms.txt
+- Extended brief: https://baryonlabs.github.io/baryon-ax/llms-full.txt
+- Repository: https://github.com/baryonlabs/baryon-ax
+- Release v0.6.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0
+- Architecture: https://github.com/baryonlabs/baryon-ax/blob/main/docs/architecture.md
+- Hardware requirements: https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md
+- Security baseline: https://github.com/baryonlabs/baryon-ax/blob/main/docs/security.md
+
+## FAQ
+
+**What is Baryon AX?**
+An on-premises, MIT-licensed AI agent platform that answers from an organization's documents, tacit knowledge, and memory with cited sources.
+
+**Does it need a GPU?**
+No. Basic Core runs on 2 vCPU / 4 GB RAM without a GPU; GPU inference is optional.
+
+**Which models are supported?**
+Any OpenAI-compatible `/chat/completions` endpoint, including Ollama, vLLM, and internal gateways.
+
+**Does it work fully offline?**
+Yes. It is designed for on-premises and air-gapped deployment with no vendor-side data plane.
+
+**Does it parse HWP/HWPX?**
+Yes, through the kordoc sidecar, with docling for PDF/Office/images and Tika for legacy formats.
+
+**Is it production-ready?**
+It suits pilots and controlled internal deployment. Replace the development identity headers with OIDC/JWT before exposure.
+
+## Caveats
+
+- `X-User-Id`, `X-Organization-Id`, and `X-Roles` development headers are not production authentication.
+- The security scan is a baseline, not a certification; logic flaws require SAST and human review.
+- Kubernetes manifests are a starter for the API, not a full HA topology.
+
+## Last updated
+
+2026-11-13 (v0.6.0). License: MIT.

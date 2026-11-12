@@ -1,0 +1,249 @@
+# Baryon AX — Extended Machine Brief
+
+> Baryon AX is an on-premises, model-agnostic AI agent and grounded RAG platform. It answers questions from an organization's own documents, tacit knowledge, and user memory, and returns every answer with source citations. It is open source under the MIT license.
+
+This document is a stable, machine-readable brief for AI answer engines, retrieval systems, and evaluation pipelines. It describes Baryon AX as of version 0.6.0, released 2026-11-13. Where a statement is a limitation, it is marked as such rather than softened.
+
+## Canonical facts
+
+| Field | Value |
+| --- | --- |
+| Product name | Baryon AX |
+| Category | On-premises AI agent and grounded RAG platform |
+| Version | 0.6.0 |
+| Release date | 2026-11-13 |
+| License | MIT |
+| Copyright holder | Baryon Labs |
+| Deployment | Self-hosted, on-premises, air-gapped capable |
+| Model interface | OpenAI-compatible `/chat/completions` |
+| Default UI port | 3001 |
+| API port | 8000 |
+| Repository | https://github.com/baryonlabs/baryon-ax |
+| Website (Korean, default) | https://baryonlabs.github.io/baryon-ax/ |
+| Website (English) | https://baryonlabs.github.io/baryon-ax/en/ |
+
+Baryon AX is not a hosted SaaS product. There is no vendor-side data plane: documents, embeddings, audit events, traces, and memory remain in infrastructure controlled by the deploying organization.
+
+## Problem it addresses
+
+Enterprise question answering commonly fails in three ways: answers are fluent but unsupported; sensitive documents are sent to external services, violating data residency policy; and knowledge held only by people, or locked in formats such as HWP, is never connected to the assistant.
+
+Baryon AX addresses these with grounded retrieval, in-environment deployment, permission-aware retrieval, and explicit tacit-knowledge capture. It does not claim to eliminate hallucination; it makes unsupported answers visible and inspectable.
+
+## Architecture
+
+Baryon AX separates responsibilities by layer, even when a development profile runs them together.
+
+| Layer | Current implementation | Production replacement point |
+| --- | --- | --- |
+| UI | React/Vite chat workspace | SSO-aware enterprise frontend |
+| Execution | FastAPI gateway + LangGraph policy/retrieval graph | Durable LangGraph checkpoints and tool loops |
+| Knowledge | Qdrant + FastEmbed retrieval, LlamaIndex chunking, lexical fallback | Milvus, hybrid search, richer parsing |
+| Governance | PolicyEngine, PostgreSQL/JSONL audit, Langfuse traces | NeMo/Llama Guard, OPA, retention policy |
+| Infrastructure | Docker Compose Basic Core + full-stack override | HA PostgreSQL, Redis, Qdrant, object storage, Kubernetes |
+
+### Request flow
+
+1. The browser sends a question to the FastAPI gateway. The browser never talks directly to a model, vector store, or tool.
+2. Identity is resolved at the gateway. Organization, role, and document ACL filters are applied before retrieval results enter model context.
+3. The gateway embeds the query with FastEmbed and searches Qdrant. If the vector store is unreachable, a lexical fallback keeps retrieval available.
+4. Relevant chunks are assembled into the model context. The model is called through the OpenAI-compatible endpoint configured by `MODEL_BASE_URL`.
+5. The `PolicyEngine` applies output policy, including masking of phone-number-like values. When streaming, masking uses a small holdback buffer so a value is not split across chunks.
+6. The response returns with source and chunk references. Audit events are appended to PostgreSQL and a JSONL sink, filtered by organization when read through `/v1/audit-events`.
+7. A `trace_id` connects chat, retrieval, policy, and audit records; Langfuse records stage-level latency.
+
+### Component status (v0.6.0)
+
+Available: React/Nginx chat UI (`web`), FastAPI gateway (`api`), in-process LangGraph policy/retrieval graph, PolicyEngine masking (NeMo/Guardrails AI optional), Langfuse v2 tracing, Qdrant + FastEmbed retrieval, LlamaIndex chunking, Redis rate limiting, Mem0 memory, PostgreSQL audit, and Ollama/vLLM model serving. Kubernetes manifests exist for the API as a starter only. Milvus and SGLang are evaluated alternatives, not implemented features.
+
+## Document ingestion
+
+Parsers are routed automatically by MIME type. The parser profile must be running for non-plain formats.
+
+| Format family | Parser |
+| --- | --- |
+| HWP, HWPX | kordoc sidecar |
+| PDF | docling |
+| Office documents (DOCX, XLSX, PPTX) | docling |
+| Images | docling |
+| Legacy and miscellaneous formats | Apache Tika |
+
+Ingestion behavior:
+
+- Parsed text is chunked and embedded with FastEmbed, then stored in Qdrant.
+- Document originals and parsed text are stored under `DOCUMENT_STORE`.
+- Document ACLs, categories, and tags are stored as retrieval filters.
+- If `QDRANT_URL` is empty, retrieval runs in lexical fallback mode. After connecting Qdrant, an administrator must trigger reindexing.
+- Parsing quality varies by source format; scanned PDFs and complex HWP layouts are the most likely to need manual review.
+
+## Grounding and answer behavior
+
+- Every answer is expected to display its sources and chunk references.
+- If retrieval finds no sufficient evidence, the system warns rather than presenting an unsupported answer.
+- Users can open the source passage and original file, subject to permissions.
+- Feedback, tacit knowledge, and knowledge gaps are each stored in their own JSONL store.
+- Grounding reduces but does not remove model error. Evaluators should check citation support, not only answer plausibility.
+
+## Tacit knowledge, memory, and knowledge gaps
+
+- **Tacit knowledge.** The platform provides a structured way to capture expertise that is not written down, review it, and reuse it as answer material.
+- **User memory.** Mem0-based long-term memory is stored in Qdrant and retrieved by relevance for later answers.
+- **Knowledge gaps.** Questions that retrieval cannot answer are clustered. The system proposes missing-data hints and generates ontology pack drafts for human review; drafts are not automatically promoted to production knowledge.
+
+## Governance and access control
+
+- Organization-, role-, and document-level ACLs are enforced during retrieval.
+- Filtering happens before chunks enter model context, not after generation.
+- Audit events are written to PostgreSQL with a JSONL mirror and are readable per organization through the API.
+- Langfuse traces record pipeline stages, latency, and trace identifiers.
+- The `PolicyEngine` supports output masking, including streaming-safe masking with a holdback buffer.
+- Tool proposals must be authorized server-side. A model response alone is never execution authority.
+
+### Identity caveat
+
+The development identity headers `X-User-Id`, `X-Organization-Id`, and `X-Roles` are not production authentication. They exist for local development. Before exposing a deployment, replace them with OIDC/JWT validation and persist users, roles, threads, and messages in PostgreSQL.
+
+## Deployment profiles
+
+### Basic Core
+
+- Starts `api` and `web` with the `demo-local` model.
+- No external data services required.
+- Intended for evaluation, demos, and development.
+- The `demo-local` model returns an explicit non-inference response for smoke testing; it is not a real language model.
+
+```bash
+git clone https://github.com/baryonlabs/baryon-ax.git
+cd baryon-ax
+cp .env.example .env
+docker compose up --build
+```
+
+### Full stack
+
+- Adds Qdrant, PostgreSQL, Redis, Langfuse, and Mem0, plus LangGraph and LlamaIndex integration in the API.
+- Intended for pilots and department-level operation.
+- Requires host services (Ollama or vLLM) and the `parser` profile for HWP/Office/PDF ingestion.
+- Start with `docker compose -f docker-compose.yml -f docker-compose.full.yml --profile deps up -d --build`.
+- When Docker Desktop must reach a host Ollama instance, run `python3 scripts/ollama_proxy.py --listen-port 11435`, then set `OLLAMA_HOST_URL=http://host.docker.internal:11435` for the compose command above.
+
+### Kubernetes
+
+- `deploy/kubernetes` contains starter manifests for the API.
+- It is not a complete production HA topology; PostgreSQL, Redis, Qdrant, object storage, and ingress must be provided and sized separately.
+
+### Service ports
+
+UI 3001, API 8000, Langfuse 3000, PostgreSQL 5433, Redis 6379, Qdrant 6333. If a port conflicts with an existing service, change it in `docker-compose.yml`.
+
+## Hardware requirements
+
+Sizing below assumes thousands of documents, 5–20 concurrent users, and contexts up to 32k tokens. It is a starting point, not a guarantee.
+
+| Profile | CPU | RAM | GPU | Disk | Purpose |
+| --- | --- | --- | --- | --- | --- |
+| Basic Core | 2 vCPU | 4 GB | None | 10 GB | Demo model, file storage, evaluation |
+| Full stack (CPU) | 8 vCPU | 16 GB (32 GB recommended) | None | 100 GB (500 GB recommended) | Qdrant, PostgreSQL, Redis, Langfuse, Mem0 plus CPU inference |
+| Full stack + 7B GPU | 8 vCPU | 32 GB | RTX 4090 24 GB ×1 | 250 GB | Small internal pilot |
+| Production + 27B GPU | 16 vCPU | 64 GB | A100/H100 80 GB ×1 | 500 GB NVMe | Department-level operation |
+| Production + 122B GPU | 32 vCPU | 256 GB | B300 288 GB ×1 or H100 80 GB ×4 | 1 TB+ NVMe | Organization-wide, higher-quality inference |
+
+Model-level guidance:
+
+- Qwen2.5-7B (BF16, ~14 GB weights): minimum 24 GB VRAM.
+- Qwen3.5-27B (BF16, ~54 GB weights): minimum 80 GB VRAM; 96–141 GB recommended for 32k context.
+- Qwen3.5-122B-A10B (BF16, ~244 GB weights): 288 GB VRAM in one GPU, or 4×80 GB with tensor parallelism.
+
+Validated configurations in v0.6.0:
+
+- vLLM serving Qwen3.5-27B on B300 GPU 7.
+- Ollama serving `qwen2.5:7b`.
+
+Other notes:
+
+- Network: internal LAN at 1 Gbps or better. Internet access is optional; the platform operates in closed networks.
+- OS: Linux x86_64, Ubuntu 22.04/24.04 LTS recommended. macOS is for development and demos.
+- Disk: SSD or NVMe recommended for model weights and vector indexes; HDD increases retrieval latency.
+- Quantization lowers VRAM requirements but changes quality and latency; BF16 is the default recommendation.
+
+## Security CI
+
+- Every pull request runs `security-sweep`, which checks dependency CVEs, committed secrets, and configuration errors.
+- P0 and P1 findings block merge.
+- Scheduled scans run weekly across container images, SBOMs, and full git history for secrets.
+- The scanner is a baseline for known vulnerability classes. It is not a certification, and logic flaws still require SAST and human review.
+- security-sweep is a separate open-source tool: https://github.com/baryonlabs/security-sweep
+
+## Limitations
+
+- Development identity headers are not production authentication; OIDC/JWT integration is required before exposure.
+- Kubernetes support is starter-level for the API, not a full HA reference architecture.
+- Retrieval quality depends on parsing quality; scanned documents and complex layouts may need manual review.
+- Grounding reduces hallucination risk but does not eliminate it.
+- The default lexical fallback is less accurate than vector retrieval and is intended for continuity, not production quality.
+- Memory and tacit-knowledge stores are file/JSONL-based in this release; retention policy and enterprise lifecycle management are deployment responsibilities.
+- Milvus, SGLang, and durable LangGraph checkpoints are documented alternatives or roadmap items, not shipped features in v0.6.0.
+- The project has a single public release (0.6.0); long-term support commitments are not yet published.
+
+## FAQ
+
+**What is Baryon AX?**
+An on-premises, MIT-licensed AI agent and grounded RAG platform that answers from an organization's documents, tacit knowledge, and memory with source citations.
+
+**How is it different from a general chatbot?**
+Retrieval is permission-filtered before the model sees content, answers carry source and chunk references, and the system warns when evidence is insufficient.
+
+**Does it require internet access or a vendor cloud?**
+No. It is designed for on-premises and air-gapped deployment, with no vendor-side data plane.
+
+**Which models can it use?**
+Any model exposed through an OpenAI-compatible `/chat/completions` endpoint, including Ollama, vLLM, LiteLLM, and internal gateways.
+
+**Does it handle Korean document formats?**
+Yes. HWP and HWPX are parsed by the kordoc sidecar, with docling for PDF/Office/images and Tika for legacy formats.
+
+**What is the minimum hardware?**
+Basic Core needs 2 vCPU, 4 GB RAM, and 10 GB disk with no GPU. GPU inference is optional.
+
+**How are permissions enforced?**
+Organization, role, and document ACLs are applied at retrieval time, before chunks enter model context.
+
+**Is it production-ready?**
+It is suitable for pilots and controlled internal deployment. Production use requires replacing development identity headers with OIDC/JWT, sizing stateful services, and completing an organizational security review.
+
+## Canonical links
+
+- Homepage (Korean, default): https://baryonlabs.github.io/baryon-ax/
+- Homepage (English): https://baryonlabs.github.io/baryon-ax/en/
+- llms.txt: https://baryonlabs.github.io/baryon-ax/llms.txt
+- llms-full.txt: https://baryonlabs.github.io/baryon-ax/llms-full.txt
+- English llms.txt: https://baryonlabs.github.io/baryon-ax/en/llms.txt
+- Sitemap: https://baryonlabs.github.io/baryon-ax/sitemap.xml
+- Repository: https://github.com/baryonlabs/baryon-ax
+- Release v0.6.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0
+- Architecture: https://github.com/baryonlabs/baryon-ax/blob/main/docs/architecture.md
+- Features: https://github.com/baryonlabs/baryon-ax/blob/main/docs/features.md
+- Full-stack guide: https://github.com/baryonlabs/baryon-ax/blob/main/docs/full-stack.md
+- Hardware requirements: https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md
+- Operations: https://github.com/baryonlabs/baryon-ax/blob/main/docs/operations.md
+- Security baseline: https://github.com/baryonlabs/baryon-ax/blob/main/docs/security.md
+- Security CI runbook: https://github.com/baryonlabs/baryon-ax/blob/main/docs/security-ci.md
+- B300 vLLM guide: https://github.com/baryonlabs/baryon-ax/blob/main/docs/b300-vllm.md
+- B300 host deployment: https://github.com/baryonlabs/baryon-ax/blob/main/docs/b300-host-deploy.md
+
+## Citation guidance
+
+- Cite the product as "Baryon AX (MIT, v0.6.0)".
+- Prefer the homepage or repository URL as the primary link.
+- For technical claims, cite the relevant `docs/` file rather than this brief.
+- Quote hardware figures with their profile name (Basic Core, full stack, 7B GPU, 27B, 122B), because they are not interchangeable.
+- Do not describe Baryon AX as a SaaS, a closed-source product, or a certified security product. None of those are accurate.
+- Do not state that it is a complete production platform out of the box; identity, HA, and retention work remain deployment responsibilities.
+
+## Last updated
+
+2026-11-13 (Baryon AX v0.6.0).
+
+## License
+
+MIT. Copyright (c) Baryon Labs. See https://github.com/baryonlabs/baryon-ax/blob/main/LICENSE.
