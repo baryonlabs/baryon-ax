@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Baryon AX">
+  <rect width="64" height="64" rx="14" fill="#183257"/>
+  <rect x="1" y="1" width="62" height="62" rx="13" fill="none" stroke="#4f76b8" stroke-width="2"/>
+  <path d="M32 10l4.6 13.4L50 28l-13.4 4.6L32 46l-4.6-13.4L14 28l13.4-4.6L32 10z" fill="#dce7ff"/>
+  <circle cx="47" cy="17" r="3.2" fill="#64d9a5"/>
+</svg>

@@ -1,0 +1,43 @@
+# Baryon AX
+
+> On-premises, model-agnostic AI agent platform for enterprise grounded chat, document knowledge, tacit-knowledge capture, and governance.
+
+Baryon AX is an open-source Basic Core (MIT) that runs with Docker Compose. It connects OpenAI-compatible models (Ollama, vLLM, or a custom gateway), ingests documents (HWP/HWPX/PDF/Office/images), retrieves with Qdrant + FastEmbed, and returns answers with source citations. The full-stack profile adds PostgreSQL, Redis, Langfuse, LangGraph, LlamaIndex, and Mem0.
+
+## Key facts
+
+- Version: 0.6.0 (first release, 2026-11-13)
+- License: MIT
+- Deployment: on-premises / air-gapped capable
+- Basic Core: 2 vCPU, 4GB RAM, 10GB disk, no GPU
+- Full stack: 8 vCPU, 16GB RAM (32GB recommended), 100GB disk
+- Validated models: Ollama qwen2.5:7b, vLLM Qwen3.5-27B on B300 GPU 7
+- Security CI: every PR runs security-sweep; P0/P1 block merge; weekly image/SBOM/gitleaks scans
+
+## Start
+
+```bash
+git clone https://github.com/baryonlabs/baryon-ax.git
+cd baryon-ax
+cp .env.example .env
+docker compose up --build
+```
+
+Open http://localhost:3001. The demo-local model works without an API key.
+
+## Documentation
+
+- Introduction and help: https://baryonlabs.github.io/baryon-ax/
+- English: https://baryonlabs.github.io/baryon-ax/en/
+- Repository: https://github.com/baryonlabs/baryon-ax
+- Release: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0
+- Security CI runbook: https://github.com/baryonlabs/baryon-ax/blob/main/docs/security-ci.md
+- Security baseline: https://github.com/baryonlabs/baryon-ax/blob/main/docs/security.md
+- Architecture: https://github.com/baryonlabs/baryon-ax/blob/main/docs/architecture.md
+- Operations: https://github.com/baryonlabs/baryon-ax/blob/main/docs/operations.md
+- Hardware requirements: https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md
+
+## Notes
+
+- The development identity headers (X-User-Id, X-Organization-Id, X-Roles) are not production authentication. Replace them with OIDC/JWT before exposing a deployment.
+- The security scan is a baseline for known vulnerabilities, not a certification. Logic flaws require SAST and human review.

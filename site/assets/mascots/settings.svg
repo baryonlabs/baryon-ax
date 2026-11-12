@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Settings beaver mascot">
+  <rect width="64" height="64" rx="16" fill="#172a44"/>
+  <circle cx="54" cy="10" r="16" fill="#9fb6d8" opacity=".18"/>
+  <circle cx="17" cy="23" r="5.5" fill="#6f8ea8"/>
+  <circle cx="47" cy="23" r="5.5" fill="#6f8ea8"/>
+  <circle cx="17" cy="23" r="2.8" fill="#a9c2d8"/>
+  <circle cx="47" cy="23" r="2.8" fill="#a9c2d8"/>
+  <ellipse cx="32" cy="34" rx="18" ry="16" fill="#8fb0c9"/>
+  <ellipse cx="32" cy="41" rx="11" ry="8" fill="#d9e6f2"/>
+  <circle cx="25" cy="31" r="2.6" fill="#1c2836"/>
+  <circle cx="39" cy="31" r="2.6" fill="#1c2836"/>
+  <circle cx="25.8" cy="30.2" r=".9" fill="#fff"/>
+  <circle cx="39.8" cy="30.2" r=".9" fill="#fff"/>
+  <ellipse cx="32" cy="36.8" rx="3.2" ry="2.4" fill="#3d4d5e"/>
+  <path d="M28.5 40h7v7h-7z" fill="#fff" stroke="#b9cbdc" stroke-width=".8"/>
+  <path d="M32 40v7M28.5 43.5h7" stroke="#b9cbdc" stroke-width="1"/>
+  <g transform="translate(45 5)">
+    <circle cx="7" cy="7" r="4.6" fill="#f0b45a"/>
+    <circle cx="7" cy="7" r="2" fill="#172a44"/>
+    <path d="M7 0v3M7 11v3M0 7h3M11 7h3M2 2l2 2M10 10l2 2M12 2l-2 2M4 10l-2 2" stroke="#f0b45a" stroke-width="1.8" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -53,6 +53,15 @@ type OntologyPack = {
   required_sources: { kind: string; hint: string }[]; acceptance_questions: string[]; source_gap_ids: string[];
   verification?: PackVerification;
 };
+type OpenSourceComponent = {
+  id: string; name: string; group: string; role: string; license: string; url: string;
+  status: "active" | "optional" | "test"; note?: string;
+};
+type OpenSourcePayload = {
+  data: OpenSourceComponent[];
+  summary: { total: number; active: number; optional: number; test: number; licenses: Record<string, number> };
+  docs_url: string; notice: string;
+};
 type TacitQuestion = {
   id: string; question: string; source: string; gap_id?: string; category?: string;
   occurrences: number; reasons: string[]; terms: string[];
@@ -239,6 +248,15 @@ const copy = {
     approvePack: "승인", verifyPack: "재검증", verifying: "검증 중…", coverage: "커버리지", resolved: "해결",
     statusReviewed: "검토됨", statusActive: "활성", packVerified: (name: string, coverage: number) => `${name} 커버리지 ${Math.round(coverage * 100)}%`,
     verifyFailed: "재검증에 실패했습니다.", missingTerms: "부족한 용어",
+    settingsSystem: "시스템 설정", openSource: "오픈소스",
+    openSourceBody: "이 플랫폼이 사용하는 오픈소스 구성 요소와 라이선스입니다. 각 링크에서 원문을 확인하세요.",
+    openSourceSearch: "구성 요소 검색", allLicenses: "전체 라이선스", license: "라이선스", componentRole: "역할",
+    openSourceDocs: "라이선스 인벤토리 문서", openSourceNotice: "라이선스는 업스트림 프로젝트 기준입니다. 실제 배포 버전의 LICENSE와 모델 가중치 라이선스를 별도로 확인하세요.",
+    openSourceFailed: "오픈소스 목록을 불러올 수 없습니다.", openSourceEmpty: "조건에 맞는 구성 요소가 없습니다.",
+    osStatusActive: "사용 중", osStatusOptional: "선택", osStatusTest: "테스트",
+    groupFrontend: "프론트엔드", groupBackend: "백엔드", groupData: "데이터", groupModel: "모델",
+    groupOrchestration: "오케스트레이션", groupObservability: "관측·메모리", groupIngestion: "인제스트",
+    groupInfra: "인프라", groupDev: "개발·보안",
     tacit: "암묵지", tacitBody: "문서에 없는 판단 기준·예외·용어를 질문으로 끌어내고, 답변을 검색 가능한 지식으로 게시합니다.",
     tacitQuestions: "질문", tacitMyAnswers: "내 답변", tacitAllAnswers: "전체 답변", answerThis: "답하기",
     tacitPlaceholder: "경험에서 나온 판단 기준과 이유를 적어 주세요…", attach: "첨부", submitAnswer: "답변 저장",
@@ -325,6 +343,15 @@ const copy = {
     approvePack: "Approve", verifyPack: "Re-verify", verifying: "Verifying…", coverage: "Coverage", resolved: "Resolved",
     statusReviewed: "Reviewed", statusActive: "Active", packVerified: (name: string, coverage: number) => `${name} coverage ${Math.round(coverage * 100)}%`,
     verifyFailed: "Re-verification failed.", missingTerms: "Missing terms",
+    settingsSystem: "System settings", openSource: "Open source",
+    openSourceBody: "Open-source components and licenses used by this platform. Verify the original license at each link.",
+    openSourceSearch: "Search components", allLicenses: "All licenses", license: "License", componentRole: "Role",
+    openSourceDocs: "License inventory docs", openSourceNotice: "Licenses reflect the upstream projects. Verify the LICENSE of the deployed version and any model-weight license separately.",
+    openSourceFailed: "Could not load the open-source inventory.", openSourceEmpty: "No components match these filters.",
+    osStatusActive: "In use", osStatusOptional: "Optional", osStatusTest: "Test",
+    groupFrontend: "Frontend", groupBackend: "Backend", groupData: "Data", groupModel: "Model",
+    groupOrchestration: "Orchestration", groupObservability: "Observability & memory", groupIngestion: "Ingestion",
+    groupInfra: "Infrastructure", groupDev: "Developer & security",
     tacit: "Tacit knowledge", tacitBody: "Elicit judgement rules, exceptions, and local vocabulary, then publish answers as searchable knowledge.",
     tacitQuestions: "Questions", tacitMyAnswers: "My answers", tacitAllAnswers: "All answers", answerThis: "Answer",
     tacitPlaceholder: "Describe the judgement rule and why it matters…", attach: "Attach", submitAnswer: "Save answer",
@@ -376,6 +403,11 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [toast, setToast] = useState("");
+  const [settingsTab, setSettingsTab] = useState<"system" | "open-source">("system");
+  const [openSourceData, setOpenSourceData] = useState<OpenSourcePayload | null>(null);
+  const [openSourceError, setOpenSourceError] = useState(false);
+  const [openSourceQuery, setOpenSourceQuery] = useState("");
+  const [openSourceLicense, setOpenSourceLicense] = useState("");
   const [feedbackByIndex, setFeedbackByIndex] = useState<Record<number, 1 | -1>>({});
   const controllerRef = useRef<AbortController | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -690,6 +722,21 @@ export default function App() {
     const timer = window.setTimeout(() => tacitAnswerRef.current?.focus(), 250);
     return () => window.clearTimeout(timer);
   }, [tacitSelected]);
+
+  const loadOpenSource = useCallback(async () => {
+    try {
+      const response = await fetch(`${API}/v1/open-source`);
+      if (!response.ok) throw new Error("Open source load failed");
+      setOpenSourceData(await response.json());
+      setOpenSourceError(false);
+    } catch {
+      setOpenSourceError(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (view === "settings" && settingsTab === "open-source") void loadOpenSource();
+  }, [view, settingsTab, loadOpenSource]);
 
   useEffect(() => { if (view === "knowledge") void loadKnowledge(); }, [view, loadKnowledge]);
   useEffect(() => { if (view === "tacit") void loadTacit(); }, [view, loadTacit]);
@@ -1093,6 +1140,27 @@ export default function App() {
     return <dd>{value}{href && <a className="inline-link" href={href} target="_blank" rel="noreferrer" title={t.open}><ExternalLink size={12}/></a>}</dd>;
   }
 
+  const openSourceFiltered = (openSourceData?.data ?? []).filter(component => {
+    const query = openSourceQuery.trim().toLowerCase();
+    const matchesQuery = !query || `${component.name} ${component.role} ${component.license}`.toLowerCase().includes(query);
+    const matchesLicense = !openSourceLicense || component.license === openSourceLicense;
+    return matchesQuery && matchesLicense;
+  });
+  const openSourceGroups = Array.from(new Set(openSourceFiltered.map(component => component.group)));
+  function openSourceGroupLabel(group: string) {
+    const labels: Record<string, string> = {
+      frontend: t.groupFrontend, backend: t.groupBackend, data: t.groupData, model: t.groupModel,
+      orchestration: t.groupOrchestration, observability: t.groupObservability, ingestion: t.groupIngestion,
+      infra: t.groupInfra, dev: t.groupDev,
+    };
+    return labels[group] ?? group;
+  }
+  function openSourceStatusLabel(status: string) {
+    if (status === "active") return t.osStatusActive;
+    if (status === "optional") return t.osStatusOptional;
+    return t.osStatusTest;
+  }
+
   return <main className={`shell theme-${view} ${role === "admin" ? "admin" : ""}`}>
     <a className="skip-link" href="#main-content">{t.skipToContent}</a>
     <button className={`sidebar-backdrop ${sidebarOpen ? "open" : ""}`} aria-label={t.closeMenu} onClick={() => setSidebarOpen(false)}/>
@@ -1446,13 +1514,17 @@ export default function App() {
           </div>}
         </>}
       </div>}
-      {view === "settings" && <div className="knowledge">
+      {view === "settings" && <div className={`knowledge ${settingsTab === "open-source" ? "settings-open-source" : ""}`}>
         <div className="knowledge-top">
           <div><h2>{t.adminSettings}</h2><p>{t.adminSettingsBody}</p></div>
           <div className="setting-actions">
             <button className="primary" disabled={reindexBusy} onClick={() => void reindexDocuments()}><RefreshCw size={16}/>{reindexBusy ? t.reindexing : t.reindex}</button>
             <button className="primary" onClick={() => void loadSettings()}><RefreshCw size={16}/>{t.refresh}</button>
           </div>
+        </div>
+        <div className="settings-tabs" role="tablist" aria-label={t.adminSettings}>
+          <button role="tab" aria-selected={settingsTab === "system"} className={settingsTab === "system" ? "active" : ""} onClick={() => setSettingsTab("system")}><Settings size={15}/>{t.settingsSystem}</button>
+          <button role="tab" aria-selected={settingsTab === "open-source"} className={settingsTab === "open-source" ? "active" : ""} onClick={() => setSettingsTab("open-source")}><Boxes size={15}/>{t.openSource}</button>
         </div>
         <div className="quick-links">
           <button onClick={() => setView("chat")}><Bot size={15}/>{t.chat}</button>
@@ -1461,6 +1533,40 @@ export default function App() {
           <button onClick={() => setView("governance")}><ShieldCheck size={15}/>{t.governance}</button>
           <button onClick={() => setView("gaps")}><Network size={15}/>{t.gaps}</button>
         </div>
+        {settingsTab === "open-source" && <section className="open-source-panel">
+          {openSourceError ? <div className="empty"><Boxes size={28}/><h3>{t.openSourceFailed}</h3><p>{t.openSourceBody}</p></div> : !openSourceData ? <div className="empty"><Boxes size={28}/><h3>{t.working}</h3><p>{t.openSourceBody}</p></div> : <>
+            <div className="license-summary" aria-label={t.license}>
+              {Object.entries(openSourceData.summary.licenses).slice(0, 8).map(([license, count]) =>
+                <button type="button" key={license} className={`license-chip ${openSourceLicense === license ? "active" : ""}`} onClick={() => setOpenSourceLicense(openSourceLicense === license ? "" : license)}>{license}<span>{count}</span></button>)}
+            </div>
+            <div className="open-source-controls">
+              <label className="search-field"><Search size={15}/><input value={openSourceQuery} onChange={event => setOpenSourceQuery(event.target.value)} placeholder={t.openSourceSearch} aria-label={t.openSourceSearch}/></label>
+              <select value={openSourceLicense} onChange={event => setOpenSourceLicense(event.target.value)} aria-label={t.license}>
+                <option value="">{t.allLicenses}</option>
+                {Object.keys(openSourceData.summary.licenses).map(license => <option key={license} value={license}>{license}</option>)}
+              </select>
+              <span className="muted">{openSourceFiltered.length} / {openSourceData.summary.total}</span>
+            </div>
+            {openSourceFiltered.length === 0 ? <div className="empty"><Boxes size={24}/><h3>{t.openSourceEmpty}</h3></div> : <div className="os-groups">
+              {openSourceGroups.map(group => <section className="os-group" key={group}>
+                <h3>{openSourceGroupLabel(group)}<span className="badge">{openSourceFiltered.filter(component => component.group === group).length}</span></h3>
+                <div className="os-list">
+                  {openSourceFiltered.filter(component => component.group === group).map(component => <div className="os-row" key={component.id}>
+                    <div className="os-main">
+                      <strong>{component.name}</strong>
+                      <p>{component.role}</p>
+                      {component.note && <small>{component.note}</small>}
+                    </div>
+                    <span className={`status-pill ${component.status}`}>{openSourceStatusLabel(component.status)}</span>
+                    <span className="license-badge">{component.license}</span>
+                    <a className="os-link" href={component.url} target="_blank" rel="noreferrer" title={component.url} aria-label={`${component.name} ${t.open}`}><ExternalLink size={14}/></a>
+                  </div>)}
+                </div>
+              </section>)}
+            </div>}
+            <p className="open-source-notice">{openSourceData.notice} <a href={openSourceData.docs_url} target="_blank" rel="noreferrer">{t.openSourceDocs}<ExternalLink size={12}/></a></p>
+          </>}
+        </section>}
         {reindexMessage && <p className="settings-note">{reindexMessage}</p>}
         {settingsError || !settings ? <div className="empty"><Settings size={28}/><h3>{t.adminOnly}</h3><p>{t.settingsFailed}</p></div> : <div className="settings-grid">
           <section className="setting-card system-card">
@@ -1511,7 +1617,7 @@ export default function App() {
               <div><dt>{t.providerAdapter}</dt><dd>{settings.model.adapter}</dd></div>
               <div><dt>{t.providerModel}</dt><dd>{settings.model.name}</dd></div>
               <div><dt>{t.providerEndpoint}</dt><dd>{settings.model.base_url_configured ? t.connected : t.notConnected}</dd></div>
-              <div><dt>{t.working}</dt><dd>{settings.model.thinking_disabled ? t.disabled : t.enabled}</dd></div>
+              <div><dt>{t.thinking}</dt><dd>{settings.model.thinking_disabled ? t.disabled : t.enabled}</dd></div>
               <div><dt>{t.promptProfile}</dt><dd>{settings.model.prompt_profile}</dd></div>
               <div><dt>{t.timeoutLabel}</dt><dd>{settings.model.timeout_seconds}s</dd></div>
             </dl>

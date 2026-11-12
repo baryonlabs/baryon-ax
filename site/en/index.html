@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Baryon AX — On-premises AI agents with grounded answers</title>
+<meta name="description" content="Baryon AX is an on-premises AI agent platform that connects documents, tacit knowledge, and memory to produce answers with verifiable sources. OpenAI-compatible models, Qdrant retrieval, governance, and security CI in one stack.">
+<link rel="canonical" href="https://baryonlabs.github.io/baryon-ax/en/">
+<link rel="alternate" hreflang="ko" href="https://baryonlabs.github.io/baryon-ax/">
+<link rel="alternate" hreflang="en" href="https://baryonlabs.github.io/baryon-ax/en/">
+<link rel="alternate" hreflang="x-default" href="https://baryonlabs.github.io/baryon-ax/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0b1020">
+<meta name="author" content="Baryon Labs">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Baryon AX">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Baryon AX — On-premises AI agents with grounded answers">
+<meta property="og:description" content="Connect documents, tacit knowledge, and memory to produce answers with verifiable sources. OpenAI-compatible models, Qdrant retrieval, governance, and security CI.">
+<meta property="og:url" content="https://baryonlabs.github.io/baryon-ax/en/">
+<meta property="og:image" content="https://baryonlabs.github.io/baryon-ax/assets/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Baryon AX — On-premises AI agents with grounded answers">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Baryon AX — On-premises AI agents with grounded answers">
+<meta name="twitter:description" content="Connect documents, tacit knowledge, and memory to produce answers with verifiable sources.">
+<meta name="twitter:image" content="https://baryonlabs.github.io/baryon-ax/assets/og.jpg">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#org",
+      "name": "Baryon Labs",
+      "url": "https://github.com/baryonlabs"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://baryonlabs.github.io/baryon-ax/#app",
+      "name": "Baryon AX",
+      "description": "On-premises AI agent platform for grounded chat, document knowledge, tacit-knowledge capture, and governance.",
+      "url": "https://baryonlabs.github.io/baryon-ax/en/",
+      "downloadUrl": "https://github.com/baryonlabs/baryon-ax",
+      "applicationCategory": "BusinessApplication",
+      "applicationSubCategory": "AI agents and grounded chat",
+      "operatingSystem": "Linux, macOS",
+      "softwareVersion": "0.6.0",
+      "datePublished": "2026-11-13",
+      "image": "https://baryonlabs.github.io/baryon-ax/assets/og.jpg",
+      "license": "https://opensource.org/licenses/MIT",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": { "@id": "https://baryonlabs.github.io/baryon-ax/#org" }
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://baryonlabs.github.io/baryon-ax/en/#page",
+      "url": "https://baryonlabs.github.io/baryon-ax/en/",
+      "name": "Baryon AX — On-premises AI agents with grounded answers",
+      "inLanguage": "en",
+      "dateModified": "2026-11-13",
+      "about": { "@id": "https://baryonlabs.github.io/baryon-ax/#app" },
+      "primaryImageOfPage": "https://baryonlabs.github.io/baryon-ax/assets/og.jpg"
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="../" aria-label="Baryon AX home">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z" fill="currentColor"/><circle cx="19" cy="5" r="1.6" fill="#64d9a5"/></svg>
+      </span>
+      <span>Baryon AX</span>
+    </a>
+    <button class="nav-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <nav class="site-nav" id="site-nav" aria-label="Main menu">
+      <a href="#why">Why</a>
+      <a href="#features">Features</a>
+      <a href="#start">Quick start</a>
+      <a href="#help">Help</a>
+      <a href="#security">Security</a>
+      <a href="#docs">Docs</a>
+      <a href="https://github.com/baryonlabs/baryon-ax">GitHub</a>
+      <a class="lang" href="../" hreflang="ko" lang="ko">한국어</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="release"><a href="https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0">v0.6.0 first release</a> · Security CI included · MIT</p>
+        <h1>Enterprise knowledge,<br><span>answered with evidence</span><br>on your premises.</h1>
+        <p class="lead">Baryon AX is an on-premises AI agent platform that connects documents, tacit knowledge, and memory to produce <strong>answers with verifiable sources</strong>.</p>
+        <p class="sub">Any OpenAI-compatible model — Ollama, vLLM, or your own gateway. Keep data inside your environment and attach evidence to every answer.</p>
+        <div class="cta">
+          <a class="btn btn-primary" href="#start">Quick start</a>
+          <a class="btn btn-ghost" href="https://github.com/baryonlabs/baryon-ax">View on GitHub</a>
+        </div>
+        <ul class="facts" aria-label="Project status">
+          <li><b>0</b><span>P0/P1/P2/P3<br>current scan</span></li>
+          <li><b>4</b><span>lockfile-based<br>dependency scans</span></li>
+          <li><b>119</b><span>API tests<br>passing</span></li>
+          <li><b>MIT</b><span>open-source<br>license</span></li>
+        </ul>
+      </div>
+      <div class="hero-visual">
+        <div class="browser">
+          <div class="browser-bar" aria-hidden="true"><span></span><span></span><span></span><em>baryon-ax · grounded chat</em></div>
+          <img src="../assets/screenshots/chat.webp" width="1200" height="974" alt="Baryon AX grounded chat with citations and a pipeline trace.">
+        </div>
+        <div class="float-card float-citations"><strong>3 sources</strong><span>document · chunk citations</span></div>
+        <div class="float-card float-mascot"><img src="../assets/mascots/chat.svg" alt="" width="34" height="34"><span>Grounded<br>answers</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="why">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Why Baryon AX</p>
+        <h2>Data stays inside. Answers carry evidence.</h2>
+        <p>Not another chatbot layer — an operating model where organizational knowledge is retrieved, cited, and audited.</p>
+      </div>
+      <div class="grid-3">
+        <article class="card">
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/><path d="M17 17l2 2 3-3"/></svg></div>
+          <h3>On-premises, model-agnostic</h3>
+          <p>Connect Ollama, vLLM, or any OpenAI-compatible endpoint. You control the data and the model choice, without locking into a SaaS vendor.</p>
+        </article>
+        <article class="card">
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5v-16z"/><path d="M8 7h8M8 11h6"/></svg></div>
+          <h3>Grounded answers</h3>
+          <p>Qdrant + FastEmbed retrieval with source and chunk citations. Warn when there is no grounding, and open the original passage or file only after ACL checks.</p>
+        </article>
+        <article class="card">
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg></div>
+          <h3>Governance built in</h3>
+          <p>Organization and role ACLs, PostgreSQL audit events, PII masking, and Langfuse traces in the default stack. Security CI verifies every pull request.</p>
+        </article>
+      </div>
+      <figure class="overview">
+        <img src="../assets/screenshots/overview.webp" width="1400" height="788" alt="Baryon AX platform overview: user flow, layered architecture, and core engines" loading="lazy">
+        <figcaption>User flow, layered architecture, and the policy, retrieval, model, and memory engines on one page.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="section alt" id="features">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">One workspace</p>
+        <h2>From chat to explicit knowledge.</h2>
+        <p>Upload, retrieve, answer, collect feedback, capture gaps, and publish tacit knowledge in one continuous loop.</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature" style="--accent:#6c9dec"><span class="feature-icon"><img src="../assets/mascots/chat.svg" alt="" width="30" height="30" loading="lazy"></span><div><h3>Grounded chat</h3><p>Streaming, model selection, RAG toggle, stop/regenerate/copy, 👍/👎 feedback, and a step-by-step pipeline trace.</p></div></article>
+        <article class="feature" style="--accent:#7fc7a8"><span class="feature-icon"><img src="../assets/mascots/knowledge.svg" alt="" width="30" height="30" loading="lazy"></span><div><h3>Knowledge library</h3><p>MIME-based routing for HWP, HWPX, PDF, Office, images, and text, with structure-aware chunking.</p></div></article>
+        <article class="feature" style="--accent:#f0b45a"><span class="feature-icon"><img src="../assets/mascots/tacit.svg" alt="" width="30" height="30" loading="lazy"></span><div><h3>Tacit knowledge</h3><p>Gap → question → answer → publish → verify → reuse. Turn judgment calls and exceptions into searchable knowledge.</p></div></article>
+        <article class="feature" style="--accent:#d99b6c"><span class="feature-icon"><img src="../assets/mascots/gaps.svg" alt="" width="30" height="30" loading="lazy"></span><div><h3>Gaps & ontology</h3><p>Cluster ungrounded questions, surface missing-data hints, and draft ontology packs for the next knowledge cycle.</p></div></article>
+        <article class="feature" style="--accent:#b79cf0"><span class="feature-icon"><img src="../assets/mascots/memory.svg" alt="" width="30" height="30" loading="lazy"></span><div><h3>User memory</h3><p>Mem0-backed long-term memory stored, searched, and injected into answers by relevance.</p></div></article>
+        <article class="feature" style="--accent:#64d9a5"><span class="feature-icon"><img src="../assets/mascots/governance.svg" alt="" width="30" height="30" loading="lazy"></span><div><h3>Governance & audit</h3><p>Organization/role ACLs, document permission changes, audit events, admin settings, and system status.</p></div></article>
+        <article class="feature" style="--accent:#8cb3f2"><span class="feature-icon"><img src="../assets/mascots/settings.svg" alt="" width="30" height="30" loading="lazy"></span><div><h3>Operations & observability</h3><p>Langfuse traces, per-step latency, storage, memory, CPU, process, and container cards.</p></div></article>
+        <article class="feature" style="--accent:#f08a8a"><span class="feature-icon"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg></span><div><h3>B300 · GPU deployment</h3><p>Validated with vLLM Qwen3.5-27B on B300 GPU 7, plus a full-stack Compose profile and Kubernetes starter manifests.</p></div></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="screens">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Real screens</p>
+        <h2>Captured on a B300 on-premises deployment.</h2>
+        <p>Qwen3.5-27B (vLLM), Qdrant, PostgreSQL, Redis, Langfuse, and Mem0 connected, captured as an administrator.</p>
+      </div>
+      <div class="gallery">
+        <figure><img src="../assets/screenshots/chat.webp" width="1200" height="974" alt="Grounded chat with citations and pipeline trace" loading="lazy"><figcaption><strong>Grounded chat</strong>Sources and chunks under each answer, with per-step latency.</figcaption></figure>
+        <figure><img src="../assets/screenshots/knowledge.webp" width="1200" height="792" alt="Knowledge library with format badges" loading="lazy"><figcaption><strong>Knowledge library</strong>Drag-and-drop upload, format badges, and chunk counts.</figcaption></figure>
+        <figure><img src="../assets/screenshots/tacit.webp" width="1100" height="1051" alt="Tacit knowledge provenance" loading="lazy"><figcaption><strong>Tacit knowledge</strong>Question queue, answers, published docs, and provenance.</figcaption></figure>
+        <figure><img src="../assets/screenshots/governance.webp" width="1200" height="792" alt="Governance and audit log" loading="lazy"><figcaption><strong>Governance & audit</strong>Organization events, trace ids, users, and latency.</figcaption></figure>
+      </div>
+      <p class="center"><a class="text-link" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/screenshots.md">Open the full gallery</a></p>
+    </div>
+  </section>
+
+  <section class="section alt" id="start">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Quick start</p>
+        <h2>If you have Docker, you can run it now.</h2>
+        <p>The Basic Core runs with <code>demo-local</code> and needs no external model. Point it at an OpenAI-compatible endpoint for real inference.</p>
+      </div>
+      <div class="start-grid">
+        <div>
+          <ol class="steps">
+            <li><b>Clone the repository</b><span>Use Git or download the release source.</span></li>
+            <li><b>Prepare the environment</b><span>Copy <code>.env.example</code>. The defaults work as-is.</span></li>
+            <li><b>Run Compose</b><span>Build the images and start the UI and API.</span></li>
+          </ol>
+          <div class="code-block">
+            <div class="code-head"><span>Terminal</span><button class="copy" type="button">Copy</button></div>
+            <pre><code>git clone https://github.com/baryonlabs/baryon-ax.git
+cd baryon-ax
+cp .env.example .env
+docker compose up --build</code></pre>
+          </div>
+          <p class="note">UI <code>http://localhost:3001</code> · API <code>http://localhost:8000</code> · health <code>GET /health</code></p>
+        </div>
+        <aside class="start-side">
+          <div class="card"><h3>Requirements</h3><ul><li>Docker 24+ · Docker Compose v2.20+</li><li>Basic Core: 2 vCPU · 4GB RAM · 10GB disk</li><li>Full stack: 8 vCPU · 16GB RAM (32GB recommended) · 100GB</li><li>GPU inference needs NVIDIA drivers + container toolkit</li></ul></div>
+          <div class="card"><h3>HWP/HWPX parsers</h3><p>Run the parser profile. kordoc, docling, and Tika route by MIME automatically.</p><div class="code-block"><div class="code-head"><span>Parser profile</span><button class="copy" type="button">Copy</button></div><pre><code>docker compose -f docker-compose.yml \
+  -f docker-compose.parsers.yml \
+  --profile parsers up -d --build</code></pre></div></div>
+          <div class="card"><h3>Connect a real model</h3><p>Set <code>MODEL_BASE_URL</code> and <code>MODEL_NAME</code>. If Ollama binds to <code>127.0.0.1</code>, use the repository's proxy.</p><p><a class="text-link" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/full-stack.md">Full-stack guide</a></p></div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="help">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Help</p>
+        <h2>Start here when you get stuck.</h2>
+        <p>The most common issues around installation, models, parsers, retrieval, and permissions — with fixes.</p>
+      </div>
+      <div class="help-grid">
+        <article class="help-card"><span class="help-num">01 · MODEL</span><h3>The model is always demo-local</h3><p>If <code>MODEL_BASE_URL</code> is empty, Baryon AX uses the demo model. Set an OpenAI-compatible endpoint and model name. Ollama binds to <code>127.0.0.1</code> by default, so containers need a proxy.</p><div class="code-block"><div class="code-head"><span>.env</span><button class="copy" type="button">Copy</button></div><pre><code>MODEL_BASE_URL=http://host.docker.internal:11435/v1
+MODEL_NAME=qwen2.5:7b</code></pre></div></article>
+        <article class="help-card"><span class="help-num">02 · PARSER</span><h3>HWP/HWPX uploads fail</h3><p>The default Compose profile does not include parser sidecars. Start the parser profile and check <code>KORDOC_URL</code> and <code>DOCLING_URL</code>.</p><div class="code-block"><div class="code-head"><span>Terminal</span><button class="copy" type="button">Copy</button></div><pre><code>docker compose -f docker-compose.yml \
+  -f docker-compose.parsers.yml \
+  --profile parsers up -d --build</code></pre></div></article>
+        <article class="help-card"><span class="help-num">03 · RETRIEVAL</span><h3>Search returns nothing</h3><p>Without <code>QDRANT_URL</code>, retrieval falls back to lexical search. Connect Qdrant, reindex as an administrator, and check document ACLs, categories, and tags.</p><div class="code-block"><div class="code-head"><span>API</span><button class="copy" type="button">Copy</button></div><pre><code>curl -X POST http://localhost:8000/v1/admin/reindex \
+  -H 'X-User-Id: admin' \
+  -H 'X-Organization-Id: demo' \
+  -H 'X-Roles: admin'</code></pre></div></article>
+        <article class="help-card"><span class="help-num">04 · ACCESS</span><h3>I cannot see the admin menu</h3><p>In development, set the role with <code>X-Roles: admin</code>. Replace these development identity headers with OIDC/JWT before production.</p><div class="code-block"><div class="code-head"><span>Headers</span><button class="copy" type="button">Copy</button></div><pre><code>X-User-Id: demo-admin
+X-Organization-Id: demo
+X-Roles: admin</code></pre></div></article>
+        <article class="help-card"><span class="help-num">05 · PORTS</span><h3>Ports are already in use</h3><p>The UI uses 3001, API 8000, Langfuse 3000, PostgreSQL 5433, Redis 6379, and Qdrant 6333. Change the Compose ports if another service owns them.</p><div class="code-block"><div class="code-head"><span>Terminal</span><button class="copy" type="button">Copy</button></div><pre><code>lsof -i :3001
+lsof -i :8000
+docker compose ps</code></pre></div></article>
+        <article class="help-card"><span class="help-num">06 · DATA</span><h3>Reset or back up data</h3><p>Document, audit, feedback, and tacit stores live in Compose volumes under <code>/data</code>. Back up first; deleting volumes is destructive.</p><div class="code-block"><div class="code-head"><span>Terminal</span><button class="copy" type="button">Copy</button></div><pre><code>docker compose logs -f api web
+docker compose down
+# Deleting volumes loses data. Back up first.</code></pre></div></article>
+      </div>
+      <div class="faq">
+        <h3>Frequently asked questions</h3>
+        <details><summary>What are the minimum hardware requirements?</summary><p>The Basic Core runs on 2 vCPU, 4GB RAM, and 10GB disk with the demo model. The full stack (Qdrant, PostgreSQL, Redis, Langfuse, Mem0) recommends 8 vCPU, 16GB RAM (32GB recommended), and 100GB disk. GPU inference starts with an RTX 4090 24GB for a 7B model. See <a href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md">hardware requirements</a>.</p></details>
+        <details><summary>Does it work in an air-gapped network?</summary><p>Yes. Internet access is optional. Mirror the Docker images, model weights, and packages, and keep the model and data stores inside your network. See the repository's air-gap guidance.</p></details>
+        <details><summary>Which models are supported?</summary><p>Any model that exposes an OpenAI-compatible API. Ollama <code>qwen2.5:7b</code> and vLLM <code>Qwen3.5-27B</code> on B300 GPU 7 are validated. Without a model, the <code>demo-local</code> fallback still demonstrates the UI and flow.</p></details>
+        <details><summary>Can it parse HWP/HWPX documents?</summary><p>Yes. The kordoc sidecar parses HWP/HWPX, docling handles PDF, Office, and images, and Tika covers legacy formats. Start the parser profile; MIME-based routing selects the parser automatically.</p></details>
+        <details><summary>Where is data stored?</summary><p>Original files and parsed text live in <code>DOCUMENT_STORE</code>, vectors in Qdrant, audit events in PostgreSQL plus a JSONL mirror, and memory in Mem0/Qdrant. Feedback, tacit knowledge, and knowledge gaps use their own JSONL stores. All stores remain inside your environment.</p></details>
+        <details><summary>How is security handled?</summary><p>Every pull request runs <a href="https://github.com/baryonlabs/security-sweep">security-sweep</a> for dependency CVEs, secrets, and configuration errors; P0/P1 findings block the merge. A weekly job scans images, SBOMs, and the full git history. For production, follow the <a href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/security.md">security baseline</a> for OIDC/JWT and secret management.</p></details>
+        <details><summary>What license is used?</summary><p>MIT. Commercial use, modification, and distribution are allowed with attribution. See <a href="https://github.com/baryonlabs/baryon-ax/blob/main/LICENSE">LICENSE</a>.</p></details>
+        <details><summary>How do I contribute or report a bug?</summary><p>Open a GitHub Issue with reproduction steps and expected behavior. Report security vulnerabilities privately using <a href="https://github.com/baryonlabs/baryon-ax/blob/main/SECURITY.md">SECURITY.md</a>. See <a href="https://github.com/baryonlabs/baryon-ax/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> for code contributions.</p></details>
+      </div>
+      <div class="help-more">
+        <a class="btn btn-ghost" href="https://github.com/baryonlabs/baryon-ax/issues">GitHub Issues</a>
+        <a class="btn btn-ghost" href="https://github.com/baryonlabs/baryon-ax/blob/main/README.md">README</a>
+        <a class="btn btn-ghost" href="https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0">v0.6.0 release</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="security" id="security">
+    <div class="wrap security-grid">
+      <div>
+        <p class="eyebrow">Security CI</p>
+        <h2>Security is not a quarterly review.<br>It is proven on every PR.</h2>
+        <p>Known vulnerabilities should not depend on human memory. Every pull request runs deterministic scanners for dependency CVEs, secrets, and configuration errors, verifies advisories against OSV, and blocks the merge on P0/P1.</p>
+        <p>A weekly job tracks images, SBOMs, and the full git history. Results remain in the Job Summary and artifacts as audit evidence.</p>
+        <div class="cta"><a class="btn btn-ghost" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/security-ci.md">Security CI runbook</a><a class="btn btn-ghost" href="https://github.com/baryonlabs/security-sweep">security-sweep</a></div>
+      </div>
+      <div class="security-panel">
+        <div class="pipe" aria-label="Security pipeline"><span>PR</span><span>security-sweep</span><span>P0/P1 gate</span><span>merge</span></div>
+        <ul class="sec-stats">
+          <li><b>0</b><span>P0/P1/P2/P3</span></li>
+          <li><b>4</b><span>lockfile projects</span></li>
+          <li><b>7d</b><span>weekly images · SBOM</span></li>
+          <li><b>0</b><span>gitleaks findings</span></li>
+        </ul>
+        <p class="small">Scanner commit, Trivy action SHA, and osv-scanner checksum pinned · <code>contents: read</code> · no secrets · fail-closed. A baseline, not a certification; logic flaws still need SAST and review.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section alt" id="docs">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Documentation</p>
+        <h2>Go deeper.</h2>
+        <p>Installation, architecture, operations, security, and UX principles live in the repository docs.</p>
+      </div>
+      <div class="doc-grid">
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax#readme"><span>README · quick start</span><span>01</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/full-stack.md"><span>Full-stack guide</span><span>02</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/architecture.md"><span>Architecture</span><span>03</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/operations.md"><span>Operations</span><span>04</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/security-ci.md"><span>Security CI runbook</span><span>05</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/security.md"><span>Security baseline</span><span>06</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/ux-principles.md"><span>UX · AI interface principles</span><span>07</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/features.md"><span>Feature inventory</span><span>08</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md"><span>Hardware requirements</span><span>09</span></a>
+        <a class="doc-card" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/screenshots.md"><span>Screenshot gallery</span><span>10</span></a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="../"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z" fill="currentColor"/><circle cx="19" cy="5" r="1.6" fill="#64d9a5"/></svg></span><span>Baryon AX</span></a>
+        <p>An open-source Basic Core for on-premises AI agents and grounded chat. Data inside, evidence in every answer.</p>
+      </div>
+      <nav class="footer-links" aria-label="Footer links">
+        <a href="https://github.com/baryonlabs/baryon-ax">GitHub</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/releases">Releases</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/issues">Issues</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/blob/main/SECURITY.md">Security</a>
+        <a href="https://github.com/baryonlabs/baryon-ax/blob/main/LICENSE">MIT License</a>
+      </nav>
+    </div>
+    <div class="footer-bottom"><span>© 2026 Baryon Labs</span><span>Built with FastAPI · React · Qdrant · LangGraph · Mem0</span></div>
+  </div>
+</footer>
+
+<script src="../assets/app.js" defer></script>
+</body>
+</html>

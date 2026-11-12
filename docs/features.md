@@ -136,6 +136,7 @@
 | 모바일 | ✅ | 드로어 사이드바, 1열 카드, 하단 고정 컴포저 |
 | 키보드/접근성 | ✅ | skip link, focus-visible, `Esc`, reduced motion |
 | 피드백 저장 | ✅ | `POST /v1/feedback`, trace_id 연결, 관리자 조회·감사 |
+| 오픈소스 인벤토리 | ✅ | 설정 → 오픈소스 탭: 라이선스·링크·상태·검색/필터, `GET /v1/open-source` |
 
 ### 암묵지
 

@@ -141,7 +141,11 @@ Redis 라이선스는 **버전에 따라 다릅니다.**
 
 ---
 
-## 6. 관련 문서
+## 6. UI에서 보기
+
+설정 → **오픈소스** 탭에서 구성 요소·라이선스·링크를 확인할 수 있습니다. API는 `GET /v1/open-source`이며, 데이터는 `apps/api/src/baryon/open_source.py`와 이 문서를 함께 갱신합니다.
+
+## 7. 관련 문서
 
 - [기능 목록](features.md)
 - [전체 스택 실행 가이드](full-stack.md)

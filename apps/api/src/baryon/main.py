@@ -33,6 +33,7 @@ from .ingest.parsers import ParseError
 from .ingest.pipeline import PipelineConfig, PermanentError, run_pipeline
 from .feedback import FeedbackStore
 from .gaps import GapStore, PackStore, build_pack, cluster_gaps, verify_pack
+from .open_source import open_source_payload
 from .tacit import QUESTION_TEMPLATES, TacitStore, suggest_questions
 
 logger = logging.getLogger("baryon.ax")
@@ -1585,6 +1586,12 @@ async def health() -> dict:
         "memory_backend": "mem0" if memory_service.enabled else "disabled",
         "time": now(),
     }
+
+
+@app.get("/v1/open-source")
+async def open_source() -> dict:
+    """License inventory for the Settings > Open Source screen."""
+    return open_source_payload()
 
 
 @app.get("/v1/models")
