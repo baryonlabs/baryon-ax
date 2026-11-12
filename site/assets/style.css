@@ -55,6 +55,8 @@ code, pre { font-family: var(--mono); font-size: .88em; }
 }
 ::selection { background: rgba(108, 157, 236, .35); color: #fff; }
 :focus-visible { outline: 2px solid var(--blue-light); outline-offset: 3px; border-radius: 4px; }
+.small { font-size: .85rem; }
+.muted { color: var(--muted); }
 
 .wrap { width: min(var(--maxw), 100%); margin: 0 auto; padding: 0 24px; }
 .skip {
@@ -202,6 +204,7 @@ html[lang="en"] .hero h1 { font-size: clamp(2.1rem, 3.2vw + .8rem, 3.15rem); let
 .feature-icon img { width: 30px; height: 30px; }
 .feature h3 { margin: 1px 0 5px; font-size: 1rem; }
 .feature p { margin: 0; color: var(--muted); font-size: .88rem; line-height: 1.55; }
+.feature .text-link, .start-side .card .text-link { display: inline-block; margin-top: 8px; font-size: .82rem; }
 
 /* Gallery */
 .gallery { display: grid; grid-template-columns: 1.1fr .9fr; gap: 16px; align-items: start; }
