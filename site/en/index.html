@@ -348,7 +348,7 @@
         <article class="feature" style="--accent:#b79cf0"><span class="feature-icon"><img src="../assets/mascots/memory.svg" alt="" width="30" height="30" loading="lazy"></span><div><h3>User memory</h3><p>Mem0-backed long-term memory stored, searched, and injected into answers by relevance.</p></div></article>
         <article class="feature" style="--accent:#64d9a5"><span class="feature-icon"><img src="../assets/mascots/governance.svg" alt="" width="30" height="30" loading="lazy"></span><div><h3>Governance & audit</h3><p>Organization/role ACLs, document permission changes, audit events, admin settings, and system status.</p></div></article>
         <article class="feature" style="--accent:#8cb3f2"><span class="feature-icon"><img src="../assets/mascots/settings.svg" alt="" width="30" height="30" loading="lazy"></span><div><h3>Operations & observability</h3><p>Langfuse traces, per-step latency, storage, memory, CPU, process, and container cards.</p></div></article>
-        <article class="feature" style="--accent:#f08a8a"><span class="feature-icon"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg></span><div><h3>B300 · GPU deployment</h3><p>Validated with vLLM Qwen3.5-27B on B300 GPU 7, plus a full-stack Compose profile and Kubernetes starter manifests.</p></div></article>
+        <article class="feature" style="--accent:#f08a8a"><span class="feature-icon"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg></span><div><h3>Start with minimum hardware</h3><p>Basic Core runs on <strong>2 vCPU · 4GB RAM · no GPU</strong>. Full stack needs 8 vCPU · 16GB, and 7B GPU inference starts with an RTX 4090 24GB. Scale to B300/27B when needed.</p><a class="text-link" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md">Hardware requirements</a></div></article>
       </div>
     </div>
   </section>
@@ -359,6 +359,7 @@
         <p class="eyebrow">Real screens</p>
         <h2>Captured on a B300 on-premises deployment.</h2>
         <p>Qwen3.5-27B (vLLM), Qdrant, PostgreSQL, Redis, Langfuse, and Mem0 connected, captured as an administrator.</p>
+        <p class="small muted">B300 is the validation environment. The minimum setup starts with Basic Core at 2 vCPU · 4GB RAM · no GPU.</p>
       </div>
       <div class="gallery">
         <figure><img src="../assets/screenshots/chat.webp" width="1200" height="974" alt="Baryon AX grounded chat answer with source and chunk citations plus per-step latency in the pipeline trace" loading="lazy"><figcaption><strong>Grounded chat</strong>Sources and chunks under each answer, with per-step latency.</figcaption></figure>
@@ -394,7 +395,7 @@ docker compose up --build</code></pre>
           <p class="note">UI <code>http://localhost:3001</code> · API <code>http://localhost:8000</code> · health <code>GET /health</code></p>
         </div>
         <aside class="start-side">
-          <div class="card"><h3>Requirements</h3><ul><li>Docker 24+ · Docker Compose v2.20+</li><li>Basic Core: 2 vCPU · 4GB RAM · 10GB disk</li><li>Full stack: 8 vCPU · 16GB RAM (32GB recommended) · 100GB</li><li>GPU inference needs NVIDIA drivers + container toolkit</li></ul></div>
+          <div class="card"><h3>Start with minimum hardware</h3><ul><li>Docker 24+ · Docker Compose v2.20+</li><li>Basic Core: 2 vCPU · 4GB RAM · 10GB disk</li><li>Full stack: 8 vCPU · 16GB RAM (32GB recommended) · 100GB</li><li>7B GPU: RTX 4090 24GB ×1 + NVIDIA container toolkit (optional)</li></ul><p><a class="text-link" href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md">All hardware requirements</a></p></div>
           <div class="card"><h3>HWP/HWPX parsers</h3><p>Run the parser profile. kordoc, docling, and Tika route by MIME automatically.</p><div class="code-block"><div class="code-head"><span>Parser profile</span><button class="copy" type="button">Copy</button></div><pre><code>docker compose -f docker-compose.yml \
   -f docker-compose.parsers.yml \
   --profile parsers up -d --build</code></pre></div></div>
