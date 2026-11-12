@@ -59,7 +59,7 @@ OG/Twitter 제목·설명은 `<title>`/description과 **자동 동기화**됩니
 | `site/llms-full.txt` | 확장 브리프: 아키텍처, 요청 흐름, 하드웨어, 거버넌스, 한계, 인용 가이드 |
 | `site/en/llms.txt` | 영어 요약 |
 | `site/robots.txt` | 전체 허용 + GPTBot·ClaudeBot·PerplexityBot·Google-Extended 등 명시, llms 경로 안내 |
-| `site/sitemap.xml` | 두 HTML 페이지 + hreflang, lastmod 2026-11-13 |
+| `site/sitemap.xml` | 네 HTML 페이지(`/`, `/en/`, `/open-source/`, `/en/open-source/`) + hreflang, lastmod 2026-11-13 |
 
 `robots.txt`에는 다음을 명시합니다: `GPTBot`, `OAI-SearchBot`, `ChatGPT-User`, `ClaudeBot`, `Claude-SearchBot`, `PerplexityBot`, `Google-Extended`, `Applebot-Extended`, `CCBot`.
 
@@ -119,4 +119,4 @@ IndexNow 제출은 `python3 scripts/submit_indexnow.py`입니다(자세한 절�
 - 구조화 데이터는 리치 결과를 **보장하지 않습니다**. Google Search Console·Rich Results Test로 주기 확인이 필요합니다.
 - OG 이미지는 정적 파일이므로 문구 변경 시 수동 재생성이 필요합니다.
 - GitHub Pages는 배포 직후 수 분간 이전 HTML을 캐시할 수 있어, 라이브 검증은 워크플로 완료 후 실행해야 합니다.
-- `baryonlabs.github.io`는 공용 호스트이므로 IndexNow 키를 호스트 루트에 둘 수 없습니다. `keyLocation`으로 프로젝트 경로를 지정하며, 검색엔진이 이를 거부하면 커스텀 도메인이 필요합니다.
+- 커스텀 도메인 `baryon-ax.baryon.ai`가 라이브이므로 IndexNow 키를 도메인 루트에 둡니다. `keyLocation`은 `https://baryon-ax.baryon.ai/<key>.txt`입니다.

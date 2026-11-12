@@ -14,16 +14,16 @@
 | 항목 | 상태 | 비고 |
 |---|---|---|
 | 호스팅 | ✅ | GitHub Pages, `main` push 시 `.github/workflows/pages.yml` 배포 |
-| HTTPS | ✅ | `https_enforced: true` |
-| 커스텀 도메인 | ✅ | 2026-11-13 `baryon-ax.baryon.ai` 연결 (DNS only), GitHub Pages 인증서 발급 대기 |
-| Google Search Console | ❌ | 등록·sitemap 제출 필요 |
-| Naver Search Advisor | ❌ | 등록·소유확인 필요 |
-| Bing Webmaster Tools | ❌ | 등록 또는 GSC import 필요 |
-| IndexNow | ✅ | 2026-11-13 4개 URL 제출, `api.indexnow.org`·`bing.com` 모두 202 |
-| Daum 검색등록 | ❌ | Kakao 계정 필요 |
+| HTTPS | ✅ | `https_enforced: true`, 인증서 approved (2027-02-11 만료, 자동 갱신) |
+| 커스텀 도메인 | ✅ | `https://baryon-ax.baryon.ai/` 라이브, `baryonlabs.github.io/baryon-ax/` → 301 |
+| Google Search Console | ⏳ | `sc-domain:baryon.ai` DNS TXT 인증 확인, sitemap 제출만 남음 |
+| Naver Search Advisor | ⏳ | 사이트 등록·소유확인 필요 (로그인·CAPTCHA는 사람이 직접) |
+| Bing Webmaster Tools | ⏳ | Microsoft 로그인 후 등록 또는 GSC import 필요 |
+| IndexNow | ✅ | 2026-11-13 새 도메인 4개 URL 제출, `api.indexnow.org`·`bing.com` 모두 200 |
+| Daum 검색등록 | ⏳ | Kakao 로그인 필요 |
 | SEO/AEO/GEO 자산 | ✅ | title/description, canonical, hreflang, JSON-LD 8종, FAQ, `llms.txt` 3종, OG 2종 |
-| 자동 검증 | ✅ | `scripts/check_site_seo.py` (로컬), `scripts/check_site_live.py` (배포) |
-| 분석 | ❌ | GA4/Plausible 등 미연결 |
+| 자동 검증 | ✅ | `check_site_seo.py` 0/0, `check_site_live.py` 새 도메인 0 failures |
+| 분석 | ❌ | GA4 또는 Cloudflare Web Analytics 미연결 |
 
 ### 자동화 자산
 
@@ -70,12 +70,13 @@ python3 scripts/submit_indexnow.py             # 실제 제출
 
 ## 2. Google Search Console
 
-`*.github.io`는 도메인 속성(`sc-domain:`)을 쓸 수 없으므로 **URL 접두어 속성**으로 등록합니다.
+`baryon.ai`의 **도메인 속성(`sc-domain:baryon.ai`)** 이 DNS TXT로 인증되어 있으므로 `baryon-ax.baryon.ai`는 자동으로 포함됩니다. 서브도메인별 상세 리포트가 필요할 때만 URL 접두어 속성을 추가합니다.
 
-1. https://search.google.com/search-console → **속성 추가** → **URL 접두어**
-2. `https://baryon-ax.baryon.ai/` 입력
-3. 소유확인 방법에서 **HTML 태그** 선택 → `content` 값 복사
-4. 메타 주입 후 PR·머지·배포:
+1. https://search.google.com/search-console → `baryon.ai` 속성 선택
+2. **Sitemaps** → `https://baryon-ax.baryon.ai/sitemap.xml` 제출
+3. 발견된 URL이 **4개**인지 확인 (`/`, `/en/`, `/open-source/`, `/en/open-source/`)
+4. **URL 검사** → `/`, `/en/`, `/open-source/`, `/en/open-source/` 각각 **색인 생성 요청**
+5. (선택) URL 접두어 속성을 추가할 경우에만 HTML 태그 방식을 사용:
 
 ```bash
 python3 scripts/set_site_verification.py --google "<token>"
@@ -83,17 +84,7 @@ python3 scripts/check_site_seo.py
 # PR 생성 → CI/security-sweep 통과 → squash merge → Pages 배포 대기
 ```
 
-5. 배포 확인:
-
-```bash
-curl -s https://baryon-ax.baryon.ai/ | grep google-site-verification
-```
-
-6. 콘솔에서 **확인** 클릭
-7. **Sitemaps** → `https://baryon-ax.baryon.ai/sitemap.xml` 제출 → 발견 URL 4개 확인
-8. **URL 검사** → `/` 와 `/en/` 각각 **색인 생성 요청**
-
-> 소유자는 개인 계정이 아니라 연구소/회사 장기 운영 계정으로 추가하고, 2FA·복구 수단을 설정하세요.
+> 소유자는 개인 계정이 아니라 회사 장기 운영 계정(`ai.baryon.ai@gmail.com` 등)으로 추가하고, 2FA·복구 수단을 설정하세요.
 
 ---
 
@@ -126,12 +117,15 @@ python3 scripts/set_site_verification.py --naver "<token>"
 python3 scripts/submit_indexnow.py
 ```
 
-- host: `baryonlabs.github.io`
+- host: `baryon-ax.baryon.ai`
 - keyLocation: `https://baryon-ax.baryon.ai/45ad07e4552fd93fc2b21d7bc6cb45a6.txt`
-- URL 목록: `site/sitemap.xml`
+- URL 목록: `site/sitemap.xml` (4개)
 - 엔드포인트: `api.indexnow.org`, `www.bing.com/indexnow`
+- 결과 (2026-11-13): 4개 URL 제출, 두 엔드포인트 모두 **200**
 
 키를 교체하려면 `site/<새 32자 hex>.txt`를 만들고 기존 파일을 삭제한 뒤 스크립트를 다시 실행합니다.
+
+> 커스텀 도메인이 생기면서 키 파일을 도메인 루트에 둘 수 있게 되었습니다. `keyLocation`은 sitemap과 같은 호스트를 사용합니다.
 
 ### 4.2 Bing Webmaster Tools
 
@@ -302,10 +296,97 @@ python3 scripts/apply_site_domain.py --domain baryon-ax.baryon.ai --write
 
 ## 13. 다음 액션
 
-1. ~~머지·배포 후 `python3 scripts/check_site_live.py` 1회~~ (2026-11-13 완료, failures 0)
-2. ~~`python3 scripts/submit_indexnow.py` 1회~~ (2026-11-13 완료, 202 Accepted)
-3. Google Search Console URL 접두어 속성 등록 + sitemap 제출
-4. Naver Search Advisor 등록 (거절 시 도메인 이전 검토)
-5. Bing Webmaster(GSC import) · Daum 등록
-6. 분석 도구 연결 (GA4 또는 Plausible)
-7. LinkedIn·Naver 블로그 첫 글 발행 ([docs/promotion-drafts.md](promotion-drafts.md))
+1. ~~커스텀 도메인 이전 + HTTPS 강제~~ (2026-11-13 완료, 인증서 approved)
+2. ~~`python3 scripts/check_site_live.py`~~ (2026-11-13 완료, 새 도메인 failures 0)
+3. ~~`python3 scripts/submit_indexnow.py`~~ (2026-11-13 완료, 4개 URL · 200/200)
+4. Google Search Console에서 `sitemap.xml` 제출 + 핵심 URL 색인 요청
+5. Naver Search Advisor 등록 → 토큰 주입 → 소유확인 → sitemap 제출
+6. Bing Webmaster(GSC import) · Daum 등록
+7. 분석 도구 연결 (GA4 또는 Cloudflare Web Analytics)
+8. LinkedIn·Naver 블로그 첫 글 발행 ([docs/promotion-drafts.md](promotion-drafts.md))
+
+---
+
+## 14. 개시 준비 상태 (2026-11-13)
+
+### 완료된 항목
+
+- [x] DNS `baryon-ax.baryon.ai` → `baryonlabs.github.io` (DNS only)
+- [x] GitHub Pages 커스텀 도메인 + Let's Encrypt 인증서 approved (`https_enforced: true`)
+- [x] `https://baryonlabs.github.io/baryon-ax/` → `https://baryon-ax.baryon.ai/` 301
+- [x] `python3 scripts/check_site_seo.py` → failures 0, warnings 0
+- [x] `python3 scripts/check_site_live.py` → failures 0, warnings 0
+- [x] `python3 scripts/submit_indexnow.py` → 4개 URL, `api.indexnow.org` 200, `www.bing.com` 200
+- [x] Google 도메인 속성 인증용 DNS TXT 확인 (`baryon.ai`)
+- [x] title/description/canonical/hreflang, JSON-LD, FAQ, `llms.txt` 3종, OG 2종, sitemap 4개 URL
+- [x] `robots.txt` AI 크롤러 허용 + sitemap 명시
+- [x] 홍보 문안·UTM 링크 ([docs/promotion-drafts.md](promotion-drafts.md))
+
+### 사람이 직접 해야 하는 항목 (계정 로그인 필요)
+
+자동화할 수 없는 항목만 남았습니다. 아래 순서대로 진행하면 됩니다.
+
+#### 1) Google Search Console
+
+1. `baryon.ai` 도메인 속성 → **Sitemaps** → `https://baryon-ax.baryon.ai/sitemap.xml` 제출
+2. 발견 URL **4개** 확인
+3. **URL 검사**에서 `/`, `/en/`, `/open-source/`, `/en/open-source/` 색인 생성 요청
+
+#### 2) Naver Search Advisor
+
+1. https://searchadvisor.naver.com/console/board → 사이트 추가
+2. URL `https://baryon-ax.baryon.ai/` 입력
+3. 소유확인 → **HTML 태그** → 토큰 복사
+4. 토큰 주입 후 PR:
+
+```bash
+python3 scripts/set_site_verification.py --naver "<token>"
+python3 scripts/check_site_seo.py
+git switch -c seo/naver-verification
+git add site/index.html site/en/index.html
+git commit -m "chore(seo): add Naver site verification"
+git push -u origin seo/naver-verification
+gh pr create --base main --head seo/naver-verification \
+  --title "chore(seo): add Naver site verification" \
+  --body "Adds the Naver Search Advisor ownership meta tag."
+```
+
+5. `vulnerability sweep` 통과 후 머지 → Pages 배포 대기
+6. 배포 확인 후 콘솔에서 **소유확인** (CAPTCHA는 사람이 직접)
+7. **요청 → 사이트맵 제출** → `https://baryon-ax.baryon.ai/sitemap.xml`
+
+#### 3) Bing Webmaster Tools
+
+1. https://www.bing.com/webmasters → Microsoft 로그인
+2. **Import from Google Search Console** 또는 **사이트 추가**
+3. `https://baryon-ax.baryon.ai/` 등록
+4. sitemap 제출 → URL 검사
+5. 메타 검증이 필요할 때만 `python3 scripts/set_site_verification.py --bing "<token>"`
+
+#### 4) Daum 검색등록
+
+1. https://register.daum.net/ → Kakao 로그인
+2. 사이트 추가: `https://baryon-ax.baryon.ai/`
+3. 소유확인 → sitemap 제출
+
+#### 5) 분석 도구
+
+- Cloudflare Web Analytics: `baryon.ai` zone에 사이트 추가 후 JS 스니펫을 `site/index.html`·`site/en/index.html`의 `</body>` 앞에 삽입
+- 또는 GA4 측정 ID를 `gtag.js`로 삽입
+- 삽입 후 `python3 scripts/check_site_seo.py` → PR → 머지 → `check_site_live.py`
+
+### 개시 당일 순서
+
+1. `main` 최신 커밋이 Pages에 배포됐는지 확인
+   ```bash
+   gh run list --workflow=pages.yml --limit 1
+   python3 scripts/check_site_live.py
+   ```
+2. IndexNow 재제출 (콘텐츠 변경이 있었다면)
+   ```bash
+   python3 scripts/submit_indexnow.py
+   ```
+3. Google Search Console sitemap 제출 상태 확인
+4. Naver sitemap 제출 상태 확인
+5. LinkedIn·Naver 블로그·GitHub 릴리스 발행 ([docs/promotion-drafts.md](promotion-drafts.md))
+6. 24시간 후 `check_site_live.py`와 검색엔진 수집 현황 확인
