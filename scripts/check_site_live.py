@@ -121,6 +121,8 @@ def check_page(url: str, base: str, timeout: float, skip_images: bool = False) -
     blocks = re.findall(r'<script type="application/ld\+json">(.*?)</script>', markup, re.S)
     if not blocks:
         fail(f"{url}: no JSON-LD block")
+    local_markup = path.read_text(encoding="utf-8")
+    expects_faq = "<details" in local_markup
     for block in blocks:
         try:
             data = json.loads(block)
@@ -129,8 +131,10 @@ def check_page(url: str, base: str, timeout: float, skip_images: bool = False) -
             continue
         nodes = data.get("@graph", [data]) if isinstance(data, dict) else []
         types = {node.get("@type") for node in nodes if isinstance(node, dict)}
-        if "FAQPage" not in types:
-            fail(f"{url}: JSON-LD missing FAQPage")
+        if "Organization" not in types:
+            fail(f"{url}: JSON-LD missing Organization")
+        if expects_faq and "FAQPage" not in types:
+            fail(f"{url}: JSON-LD missing FAQPage (the page has a visible FAQ)")
 
     og_image = local_value_from(markup, r'property="og:image" content="([^"]+)"')
     if not og_image:

@@ -71,13 +71,13 @@ OG/Twitter 제목·설명은 `<title>`/description과 **자동 동기화**됩니
 python3 scripts/check_site_seo.py
 ```
 
-검사 항목:
+검사 항목(sitemap의 모든 페이지):
 - title 25–65자, description 100–180자
 - canonical · hreflang(ko/en/x-default) · robots
 - OG/Twitter 필수 태그, OG 이미지 실파일 존재, 1200×630
-- JSON-LD 파싱 및 필수 타입, FAQ 3개 이상
+- JSON-LD 파싱 및 페이지 유형별 필수 타입(랜딩: FAQPage 포함 / 하위: CollectionPage·BreadcrumbList), 랜딩 FAQ 3개 이상
 - H1 1개, heading 레벨 점프 없음, 모든 `<img>` alt
-- robots·sitemap·llms.txt·llms-full.txt 존재 및 canonical URL
+- robots·sitemap·llms.txt·llms-full.txt·en/llms.txt 존재 및 canonical URL
 - 경고: OG 이미지 400KB 초과, AI 크롤러 미명시, llms 링크 누락
 
 현재 결과: **failures 0, warnings 0**.

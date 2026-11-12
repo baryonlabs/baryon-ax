@@ -87,7 +87,7 @@ curl -s https://baryonlabs.github.io/baryon-ax/ | grep google-site-verification
 ```
 
 6. 콘솔에서 **확인** 클릭
-7. **Sitemaps** → `https://baryonlabs.github.io/baryon-ax/sitemap.xml` 제출 → 발견 URL 2개 확인
+7. **Sitemaps** → `https://baryonlabs.github.io/baryon-ax/sitemap.xml` 제출 → 발견 URL 4개 확인
 8. **URL 검사** → `/` 와 `/en/` 각각 **색인 생성 요청**
 
 > 소유자는 개인 계정이 아니라 연구소/회사 장기 운영 계정으로 추가하고, 2FA·복구 수단을 설정하세요.
