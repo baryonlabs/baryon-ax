@@ -3,7 +3,7 @@
 [![CI](https://github.com/baryonlabs/baryon-ax/actions/workflows/ci.yml/badge.svg)](https://github.com/baryonlabs/baryon-ax/actions/workflows/ci.yml)
 [![security-sweep](https://github.com/baryonlabs/baryon-ax/actions/workflows/security-sweep.yml/badge.svg)](https://github.com/baryonlabs/baryon-ax/actions/workflows/security-sweep.yml)
 
-[Website](https://baryonlabs.github.io/baryon-ax/) · [도움말](https://baryonlabs.github.io/baryon-ax/#help) · [지원 형식](https://baryonlabs.github.io/baryon-ax/#formats) · [오픈소스·라이선스](https://baryonlabs.github.io/baryon-ax/open-source/) · [빠른 시작](#quick-start) · [릴리스](https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0)
+[Website](https://baryon-ax.baryon.ai/) · [도움말](https://baryon-ax.baryon.ai/#help) · [지원 형식](https://baryon-ax.baryon.ai/#formats) · [오픈소스·라이선스](https://baryon-ax.baryon.ai/open-source/) · [빠른 시작](#quick-start) · [릴리스](https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0)
 
 **Baryon AX** is an on-premises, model-agnostic foundation for enterprise AI agents and grounded chat.
 

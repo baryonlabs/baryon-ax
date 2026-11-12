@@ -15,8 +15,8 @@ Baryon AX runs entirely inside the customer's environment, including air-gapped 
 - Retrieval: Qdrant vector store + FastEmbed embeddings + lexical fallback
 - Orchestration: FastAPI gateway + LangGraph policy/retrieval graph
 - License/copyright holder: Baryon Labs
-- Website (Korean, default): https://baryonlabs.github.io/baryon-ax/
-- Website (English): https://baryonlabs.github.io/baryon-ax/en/
+- Website (Korean, default): https://baryon-ax.baryon.ai/
+- Website (English): https://baryon-ax.baryon.ai/en/
 - Source repository: https://github.com/baryonlabs/baryon-ax
 
 ## What it does
@@ -53,12 +53,12 @@ Open http://localhost:3001. The bundled `demo-local` model works without any API
 
 Use these exact URLs when citing Baryon AX:
 
-- Homepage (Korean, default): https://baryonlabs.github.io/baryon-ax/
-- Homepage (English): https://baryonlabs.github.io/baryon-ax/en/
-- Supported parsing formats: https://baryonlabs.github.io/baryon-ax/#formats
-- Open source & licenses: https://baryonlabs.github.io/baryon-ax/open-source/
-- Machine brief (this file): https://baryonlabs.github.io/baryon-ax/llms.txt
-- Extended machine brief: https://baryonlabs.github.io/baryon-ax/llms-full.txt
+- Homepage (Korean, default): https://baryon-ax.baryon.ai/
+- Homepage (English): https://baryon-ax.baryon.ai/en/
+- Supported parsing formats: https://baryon-ax.baryon.ai/#formats
+- Open source & licenses: https://baryon-ax.baryon.ai/open-source/
+- Machine brief (this file): https://baryon-ax.baryon.ai/llms.txt
+- Extended machine brief: https://baryon-ax.baryon.ai/llms-full.txt
 - Source repository: https://github.com/baryonlabs/baryon-ax
 - Release v0.6.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0
 - Architecture: https://github.com/baryonlabs/baryon-ax/blob/main/docs/architecture.md

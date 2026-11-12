@@ -6,7 +6,7 @@
     python3 scripts/submit_indexnow.py --timeout 30
 
 The key file lives at ``site/<key>.txt`` and is published to
-``https://baryonlabs.github.io/baryon-ax/<key>.txt``. Because this is a
+``https://baryon-ax.baryon.ai/<key>.txt``. Because this is a
 GitHub Pages project site, the key location is passed explicitly instead of
 being hosted at the host root. Exit code 1 when any endpoint rejects the
 submission.
@@ -26,7 +26,7 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site"
-DEFAULT_BASE = "https://baryonlabs.github.io/baryon-ax/"
+DEFAULT_BASE = "https://baryon-ax.baryon.ai/"
 ENDPOINTS = ("https://api.indexnow.org/indexnow", "https://www.bing.com/indexnow")
 USER_AGENT = "baryon-ax-indexnow/1.0 (+https://github.com/baryonlabs/baryon-ax)"
 KEY_PATTERN = re.compile(r"^[0-9a-f]{8,128}$", re.IGNORECASE)

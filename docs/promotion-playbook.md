@@ -1,6 +1,6 @@
 # 검색엔진 등록 · 홍보 운영 플레이북 (Baryon AX)
 
-> 대상: https://baryonlabs.github.io/baryon-ax/ · `/en/`
+> 대상: https://baryon-ax.baryon.ai/ · `/en/`
 > 저장소: https://github.com/baryonlabs/baryon-ax
 > 최초 작성: 2026-11-13
 > 기술 SEO/AEO/GEO 자산은 [docs/site-seo.md](site-seo.md)에 정리되어 있습니다.
@@ -15,7 +15,7 @@
 |---|---|---|
 | 호스팅 | ✅ | GitHub Pages, `main` push 시 `.github/workflows/pages.yml` 배포 |
 | HTTPS | ✅ | `https_enforced: true` |
-| 커스텀 도메인 | ⚠️ | `baryon-ax.baryon.ai` 이전 스크립트·절차 준비 완료, DNS CNAME 1건 필요 ([docs/domain-migration.md](domain-migration.md)) |
+| 커스텀 도메인 | ✅ | 2026-11-13 `baryon-ax.baryon.ai` 연결 (DNS only), GitHub Pages 인증서 발급 대기 |
 | Google Search Console | ❌ | 등록·sitemap 제출 필요 |
 | Naver Search Advisor | ❌ | 등록·소유확인 필요 |
 | Bing Webmaster Tools | ❌ | 등록 또는 GSC import 필요 |
@@ -73,7 +73,7 @@ python3 scripts/submit_indexnow.py             # 실제 제출
 `*.github.io`는 도메인 속성(`sc-domain:`)을 쓸 수 없으므로 **URL 접두어 속성**으로 등록합니다.
 
 1. https://search.google.com/search-console → **속성 추가** → **URL 접두어**
-2. `https://baryonlabs.github.io/baryon-ax/` 입력
+2. `https://baryon-ax.baryon.ai/` 입력
 3. 소유확인 방법에서 **HTML 태그** 선택 → `content` 값 복사
 4. 메타 주입 후 PR·머지·배포:
 
@@ -86,11 +86,11 @@ python3 scripts/check_site_seo.py
 5. 배포 확인:
 
 ```bash
-curl -s https://baryonlabs.github.io/baryon-ax/ | grep google-site-verification
+curl -s https://baryon-ax.baryon.ai/ | grep google-site-verification
 ```
 
 6. 콘솔에서 **확인** 클릭
-7. **Sitemaps** → `https://baryonlabs.github.io/baryon-ax/sitemap.xml` 제출 → 발견 URL 4개 확인
+7. **Sitemaps** → `https://baryon-ax.baryon.ai/sitemap.xml` 제출 → 발견 URL 4개 확인
 8. **URL 검사** → `/` 와 `/en/` 각각 **색인 생성 요청**
 
 > 소유자는 개인 계정이 아니라 연구소/회사 장기 운영 계정으로 추가하고, 2FA·복구 수단을 설정하세요.
@@ -100,7 +100,7 @@ curl -s https://baryonlabs.github.io/baryon-ax/ | grep google-site-verification
 ## 3. Naver Search Advisor
 
 1. https://searchadvisor.naver.com/console/board → 사이트 추가
-2. URL: `https://baryonlabs.github.io/baryon-ax/`
+2. URL: `https://baryon-ax.baryon.ai/`
 3. 소유확인 → **HTML 태그** → 토큰 복사
 4. 주입:
 
@@ -108,9 +108,9 @@ curl -s https://baryonlabs.github.io/baryon-ax/ | grep google-site-verification
 python3 scripts/set_site_verification.py --naver "<token>"
 ```
 
-5. 배포 후 `curl -s https://baryonlabs.github.io/baryon-ax/ | grep naver-site-verification` 확인
+5. 배포 후 `curl -s https://baryon-ax.baryon.ai/ | grep naver-site-verification` 확인
 6. 콘솔에서 **소유확인** (CAPTCHA는 사람이 직접)
-7. **요청 → 사이트맵 제출** → `https://baryonlabs.github.io/baryon-ax/sitemap.xml`
+7. **요청 → 사이트맵 제출** → `https://baryon-ax.baryon.ai/sitemap.xml`
 
 > Naver는 공용 호스팅 서브도메인(`github.io`) 등록을 제한할 수 있습니다. 거절되면 커스텀 도메인 이전 후 재시도하는 편이 빠릅니다.
 
@@ -127,7 +127,7 @@ python3 scripts/submit_indexnow.py
 ```
 
 - host: `baryonlabs.github.io`
-- keyLocation: `https://baryonlabs.github.io/baryon-ax/45ad07e4552fd93fc2b21d7bc6cb45a6.txt`
+- keyLocation: `https://baryon-ax.baryon.ai/45ad07e4552fd93fc2b21d7bc6cb45a6.txt`
 - URL 목록: `site/sitemap.xml`
 - 엔드포인트: `api.indexnow.org`, `www.bing.com/indexnow`
 
@@ -137,7 +137,7 @@ python3 scripts/submit_indexnow.py
 
 1. https://www.bing.com/webmasters → Microsoft 로그인
 2. **Import from Google Search Console** 또는 **사이트 추가**
-3. `https://baryonlabs.github.io/baryon-ax/` 등록
+3. `https://baryon-ax.baryon.ai/` 등록
 4. 메타 검증이 필요하면: `python3 scripts/set_site_verification.py --bing "<token>"`
 5. sitemap 제출 → URL 검사
 
@@ -146,7 +146,7 @@ python3 scripts/submit_indexnow.py
 ## 5. Daum · Kakao
 
 1. https://register.daum.net/ → Kakao 로그인
-2. 사이트 추가: `https://baryonlabs.github.io/baryon-ax/`
+2. 사이트 추가: `https://baryon-ax.baryon.ai/`
 3. 소유확인(메타태그) → sitemap 제출
 
 ---
@@ -157,13 +157,13 @@ python3 scripts/submit_indexnow.py
 
 | 채널 | 링크 |
 |---|---|
-| LinkedIn (출시) | `https://baryonlabs.github.io/baryon-ax/?utm_source=linkedin&utm_medium=social&utm_campaign=launch_2026_11&utm_content=post_ko` |
-| LinkedIn (EN) | `https://baryonlabs.github.io/baryon-ax/en/?utm_source=linkedin&utm_medium=social&utm_campaign=launch_2026_11&utm_content=post_en` |
-| X / Threads | `https://baryonlabs.github.io/baryon-ax/?utm_source=x&utm_medium=social&utm_campaign=launch_2026_11&utm_content=thread` |
-| Naver 블로그 | `https://baryonlabs.github.io/baryon-ax/?utm_source=naver_blog&utm_medium=owned&utm_campaign=hwp_rag_guide&utm_content=post` |
-| GitHub 릴리스 | `https://baryonlabs.github.io/baryon-ax/?utm_source=github&utm_medium=referral&utm_campaign=release_v0_6_0&utm_content=release_notes` |
-| README | `https://baryonlabs.github.io/baryon-ax/?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=website_link` |
-| 이메일 서명 | `https://baryonlabs.github.io/baryon-ax/?utm_source=email&utm_medium=signature&utm_campaign=always_on&utm_content=default` |
+| LinkedIn (출시) | `https://baryon-ax.baryon.ai/?utm_source=linkedin&utm_medium=social&utm_campaign=launch_2026_11&utm_content=post_ko` |
+| LinkedIn (EN) | `https://baryon-ax.baryon.ai/en/?utm_source=linkedin&utm_medium=social&utm_campaign=launch_2026_11&utm_content=post_en` |
+| X / Threads | `https://baryon-ax.baryon.ai/?utm_source=x&utm_medium=social&utm_campaign=launch_2026_11&utm_content=thread` |
+| Naver 블로그 | `https://baryon-ax.baryon.ai/?utm_source=naver_blog&utm_medium=owned&utm_campaign=hwp_rag_guide&utm_content=post` |
+| GitHub 릴리스 | `https://baryon-ax.baryon.ai/?utm_source=github&utm_medium=referral&utm_campaign=release_v0_6_0&utm_content=release_notes` |
+| README | `https://baryon-ax.baryon.ai/?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=website_link` |
+| 이메일 서명 | `https://baryon-ax.baryon.ai/?utm_source=email&utm_medium=signature&utm_campaign=always_on&utm_content=default` |
 
 규칙:
 

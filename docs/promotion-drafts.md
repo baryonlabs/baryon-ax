@@ -1,6 +1,6 @@
 # 홍보 문안 초안 (Baryon AX)
 
-> 대상: https://baryonlabs.github.io/baryon-ax/ · `/en/`
+> 대상: https://baryon-ax.baryon.ai/ · `/en/`
 > UTM 규칙과 채널 계획은 [docs/promotion-playbook.md](promotion-playbook.md)를 따릅니다.
 > 수치는 저장소에서 확인 가능한 사실만 사용했습니다. 새 수치를 넣기 전에 `docs/`에서 근거를 확인하세요.
 
@@ -22,7 +22,7 @@
 > Basic Core는 2 vCPU·4GB에서 데모 모델로 바로 실행됩니다. Ollama `qwen2.5:7b`와 B300 GPU의 vLLM `Qwen3.5-27B` 구성으로 검증했습니다.
 >
 > 저장소: https://github.com/baryonlabs/baryon-ax
-> 소개: https://baryonlabs.github.io/baryon-ax/?utm_source=linkedin&utm_medium=social&utm_campaign=launch_2026_11&utm_content=post_ko
+> 소개: https://baryon-ax.baryon.ai/?utm_source=linkedin&utm_medium=social&utm_campaign=launch_2026_11&utm_content=post_ko
 >
 > #OnPremise #RAG #LLM #AI에이전트 #오픈소스
 
@@ -40,7 +40,7 @@
 > The Basic Core runs on 2 vCPU / 4GB with a demo model. Validated with Ollama `qwen2.5:7b` and vLLM `Qwen3.5-27B` on B300.
 >
 > Code: https://github.com/baryonlabs/baryon-ax
-> Site: https://baryonlabs.github.io/baryon-ax/en/?utm_source=linkedin&utm_medium=social&utm_campaign=launch_2026_11&utm_content=post_en
+> Site: https://baryon-ax.baryon.ai/en/?utm_source=linkedin&utm_medium=social&utm_campaign=launch_2026_11&utm_content=post_en
 >
 > #OnPremises #RAG #LLM #AIAgents #OpenSource
 
@@ -80,7 +80,7 @@
 >
 > MIT 라이선스이고, 모든 PR에 보안 스캔(P0/P1 머지 차단)이 붙습니다.
 >
-> - 소개: https://baryonlabs.github.io/baryon-ax/?utm_source=naver_blog&utm_medium=owned&utm_campaign=hwp_rag_guide&utm_content=post
+> - 소개: https://baryon-ax.baryon.ai/?utm_source=naver_blog&utm_medium=owned&utm_campaign=hwp_rag_guide&utm_content=post
 > - 저장소: https://github.com/baryonlabs/baryon-ax
 > - 보안 CI: https://github.com/baryonlabs/baryon-ax/blob/main/docs/security-ci.md
 >
@@ -126,7 +126,7 @@ Open http://localhost:3001. The demo model needs no API key.
 
 ## Docs
 
-- Site: https://baryonlabs.github.io/baryon-ax/?utm_source=github&utm_medium=referral&utm_campaign=release_v0_6_0&utm_content=release_notes
+- Site: https://baryon-ax.baryon.ai/?utm_source=github&utm_medium=referral&utm_campaign=release_v0_6_0&utm_content=release_notes
 - Architecture: docs/architecture.md
 - Security CI: docs/security-ci.md
 - Open-source inventory: docs/open-source.md
@@ -142,14 +142,14 @@ Open http://localhost:3001. The demo model needs no API key.
 > 사내 문서로 답하되, 출처 없이는 답하지 않습니다.
 > Baryon AX — 온프레미스 AI 에이전트, MIT, Docker, HWP/HWPX/PDF 파싱, ACL·감사 포함.
 > 2 vCPU·4GB로 바로 실행됩니다.
-> https://baryonlabs.github.io/baryon-ax/?utm_source=x&utm_medium=social&utm_campaign=launch_2026_11&utm_content=thread
+> https://baryon-ax.baryon.ai/?utm_source=x&utm_medium=social&utm_campaign=launch_2026_11&utm_content=thread
 
 ### English
 
 > Answers from your own documents, with citations — not guesses.
 > Baryon AX: on-premises AI agents, MIT, Docker, HWP/HWPX/PDF parsing, ACLs and audit.
 > Runs on 2 vCPU / 4GB.
-> https://baryonlabs.github.io/baryon-ax/en/?utm_source=x&utm_medium=social&utm_campaign=launch_2026_11&utm_content=thread
+> https://baryon-ax.baryon.ai/en/?utm_source=x&utm_medium=social&utm_campaign=launch_2026_11&utm_content=thread
 
 ---
 
@@ -168,7 +168,7 @@ Open http://localhost:3001. The demo model needs no API key.
 > MIT licensed. Feedback on the ingestion and grounding design is especially welcome.
 >
 > Code: https://github.com/baryonlabs/baryon-ax
-> Site: https://baryonlabs.github.io/baryon-ax/en/
+> Site: https://baryon-ax.baryon.ai/en/
 
 ---
 

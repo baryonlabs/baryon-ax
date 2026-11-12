@@ -12,13 +12,13 @@ Baryon AX runs inside the customer's environment, including air-gapped networks.
 - License: MIT, copyright Baryon Labs
 - Deployment: self-hosted, on-premises, air-gapped capable
 - Model interface: OpenAI-compatible `/chat/completions`
-- Website: https://baryonlabs.github.io/baryon-ax/en/
+- Website: https://baryon-ax.baryon.ai/en/
 - Repository: https://github.com/baryonlabs/baryon-ax
 
 ## What it does
 
-- Supported parsing formats: https://baryonlabs.github.io/baryon-ax/en/#formats
-- Open source & licenses: https://baryonlabs.github.io/baryon-ax/en/open-source/
+- Supported parsing formats: https://baryon-ax.baryon.ai/en/#formats
+- Open source & licenses: https://baryon-ax.baryon.ai/en/open-source/
 - Grounded chat with source and chunk citations, and an explicit warning when evidence is insufficient.
 - Ingestion of HWP/HWPX (kordoc), PDF/Office/images (docling), and legacy formats (Tika), routed by MIME type.
 - Organization-, role-, and document-level ACLs enforced during retrieval.
@@ -49,10 +49,10 @@ Open http://localhost:3001. The `demo-local` model works without an API key and 
 
 ## Canonical links
 
-- English homepage: https://baryonlabs.github.io/baryon-ax/en/
-- Korean homepage: https://baryonlabs.github.io/baryon-ax/
-- llms.txt: https://baryonlabs.github.io/baryon-ax/llms.txt
-- Extended brief: https://baryonlabs.github.io/baryon-ax/llms-full.txt
+- English homepage: https://baryon-ax.baryon.ai/en/
+- Korean homepage: https://baryon-ax.baryon.ai/
+- llms.txt: https://baryon-ax.baryon.ai/llms.txt
+- Extended brief: https://baryon-ax.baryon.ai/llms-full.txt
 - Repository: https://github.com/baryonlabs/baryon-ax
 - Release v0.6.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0
 - Architecture: https://github.com/baryonlabs/baryon-ax/blob/main/docs/architecture.md
