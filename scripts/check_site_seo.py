@@ -104,7 +104,7 @@ def link_value(parser: HeadParser, rel: str, hreflang: str | None = None) -> str
     return ""
 
 
-def check_page(path: Path, expected_lang: str, og_image: str) -> None:
+def check_page(path: Path, expected_lang: str, og_image: str, landing: bool = True) -> None:
     label = path.relative_to(ROOT)
     parser = HeadParser()
     parser.feed(path.read_text(encoding="utf-8"))
@@ -185,6 +185,8 @@ def check_page(path: Path, expected_lang: str, og_image: str) -> None:
 
     if not parser.jsonld:
         fail(f"{label}: missing JSON-LD")
+    all_types: set[str | None] = set()
+    faq_node = None
     for block in parser.jsonld:
         try:
             data = json.loads(block)
@@ -192,13 +194,23 @@ def check_page(path: Path, expected_lang: str, og_image: str) -> None:
             fail(f"{label}: invalid JSON-LD: {error}")
             continue
         nodes = data.get("@graph", [data]) if isinstance(data, dict) else []
-        types = {node.get("@type") for node in nodes if isinstance(node, dict)}
+        all_types |= {node.get("@type") for node in nodes if isinstance(node, dict)}
+        if faq_node is None:
+            faq_node = next((node for node in nodes if node.get("@type") == "FAQPage"), None)
+
+    if landing:
         for required in ("Organization", "SoftwareApplication", "FAQPage", "WebSite", "SoftwareSourceCode", "HowTo", "BreadcrumbList"):
-            if required not in types:
+            if required not in all_types:
                 fail(f"{label}: JSON-LD missing {required}")
-        faq = next((node for node in nodes if node.get("@type") == "FAQPage"), None)
-        if not faq or len(faq.get("mainEntity") or []) < 3:
+        if not faq_node or len(faq_node.get("mainEntity") or []) < 3:
             fail(f"{label}: FAQPage should expose at least 3 questions")
+    else:
+        if "Organization" not in all_types:
+            fail(f"{label}: JSON-LD missing Organization")
+        if not all_types & {"CollectionPage", "WebPage", "SoftwareApplication"}:
+            fail(f"{label}: JSON-LD missing a page type (CollectionPage or WebPage)")
+        if "BreadcrumbList" not in all_types:
+            fail(f"{label}: JSON-LD missing BreadcrumbList")
 
     body = " ".join(parser.text)
     if "Baryon AX" not in body:
@@ -231,7 +243,7 @@ def check_static() -> None:
             if expected not in locations:
                 fail(f"sitemap.xml: missing {expected}")
 
-    for name in ("llms.txt", "llms-full.txt"):
+    for name in ("llms.txt", "llms-full.txt", "en/llms.txt"):
         path = SITE / name
         if not path.exists():
             fail(f"{name}: missing")
@@ -265,12 +277,38 @@ def check_og_images() -> None:
             warn(f"assets/{name}: could not verify dimensions (sips unavailable)")
 
 
+def page_targets() -> list[tuple[Path, str, str, bool]]:
+    """Map every sitemap URL to its local file, language, OG image, and page kind."""
+    tree = ET.parse(SITE / "sitemap.xml")
+    namespace = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+    targets: list[tuple[Path, str, str, bool]] = []
+    for node in tree.findall(".//s:loc", namespace):
+        url = (node.text or "").strip()
+        if not url.startswith(BASE):
+            fail(f"sitemap.xml: URL outside {BASE}: {url}")
+            continue
+        relative = url[len(BASE):]
+        if relative in ("", "/"):
+            path = SITE / "index.html"
+        elif relative.endswith("/"):
+            path = SITE / relative / "index.html"
+        else:
+            path = SITE / relative
+        if not path.exists():
+            fail(f"sitemap.xml: no local file for {url} (expected {path.relative_to(ROOT)})")
+            continue
+        lang = "en" if relative.startswith("en/") else "ko"
+        image = BASE + ("assets/og-en.jpg" if lang == "en" else "assets/og.jpg")
+        targets.append((path, lang, image, relative in ("", "en/")))
+    return targets
+
+
 def main() -> int:
     if not SITE.exists():
         print("site/ not found", file=sys.stderr)
         return 2
-    check_page(SITE / "index.html", "ko", BASE + "assets/og.jpg")
-    check_page(SITE / "en" / "index.html", "en", BASE + "assets/og-en.jpg")
+    for path, lang, image, landing in page_targets():
+        check_page(path, lang, image, landing)
     check_static()
     check_og_images()
 

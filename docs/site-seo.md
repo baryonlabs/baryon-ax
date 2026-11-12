@@ -1,7 +1,9 @@
 # 정적 사이트 SEO · AEO · GEO 운영 가이드
 
 > 대상: https://baryonlabs.github.io/baryon-ax/ (한국어) · `/en/` (English)
-> 검증: `python3 scripts/check_site_seo.py` · 메타 동기화: `python3 scripts/apply_site_meta.py all`
+> 검증: `python3 scripts/check_site_seo.py` (로컬) · `python3 scripts/check_site_live.py` (배포)
+> 메타 동기화: `python3 scripts/apply_site_meta.py all`
+> 등록·홍보·측정: [docs/promotion-playbook.md](promotion-playbook.md)
 
 ---
 
@@ -69,16 +71,30 @@ OG/Twitter 제목·설명은 `<title>`/description과 **자동 동기화**됩니
 python3 scripts/check_site_seo.py
 ```
 
-검사 항목:
+검사 항목(sitemap의 모든 페이지):
 - title 25–65자, description 100–180자
 - canonical · hreflang(ko/en/x-default) · robots
 - OG/Twitter 필수 태그, OG 이미지 실파일 존재, 1200×630
-- JSON-LD 파싱 및 필수 타입, FAQ 3개 이상
+- JSON-LD 파싱 및 페이지 유형별 필수 타입(랜딩: FAQPage 포함 / 하위: CollectionPage·BreadcrumbList), 랜딩 FAQ 3개 이상
 - H1 1개, heading 레벨 점프 없음, 모든 `<img>` alt
-- robots·sitemap·llms.txt·llms-full.txt 존재 및 canonical URL
+- robots·sitemap·llms.txt·llms-full.txt·en/llms.txt 존재 및 canonical URL
 - 경고: OG 이미지 400KB 초과, AI 크롤러 미명시, llms 링크 누락
 
 현재 결과: **failures 0, warnings 0**.
+
+배포 후에는 실제 URL을 검사합니다.
+
+```bash
+python3 scripts/check_site_live.py
+```
+
+- sitemap의 모든 페이지 HTTP 200 · `text/html`
+- 배포된 title·canonical·`html lang`이 로컬 파일과 일치
+- H1 1개, JSON-LD 파싱 및 FAQPage 존재
+- `og:image` 실제 200 · `image/*`
+- `robots.txt`·`sitemap.xml`·`llms.txt`·`llms-full.txt`·`en/llms.txt`·IndexNow 키 파일 200
+
+IndexNow 제출은 `python3 scripts/submit_indexnow.py`입니다(자세한 절차는 [docs/promotion-playbook.md](promotion-playbook.md)).
 
 ---
 
@@ -91,6 +107,8 @@ python3 scripts/check_site_seo.py
 5. `site/llms.txt`·`llms-full.txt`의 버전·기능·URL 갱신
 6. `site/sitemap.xml` lastmod 갱신
 7. PR 생성 → CI·security-sweep 통과 후 머지 (main 직접 push 차단)
+8. Pages 배포 완료 후 `python3 scripts/check_site_live.py`
+9. 새 URL이면 `python3 scripts/submit_indexnow.py`로 제출
 
 ---
 
@@ -100,3 +118,5 @@ python3 scripts/check_site_seo.py
 - `*.github.io`는 GitHub의 플랫폼 정책을 따르므로 robots 규칙이 플랫폼 수준 제한을 덮어쓸 수 없습니다.
 - 구조화 데이터는 리치 결과를 **보장하지 않습니다**. Google Search Console·Rich Results Test로 주기 확인이 필요합니다.
 - OG 이미지는 정적 파일이므로 문구 변경 시 수동 재생성이 필요합니다.
+- GitHub Pages는 배포 직후 수 분간 이전 HTML을 캐시할 수 있어, 라이브 검증은 워크플로 완료 후 실행해야 합니다.
+- `baryonlabs.github.io`는 공용 호스트이므로 IndexNow 키를 호스트 루트에 둘 수 없습니다. `keyLocation`으로 프로젝트 경로를 지정하며, 검색엔진이 이를 거부하면 커스텀 도메인이 필요합니다.
