@@ -10,7 +10,8 @@ permissions:
 env:
   OSV_SCANNER_VERSION: v2.7.0
   TRIVY_VERSION: v0.76.1
-  SECURITY_SWEEP_REF: main
+  # Pin the scanner skill to a reviewed commit; bump deliberately on update.
+  SECURITY_SWEEP_REF: 5b3fc938796fccdf091102ed258ba8e1686d3ba6
   SECURITY_FAIL_ON: P0,P1
 
 jobs:
@@ -19,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Checkout security-sweep
         run: |
@@ -72,7 +73,7 @@ jobs:
 
       - name: Upload report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: security-sweep-report
           path: ${{ runner.temp }}/security-sweep-out
