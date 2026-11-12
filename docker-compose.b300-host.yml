@@ -4,12 +4,12 @@
 services:
   api:
     volumes: !override
-      - /data/baryon-b300/baryon-ax-data/documents:/data/documents
-      - /data/baryon-b300/baryon-ax-data/audit:/data/audit
-      - /data/baryon-b300/baryon-ax-data/mem0:/data/mem0
-      - /data/baryon-b300/baryon-ax-data/fastembed:/data/fastembed
-      - /data/baryon-b300/baryon-ax-data/gaps:/data/gaps
-      - /data/baryon-b300/baryon-ax-data/tacit:/data/tacit
+      - /data/baryon-ax/data/documents:/data/documents
+      - /data/baryon-ax/data/audit:/data/audit
+      - /data/baryon-ax/data/mem0:/data/mem0
+      - /data/baryon-ax/data/fastembed:/data/fastembed
+      - /data/baryon-ax/data/gaps:/data/gaps
+      - /data/baryon-ax/data/tacit:/data/tacit
       - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
     environment:
@@ -21,11 +21,11 @@ services:
 
   postgres:
     volumes: !override
-      - /data/baryon-b300/baryon-ax-data/postgres:/var/lib/postgresql/data
+      - /data/baryon-ax/data/postgres:/var/lib/postgresql/data
 
   qdrant:
     volumes: !override
-      - /data/baryon-b300/baryon-ax-data/qdrant:/qdrant/storage
+      - /data/baryon-ax/data/qdrant:/qdrant/storage
 
   langfuse:
     image: langfuse/langfuse:2
@@ -38,13 +38,13 @@ services:
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
       SALT: ${LANGFUSE_SALT}
       TELEMETRY_ENABLED: "false"
-      LANGFUSE_INIT_ORG_ID: baryon-ax-b300
-      LANGFUSE_INIT_ORG_NAME: Baryon AX B300
-      LANGFUSE_INIT_PROJECT_ID: baryon-ax-b300-project
-      LANGFUSE_INIT_PROJECT_NAME: baryon-ax-b300
+      LANGFUSE_INIT_ORG_ID: baryon-ax
+      LANGFUSE_INIT_ORG_NAME: Baryon AX
+      LANGFUSE_INIT_PROJECT_ID: baryon-ax-project
+      LANGFUSE_INIT_PROJECT_NAME: baryon-ax
       LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
       LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
-      LANGFUSE_INIT_USER_EMAIL: b300@baryon.local
+      LANGFUSE_INIT_USER_EMAIL: admin@example.com
     ports:
       - "127.0.0.1:3102:3000"
     healthcheck:

@@ -1,7 +1,9 @@
 # B300 호스트 전체 플랫폼 배포
 
+> 예시의 `gpu-host`는 SSH 별칭 자리표시자입니다. 실제 호스트 별칭으로 바꾸고, `/data/baryon-ax`는 배포 환경의 데이터 루트로 조정하세요.
+
 > 검증일: 2026-11-11  
-> 대상: B300 서버 (`cloud-Ox5IZb`, x86_64, 8× NVIDIA B300 SXM6 PC)  
+> 대상: GPU 서버 (x86_64, 8× NVIDIA B300 SXM6)  
 > 목적: **Mac 로컬이 아니라 B300 서버 안에서** Baryon AX 전체 플랫폼을 실행하고, GPU 7의 vLLM을 사용
 
 ## 1. 배포 구조
@@ -42,13 +44,13 @@ B300 서버
 ### vLLM (GPU 7)
 
 ```bash
-scp scripts/b300_serve_vllm.sh b300:/data/baryon-b300/scripts/
-ssh b300 'mkdir -p /data/baryon-b300/logs && \
+scp scripts/b300_serve_vllm.sh gpu-host:/data/baryon-ax/scripts/
+ssh gpu-host 'mkdir -p /data/baryon-ax/logs && \
   tmux new-session -d -s baryon-vllm \
-  "bash /data/baryon-b300/scripts/b300_serve_vllm.sh >> /data/baryon-b300/logs/serve-baryon-ax-vllm.log 2>&1"'
+  "bash /data/baryon-ax/scripts/b300_serve_vllm.sh >> /data/baryon-ax/logs/serve-baryon-ax-vllm.log 2>&1"'
 
-ssh b300 'curl -sf http://127.0.0.1:8020/v1/models | python3 -m json.tool | head'
-ssh b300 'nvidia-smi -i 7 --query-gpu=index,memory.used,utilization.gpu --format=csv,noheader'
+ssh gpu-host 'curl -sf http://127.0.0.1:8020/v1/models | python3 -m json.tool | head'
+ssh gpu-host 'nvidia-smi -i 7 --query-gpu=index,memory.used,utilization.gpu --format=csv,noheader'
 ```
 
 ### Docker bridge 프록시
@@ -56,35 +58,35 @@ ssh b300 'nvidia-smi -i 7 --query-gpu=index,memory.used,utilization.gpu --format
 vLLM은 `127.0.0.1:8020`에만 바인딩됩니다. Linux Docker에서는 `host.docker.internal`이 호스트 loopback에 직접 닿지 않으므로 프록시를 둡니다.
 
 ```bash
-ssh b300 'tmux new-session -d -s baryon-vllm-proxy \
-  "python3 /data/baryon-b300/baryon-ax/scripts/ollama_proxy.py \
+ssh gpu-host 'tmux new-session -d -s baryon-vllm-proxy \
+  "python3 /data/baryon-ax/repo/scripts/ollama_proxy.py \
    --listen-host 0.0.0.0 --listen-port 8021 \
    --target-host 127.0.0.1 --target-port 8020"'
 
 # Docker private 대역에서만 8021 허용 (외부 차단)
-ssh b300 'sudo ufw allow from 172.16.0.0/12 to any port 8021 proto tcp'
+ssh gpu-host 'sudo ufw allow from 172.16.0.0/12 to any port 8021 proto tcp'
 ```
 
 확인:
 
 ```bash
-ssh b300 'docker run --rm --add-host host.docker.internal:host-gateway \
+ssh gpu-host 'docker run --rm --add-host host.docker.internal:host-gateway \
   curlimages/curl:latest -s http://host.docker.internal:8021/v1/models | head -c 160'
 ```
 
 ## 4. 디렉터리와 환경변수
 
 ```bash
-ssh b300 'mkdir -p /data/baryon-b300/baryon-ax-data/{documents,audit,mem0,fastembed,postgres,qdrant}'
-ssh b300 'sudo chown -R 10001:10001 /data/baryon-b300/baryon-ax-data/{documents,audit,mem0,fastembed}'
-ssh b300 'sudo chown -R 999:999 /data/baryon-b300/baryon-ax-data/postgres'
-ssh b300 'sudo chown -R 0:0 /data/baryon-b300/baryon-ax-data/qdrant'
+ssh gpu-host 'mkdir -p /data/baryon-ax/data/{documents,audit,mem0,fastembed,postgres,qdrant}'
+ssh gpu-host 'sudo chown -R 10001:10001 /data/baryon-ax/data/{documents,audit,mem0,fastembed}'
+ssh gpu-host 'sudo chown -R 999:999 /data/baryon-ax/data/postgres'
+ssh gpu-host 'sudo chown -R 0:0 /data/baryon-ax/data/qdrant'
 ```
 
 `.env.b300.example`을 복사하고 비밀번호/키를 채웁니다.
 
 ```bash
-ssh b300 'cd /data/baryon-b300/baryon-ax && cp .env.b300.example .env'
+ssh gpu-host 'cd /data/baryon-ax/repo && cp .env.b300.example .env'
 # POSTGRES_PASSWORD, LANGFUSE_SECRET_KEY, LANGFUSE_NEXTAUTH_SECRET, LANGFUSE_SALT 변경
 ```
 
@@ -118,18 +120,18 @@ ssh b300 'cd /data/baryon-b300/baryon-ax && cp .env.b300.example .env'
 기존 named volume을 사용했다면, 컨테이너를 내린 뒤 복사합니다. 새 배포라면 생략 가능합니다.
 
 ```bash
-ssh b300 'cd /data/baryon-b300/baryon-ax && \
+ssh gpu-host 'cd /data/baryon-ax/repo && \
   docker compose -f docker-compose.yml -f docker-compose.full.yml -f docker-compose.b300-host.yml --profile deps down'
 
 for pair in "documents:documents" "audit:audit" "mem0:mem0" "models:fastembed" "postgres:postgres" "qdrant:qdrant"; do
   vol=${pair%%:*}; dir=${pair##*:}
-  ssh b300 "docker run --rm -v baryon-ax_${vol}:/from \
-    -v /data/baryon-b300/baryon-ax-data/${dir}:/to alpine sh -c 'cp -a /from/. /to/'"
+  ssh gpu-host "docker run --rm -v baryon-ax_${vol}:/from \
+    -v /data/baryon-ax/data/${dir}:/to alpine sh -c 'cp -a /from/. /to/'"
 done
 
-ssh b300 'sudo chown -R 10001:10001 /data/baryon-b300/baryon-ax-data/{documents,audit,mem0,fastembed}'
-ssh b300 'sudo chown -R 999:999 /data/baryon-b300/baryon-ax-data/postgres'
-ssh b300 'sudo chown -R 0:0 /data/baryon-b300/baryon-ax-data/qdrant'
+ssh gpu-host 'sudo chown -R 10001:10001 /data/baryon-ax/data/{documents,audit,mem0,fastembed}'
+ssh gpu-host 'sudo chown -R 999:999 /data/baryon-ax/data/postgres'
+ssh gpu-host 'sudo chown -R 0:0 /data/baryon-ax/data/qdrant'
 ```
 
 > 바인드 마운트는 `baryonai` 사용자가 직접 `chown`할 수 없습니다. `sudo`를 사용하세요.
@@ -139,10 +141,10 @@ ssh b300 'sudo chown -R 0:0 /data/baryon-b300/baryon-ax-data/qdrant'
 `baryon-ax-host.yml`의 Langfuse는 플랫폼 PostgreSQL의 `langfuse` DB를 사용합니다.
 
 ```bash
-ssh b300 'cd /data/baryon-b300/baryon-ax && \
+ssh gpu-host 'cd /data/baryon-ax/repo && \
   docker compose -f docker-compose.yml -f docker-compose.full.yml -f docker-compose.b300-host.yml --profile deps up -d postgres'
 
-ssh b300 'if ! docker exec -i baryon-ax-postgres-1 psql -U baryon -d postgres -tAc \
+ssh gpu-host 'if ! docker exec -i baryon-ax-postgres-1 psql -U baryon -d postgres -tAc \
   "SELECT 1 FROM pg_database WHERE datname='\''langfuse'\''" | grep -q 1; then \
   docker exec -i baryon-ax-postgres-1 psql -U baryon -d postgres -c "CREATE DATABASE langfuse"; fi'
 ```
@@ -150,7 +152,7 @@ ssh b300 'if ! docker exec -i baryon-ax-postgres-1 psql -U baryon -d postgres -t
 ## 7. 전체 스택 시작
 
 ```bash
-ssh b300 'cd /data/baryon-b300/baryon-ax && \
+ssh gpu-host 'cd /data/baryon-ax/repo && \
   docker compose -f docker-compose.yml -f docker-compose.full.yml \
   -f docker-compose.b300-host.yml --profile deps up -d --build'
 ```
@@ -158,7 +160,7 @@ ssh b300 'cd /data/baryon-b300/baryon-ax && \
 Langfuse가 healthy가 된 뒤 API와 Web이 시작됩니다.
 
 ```bash
-ssh b300 'cd /data/baryon-b300/baryon-ax && \
+ssh gpu-host 'cd /data/baryon-ax/repo && \
   docker compose -f docker-compose.yml -f docker-compose.full.yml \
   -f docker-compose.b300-host.yml --profile deps ps'
 ```
@@ -245,17 +247,17 @@ E2E_BASE_URL=http://127.0.0.1:3101 npm run test:e2e
 
 ```bash
 # 플랫폼만 종료 (데이터 유지)
-ssh b300 'cd /data/baryon-b300/baryon-ax && \
+ssh gpu-host 'cd /data/baryon-ax/repo && \
   docker compose -f docker-compose.yml -f docker-compose.full.yml \
   -f docker-compose.b300-host.yml --profile deps down'
 
 # vLLM 종료 (GPU 7 반환)
-ssh b300 'pgrep -af "vllm serve.*8020"'
-ssh b300 'pkill -TERM -f "vllm serve models/base/Qwen3.5-27B.*8020"'
-ssh b300 'nvidia-smi -i 7 --query-gpu=memory.used --format=csv,noheader'
+ssh gpu-host 'pgrep -af "vllm serve.*8020"'
+ssh gpu-host 'pkill -TERM -f "vllm serve models/base/Qwen3.5-27B.*8020"'
+ssh gpu-host 'nvidia-smi -i 7 --query-gpu=memory.used --format=csv,noheader'
 
 # 프록시 종료
-ssh b300 'tmux kill-session -t baryon-vllm-proxy'
+ssh gpu-host 'tmux kill-session -t baryon-vllm-proxy'
 ```
 
 재시작은 3장(vLLM/프록시) → 7장(Compose) 순서로 진행합니다.
@@ -265,7 +267,7 @@ ssh b300 'tmux kill-session -t baryon-vllm-proxy'
 - 모든 플랫폼 포트는 `127.0.0.1` 바인딩, Mac은 SSH 터널 사용.
 - UFW는 22만 공개하고, 8021은 Docker private 대역(172.16.0.0/12)만 허용.
 - vLLM/API에는 인증이 없습니다. 터널 밖으로 노출하지 마세요.
-- `/data/baryon-b300/baryon-ax-data`에 문서·감사·Mem0·Postgres·Qdrant·FastEmbed 캐시, 지식 공백(`gaps`), 암묵지 답변(`tacit`)이 있습니다. 백업 대상입니다.
+- `/data/baryon-ax/data`에 문서·감사·Mem0·Postgres·Qdrant·FastEmbed 캐시, 지식 공백(`gaps`), 암묵지 답변(`tacit`)이 있습니다. 백업 대상입니다.
 - Langfuse에는 프롬프트/응답이 저장됩니다. 보존/삭제 정책을 정의하세요.
 - Docker 소켓 마운트는 root에 준하는 권한입니다. 읽기 전용으로만 유지하고, 필요 없으면 `SYSTEM_METRICS_ENABLED=false`로 끄세요.
 - 현재 신원은 개발용 헤더입니다. 프로덕션 전 OIDC/JWT로 교체하세요.

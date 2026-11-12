@@ -2,7 +2,7 @@
 # Run this script on the B300 server (or copy it there and run it in tmux).
 # Serves Qwen3.5-27B with vLLM on one free GPU, loopback-only.
 set -euo pipefail
-ROOT=/data/baryon-b300
+ROOT=/data/baryon-ax
 GPU=${B300_GPU:-7}
 PORT=${B300_PORT:-8020}
 MODEL=${B300_MODEL:-$ROOT/models/base/Qwen3.5-27B}

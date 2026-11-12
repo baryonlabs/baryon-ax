@@ -1,10 +1,12 @@
 # B300 GPU 7 · vLLM 서빙 테스트
 
+> 예시의 `gpu-host`는 SSH 별칭 자리표시자입니다. 실제 호스트 별칭으로 바꾸고, `/data/baryon-ax`는 배포 환경의 데이터 루트로 조정하세요.
+
 > 검증일: 2026-11-10  
 > 서버: `b300` (8× NVIDIA B300 SXM6 PC, 275GB VRAM each)  
 > GPU: **7번 (마지막 GPU)**  
 > 모델: `Qwen3.5-27B`  
-> vLLM: `0.32.0` (`/data/baryon-b300/.venv`)  
+> vLLM: `0.32.0` (`/data/baryon-ax/.venv`)  
 > 포트: `127.0.0.1:8020`
 
 > 플랫폼 전체를 B300 안에서 실행한 배포는 [b300-host-deploy.md](b300-host-deploy.md)를 참고하세요.
@@ -26,14 +28,14 @@ B300 서버                                          ▼
 ## 2. vLLM 시작 (B300)
 
 ```bash
-scp scripts/b300_serve_vllm.sh b300:/data/baryon-b300/scripts/
-ssh b300 'mkdir -p /data/baryon-b300/logs && \
+scp scripts/b300_serve_vllm.sh gpu-host:/data/baryon-ax/scripts/
+ssh gpu-host 'mkdir -p /data/baryon-ax/logs && \
   tmux new-session -d -s baryon-vllm \
-  "bash /data/baryon-b300/scripts/b300_serve_vllm.sh >> /data/baryon-b300/logs/serve-baryon-ax-vllm.log 2>&1"'
+  "bash /data/baryon-ax/scripts/b300_serve_vllm.sh >> /data/baryon-ax/logs/serve-baryon-ax-vllm.log 2>&1"'
 
 # 준비 확인 (최대 수 분 소요)
-ssh b300 'curl -sf http://127.0.0.1:8020/v1/models | python3 -m json.tool | head'
-ssh b300 'nvidia-smi -i 7 --query-gpu=index,memory.used,utilization.gpu --format=csv,noheader'
+ssh gpu-host 'curl -sf http://127.0.0.1:8020/v1/models | python3 -m json.tool | head'
+ssh gpu-host 'nvidia-smi -i 7 --query-gpu=index,memory.used,utilization.gpu --format=csv,noheader'
 ```
 
 스크립트는 다음을 확인한 뒤 실행합니다.
@@ -43,7 +45,7 @@ ssh b300 'nvidia-smi -i 7 --query-gpu=index,memory.used,utilization.gpu --format
 - `Qwen3.5-27B` 모델 존재 여부
 - `CUDA_VISIBLE_DEVICES=7`, tensor parallel 1, max-model-len 32768, gpu-memory-utilization 0.90
 
-로그: `/data/baryon-b300/logs/serve-baryon-ax-vllm.log`
+로그: `/data/baryon-ax/logs/serve-baryon-ax-vllm.log`
 
 ## 3. SSH 터널 (Mac)
 
@@ -125,10 +127,10 @@ B300 서버는 8 번째 GPU(GPU 7)를 사용하여 Qwen3.5-27B 모델을 vLLM으
 
 ```bash
 # vLLM (tmux로 시작한 경우)
-ssh b300 'tmux kill-session -t baryon-vllm'
+ssh gpu-host 'tmux kill-session -t baryon-vllm'
 
 # 현재 실습에서 setsid로 시작한 프로세스인 경우 (명령줄 확인 후 종료)
-ssh b300 'pgrep -af "vllm serve.*8020"'
+ssh gpu-host 'pgrep -af "vllm serve.*8020"'
 
 # Mac SSH 터널
 pkill -f 'ssh -N -L 0.0.0.0:8020'
@@ -137,7 +139,7 @@ pkill -f 'ssh -N -L 0.0.0.0:8020'
 종료 후 GPU 7이 0 MiB로 돌아왔는지 확인하세요.
 
 ```bash
-ssh b300 'nvidia-smi -i 7 --query-gpu=memory.used --format=csv,noheader'
+ssh gpu-host 'nvidia-smi -i 7 --query-gpu=memory.used --format=csv,noheader'
 ```
 
 ## 7. 주의사항
