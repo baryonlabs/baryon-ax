@@ -325,3 +325,5 @@ This is a reference implementation, not a security certification. The developmen
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+> 🔐 Every pull request runs [security-sweep](https://github.com/baryonlabs/security-sweep) — OSV-verified CVEs, KEV/EPSS, secrets, and configuration — and **P0/P1 findings block the merge**.
