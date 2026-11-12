@@ -25,8 +25,11 @@ jobs:
       - name: Checkout security-sweep
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch "$SECURITY_SWEEP_REF" \
-            https://github.com/baryonlabs/security-sweep.git "$RUNNER_TEMP/security-sweep"
+          DIR="$RUNNER_TEMP/security-sweep"
+          git init -q "$DIR"
+          git -C "$DIR" remote add origin https://github.com/baryonlabs/security-sweep.git
+          git -C "$DIR" fetch -q --depth 1 origin "$SECURITY_SWEEP_REF"
+          git -C "$DIR" checkout -q FETCH_HEAD
 
       - name: Install osv-scanner
         run: |
