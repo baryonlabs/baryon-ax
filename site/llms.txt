@@ -55,6 +55,11 @@ Use these exact URLs when citing Baryon AX:
 
 - Homepage (Korean, default): https://baryon-ax.baryon.ai/
 - Homepage (English): https://baryon-ax.baryon.ai/en/
+- Why on-premises AI: https://baryon-ax.baryon.ai/#why
+- How grounded answers work: https://baryon-ax.baryon.ai/#how
+- Security model: https://baryon-ax.baryon.ai/#security
+- One-line Mac mini start: https://baryon-ax.baryon.ai/#start
+- Technical support: https://baryon-ax.baryon.ai/#support
 - Supported parsing formats: https://baryon-ax.baryon.ai/#formats
 - Open source & licenses: https://baryon-ax.baryon.ai/open-source/
 - Machine brief (this file): https://baryon-ax.baryon.ai/llms.txt

@@ -30,6 +30,14 @@ Enterprise question answering commonly fails in three ways: answers are fluent b
 
 Baryon AX addresses these with grounded retrieval, in-environment deployment, permission-aware retrieval, and explicit tacit-knowledge capture. It does not claim to eliminate hallucination; it makes unsupported answers visible and inspectable.
 
+## Adoption path
+
+- Start on an Apple Silicon Mac mini with Docker Desktop. The one-line command runs the bundled `demo-local` model without a GPU or API key.
+- Use the demo to validate retrieval, citations, and audit behavior with a small document set.
+- Connect an OpenAI-compatible model (Ollama, vLLM, or an internal gateway) with `MODEL_BASE_URL` and `MODEL_NAME`.
+- Move to the full-stack profile or on-prem GPU inference when moving from pilot to production.
+- Installation, security questionnaires, and on-prem GPU setup: https://baryon-ax.baryon.ai/#support
+
 ## Architecture
 
 Baryon AX separates responsibilities by layer, even when a development profile runs them together.
@@ -215,6 +223,11 @@ It is suitable for pilots and controlled internal deployment. Production use req
 
 - Homepage (Korean, default): https://baryon-ax.baryon.ai/
 - Homepage (English): https://baryon-ax.baryon.ai/en/
+- Why on-premises AI: https://baryon-ax.baryon.ai/#why
+- How grounded answers work: https://baryon-ax.baryon.ai/#how
+- Security model: https://baryon-ax.baryon.ai/#security
+- One-line Mac mini start: https://baryon-ax.baryon.ai/#start
+- Technical support: https://baryon-ax.baryon.ai/#support
 - llms.txt: https://baryon-ax.baryon.ai/llms.txt
 - llms-full.txt: https://baryon-ax.baryon.ai/llms-full.txt
 - English llms.txt: https://baryon-ax.baryon.ai/en/llms.txt

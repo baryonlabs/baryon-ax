@@ -150,7 +150,7 @@ def upgrade_jsonld(markup: str, config: dict, title: str, description: str, faq:
         graph.append(faq_node)
     faq_node["mainEntity"] = [
         {"@type": "Question", "name": question, "acceptedAnswer": {"@type": "Answer", "text": answer}}
-        for question, answer in faq[:8]
+        for question, answer in faq[:10]
     ]
 
     rendered = json.dumps(data, ensure_ascii=False, indent=2)

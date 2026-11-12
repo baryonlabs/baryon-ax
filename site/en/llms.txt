@@ -17,6 +17,11 @@ Baryon AX runs inside the customer's environment, including air-gapped networks.
 
 ## What it does
 
+- Why: https://baryon-ax.baryon.ai/en/#why
+- How it works: https://baryon-ax.baryon.ai/en/#how
+- Security: https://baryon-ax.baryon.ai/en/#security
+- One-line Mac mini start: https://baryon-ax.baryon.ai/en/#start
+- Support: https://baryon-ax.baryon.ai/en/#support
 - Supported parsing formats: https://baryon-ax.baryon.ai/en/#formats
 - Open source & licenses: https://baryon-ax.baryon.ai/en/open-source/
 - Grounded chat with source and chunk citations, and an explicit warning when evidence is insufficient.

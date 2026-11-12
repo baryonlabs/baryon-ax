@@ -45,7 +45,7 @@ OG/Twitter 제목·설명은 `<title>`/description과 **자동 동기화**됩니
 | `WebPage` | 페이지 제목·설명·대표 이미지·언어 |
 | `HowTo` | Docker 빠른 시작 4단계 |
 | `BreadcrumbList` | Home (→ English) |
-| `FAQPage` | 화면에 보이는 FAQ 상위 8개와 1:1 대응 |
+| `FAQPage` | 화면에 보이는 FAQ 상위 10개와 1:1 대응 |
 
 > FAQPage는 **화면에 실제로 보이는 Q&A만** 넣습니다. 숨은 텍스트를 스키마에 넣지 않습니다.
 
