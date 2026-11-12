@@ -19,12 +19,13 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import socket
 import sys
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site"
@@ -32,6 +33,11 @@ DEFAULT_BASE = "https://baryonlabs.github.io/baryon-ax/"
 USER_AGENT = "baryon-ax-live-check/1.0 (+https://github.com/baryonlabs/baryon-ax)"
 SITEMAP_NS = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
 KEY_PATTERN = re.compile(r"^[0-9a-f]{8,128}$", re.IGNORECASE)
+VERIFICATION = {
+    "google": "google-site-verification",
+    "naver": "naver-site-verification",
+    "bing": "msvalidate.01",
+}
 
 failures: list[str] = []
 warnings: list[str] = []
@@ -189,6 +195,26 @@ def check_key_file(base: str, timeout: float) -> None:
         warn("site/: no IndexNow key file; run scripts/submit_indexnow.py after adding one")
 
 
+def print_registration(base: str, timeout: float) -> None:
+    """Report DNS and search-engine ownership status without failing the build."""
+    host = urlsplit(base).netloc
+    print("\nregistration:")
+    try:
+        addresses = sorted({info[4][0] for info in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)})
+        print(f"  dns        {host} -> {', '.join(addresses[:4])}")
+    except OSError as error:
+        print(f"  dns        {host} -> lookup failed ({error})")
+    try:
+        _, _, body = fetch(base, timeout)
+        markup = body.decode("utf-8", errors="replace")
+    except (urllib.error.URLError, TimeoutError) as error:
+        print(f"  verify     {base} unreachable ({error})")
+        return
+    for provider, name in VERIFICATION.items():
+        state = "set" if f'name="{name}"' in markup else "not set"
+        print(f"  {provider:9} {state}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check the deployed Baryon AX site.")
     parser.add_argument("--base", default=DEFAULT_BASE, help=f"site base URL (default: {DEFAULT_BASE})")
@@ -224,6 +250,7 @@ def main() -> int:
     check_file(base + "llms-full.txt", "text/plain", args.timeout, "Baryon AX")
     check_file(base + "en/llms.txt", "text/plain", args.timeout, "Baryon AX")
     check_key_file(base, args.timeout)
+    print_registration(base, args.timeout)
 
     print(f"\nfailures: {len(failures)}, warnings: {len(warnings)}")
     for message in failures:

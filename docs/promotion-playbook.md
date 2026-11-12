@@ -15,7 +15,7 @@
 |---|---|---|
 | 호스팅 | ✅ | GitHub Pages, `main` push 시 `.github/workflows/pages.yml` 배포 |
 | HTTPS | ✅ | `https_enforced: true` |
-| 커스텀 도메인 | ❌ | `baryonlabs.github.io/baryon-ax/` 프로젝트 경로 사용 |
+| 커스텀 도메인 | ⚠️ | `baryon-ax.baryon.ai` 이전 스크립트·절차 준비 완료, DNS CNAME 1건 필요 ([docs/domain-migration.md](domain-migration.md)) |
 | Google Search Console | ❌ | 등록·sitemap 제출 필요 |
 | Naver Search Advisor | ❌ | 등록·소유확인 필요 |
 | Bing Webmaster Tools | ❌ | 등록 또는 GSC import 필요 |
@@ -33,6 +33,9 @@
 | `scripts/submit_indexnow.py` | sitemap URL을 IndexNow로 제출 |
 | `scripts/check_site_live.py` | 배포된 URL·메타·OG·llms 실제 검증 |
 | `scripts/set_site_verification.py` | Google/Naver/Bing 소유확인 메타 주입·제거 |
+| `scripts/set_site_dns.py` | Cloudflare에 GitHub Pages CNAME 생성 (DNS only) |
+| `scripts/apply_site_domain.py` | 커스텀 도메인으로 URL 일괄 이전 + `site/CNAME` 생성 |
+| `docs/domain-migration.md` | 도메인 이전·인증서·재등록·롤백 절차 |
 | `scripts/check_site_seo.py` | 로컬 SEO/AEO/GEO 게이트 |
 | `scripts/apply_site_meta.py` | OG/Twitter/JSON-LD 동기화 |
 
@@ -251,20 +254,19 @@ Baryon AX
 
 ## 10. 커스텀 도메인 이전 시
 
-현재 모든 절대 URL은 `https://baryonlabs.github.io/baryon-ax/` 기준입니다. 도메인을 붙이면 아래를 **한 번에** 바꿔야 합니다.
+`baryon-ax.baryon.ai`로 이전하는 전체 절차는 [docs/domain-migration.md](domain-migration.md)에 있습니다.
 
-1. `scripts/apply_site_meta.py`의 `BASE`
-2. `scripts/check_site_seo.py`의 `BASE`
-3. `scripts/check_site_live.py`의 `DEFAULT_BASE`
-4. `scripts/submit_indexnow.py`의 `DEFAULT_BASE`
-5. `site/sitemap.xml`의 `<loc>`·`hreflang`
-6. `site/robots.txt`의 `Sitemap`
-7. `site/llms.txt`·`llms-full.txt`·`en/llms.txt`의 URL
-8. `site/index.html`·`site/en/index.html`의 canonical·hreflang·`og:url`·`og:image`
-9. `site/CNAME` 추가 (GitHub Pages 커스텀 도메인)
-10. 기존 GSC/Naver 속성에 새 속성 추가 후 sitemap 재제출
+```bash
+# DNS (Zone.DNS:Edit 토큰 필요)
+python3 scripts/set_site_dns.py --dry-run
+python3 scripts/set_site_dns.py --apply
 
-이전 후 `python3 scripts/check_site_seo.py && python3 scripts/check_site_live.py --base https://<새도메인>/`로 확인합니다.
+# URL 일괄 이전
+python3 scripts/apply_site_domain.py --domain baryon-ax.baryon.ai
+python3 scripts/apply_site_domain.py --domain baryon-ax.baryon.ai --write
+```
+
+`apply_site_domain.py`가 `site/CNAME`, canonical·OG·hreflang, sitemap, robots, llms, 스크립트 `BASE`, README·docs를 한 번에 갱신합니다. 이전 후 `python3 scripts/check_site_seo.py && python3 scripts/check_site_live.py --base https://baryon-ax.baryon.ai/`로 확인합니다.
 
 ---
 
