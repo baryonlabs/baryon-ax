@@ -216,6 +216,9 @@ def check_page(path: Path, expected_lang: str, og_image: str, landing: bool = Tr
     if "Baryon AX" not in body:
         fail(f"{label}: body does not mention Baryon AX")
 
+    if "cloudflareinsights.com/beacon.min.js" not in path.read_text(encoding="utf-8"):
+        fail(f"{label}: missing Cloudflare Web Analytics beacon")
+
     text_bytes = path.stat().st_size
     if text_bytes > 200_000:
         warn(f"{label}: HTML is {text_bytes} bytes; consider trimming inline content")

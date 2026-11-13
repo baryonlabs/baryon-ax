@@ -142,6 +142,9 @@ def check_page(url: str, base: str, timeout: float, skip_images: bool = False) -
         if expects_faq and "FAQPage" not in types:
             fail(f"{url}: JSON-LD missing FAQPage (the page has a visible FAQ)")
 
+    if "cloudflareinsights.com/beacon.min.js" not in markup:
+        fail(f"{url}: missing Cloudflare Web Analytics beacon")
+
     og_image = local_value_from(markup, r'property="og:image" content="([^"]+)"')
     if not og_image:
         fail(f"{url}: missing og:image")
