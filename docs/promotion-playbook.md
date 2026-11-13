@@ -16,14 +16,14 @@
 | 호스팅 | ✅ | GitHub Pages, `main` push 시 `.github/workflows/pages.yml` 배포 |
 | HTTPS | ✅ | `https_enforced: true`, 인증서 approved (2027-02-11 만료, 자동 갱신) |
 | 커스텀 도메인 | ✅ | `https://baryon-ax.baryon.ai/` 라이브, `baryonlabs.github.io/baryon-ax/` → 301 |
-| Google Search Console | ✅ | `sc-domain:baryon.ai` sitemap 제출 완료(4개 발견), 핵심 URL 색인 완료 |
+| Google Search Console | 🟡 | `sc-domain:baryon.ai` sitemap 제출 완료(4개 발견), 핵심 URL 색인 요청 완료 — 2026-11-13 기준 **아직 미색인** |
 | Naver Search Advisor | ✅ | 소유확인 완료, `sitemap.xml` 제출 완료(2026-11-13 03:22) |
 | Bing Webmaster Tools | 🟡 | IndexNow 200/200 완료. BWT 대시보드는 Microsoft 세션 미인식으로 보류 |
 | IndexNow | ✅ | 2026-11-13 새 도메인 4개 URL 제출, `api.indexnow.org`·`bing.com` 모두 200 |
 | Daum 검색등록 | 🟡 | 등록 신청 완료(2026-11-13), 검토 결과 이메일 대기 |
 | SEO/AEO/GEO 자산 | ✅ | title/description, canonical, hreflang, JSON-LD 8종, FAQ, `llms.txt` 3종, OG 2종 |
 | 자동 검증 | ✅ | `check_site_seo.py` 0/0, `check_site_live.py` 새 도메인 0 failures |
-| 분석 | ✅ | Cloudflare Web Analytics `baryon-ax.baryon.ai` 설치 (2026-11-13) |
+| 분석 | ✅ | Cloudflare Web Analytics `baryon-ax.baryon.ai` 설치, sitemap 4페이지 전체 비콘 (2026-11-13) |
 
 ### 자동화 자산
 
