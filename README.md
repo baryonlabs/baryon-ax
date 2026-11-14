@@ -11,6 +11,15 @@
 
 This repository is an executable Basic Core v0.6 reference implementation. It offers a complete vertical slice: role-aware chat, OpenAI-compatible model routing, document ingestion and vector retrieval with citations, policy checks, audit events, memory, and a browser UI. The Basic Core runs with a local demo model and file storage; the **full-stack profile** connects Ollama, Qdrant, PostgreSQL, Redis, Langfuse, LangGraph, LlamaIndex, and Mem0. See [docs/full-stack.md](docs/full-stack.md) for the applied stack.
 
+## Architecture
+
+![System architecture](docs/architecture-ingest.png)
+
+The ingest pipeline end to end. The diagram is editable in
+[this Excalidraw board](https://app.excalidraw.com/s/71iHvWeZdL/5PvcKxcjuan).
+
+---
+
 ## Platform at a glance
 
 ![Baryon AX platform overview: user flow, layered architecture, and core engines](docs/images/baryon-ax-platform-overview.png)
