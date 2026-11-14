@@ -29,6 +29,7 @@ class Tool:
     risk: str = READ
     tags: tuple[str, ...] = ()
     allowed_roles: tuple[str, ...] = ()
+    gateway_tool: str | None = None
 
 
 @dataclass(frozen=True)
@@ -304,7 +305,28 @@ _CONNECTORS: tuple[Connector, ...] = (
     ),
 )
 
-CONNECTORS: tuple[Connector, ...] = _CONNECTORS
+_SYSTEM_CONNECTOR = Connector(
+    id="baryon-ax",
+    name="Baryon AX",
+    category="system",
+    auth="none",
+    docs_url="https://github.com/baryonlabs/baryon-ax",
+    aliases=("바리온", "gateway", "mcp"),
+    status="system",
+    actions=(
+        Tool(
+            id="baryon-ax.probe",
+            connector_id="baryon-ax",
+            name="probe",
+            description="Run an end-to-end MCP gateway probe",
+            risk=READ,
+            tags=("health", "probe", "gateway", "system"),
+            gateway_tool="baryon-probe",
+        ),
+    ),
+)
+
+CONNECTORS: tuple[Connector, ...] = (*_CONNECTORS, _SYSTEM_CONNECTOR)
 CONNECTOR_BY_ID = {connector.id: connector for connector in CONNECTORS}
 TOOLS: tuple[Tool, ...] = tuple(tool for connector in CONNECTORS for tool in connector.actions)
 TOOL_BY_ID = {tool.id: tool for tool in TOOLS}
@@ -419,6 +441,7 @@ def tool_payload(tool: Tool, connector: Connector, roles: set[str]) -> dict:
         "risk": tool.risk,
         "tags": list(tool.tags),
         "auth": connector.auth,
+        "gateway_tool": tool.gateway_tool,
         "decision": {
             "allowed": decision.allowed,
             "requires_approval": decision.requires_approval,

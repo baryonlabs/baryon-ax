@@ -246,6 +246,7 @@
 | `GET` | `/v1/tools` | 멤버·관리자 | 도구 목록·필터 |
 | `GET` | `/v1/tools/search` | 멤버·관리자 | 의도 기반 도구 검색 |
 | `GET` | `/v1/mcp/status` | 멤버·관리자 | 게이트웨이 설정·카탈로그 상태 |
+| `POST` | `/v1/tools/{id}/call` | 멤버(읽기)·관리자(쓰기) | ContextForge MCP 도구 호출 |
 
 ### 요청 옵션 (`POST /v1/chat/completions`)
 

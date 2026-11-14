@@ -13,13 +13,13 @@ from baryon.connectors import (
 from baryon.main import app
 
 
-def test_catalog_has_thirty_unique_connectors() -> None:
-    assert len(CONNECTORS) == 30
-    assert len({connector.id for connector in CONNECTORS}) == 30
+def test_catalog_has_curated_and_system_connectors() -> None:
+    assert len(CONNECTORS) == 31
+    assert len({connector.id for connector in CONNECTORS}) == 31
     for connector in CONNECTORS:
         assert connector.actions, connector.id
         assert all(tool.id.startswith(connector.id + ".") for tool in connector.actions)
-        assert connector.auth in {"oauth2", "api_key", "basic", "service_account"}
+        assert connector.auth in {"oauth2", "api_key", "basic", "service_account", "none"}
 
 
 def test_tool_ids_are_unique_and_read_write_are_balanced() -> None:
@@ -72,7 +72,7 @@ def test_connector_endpoints() -> None:
     client = TestClient(app)
     listing = client.get("/v1/connectors")
     assert listing.status_code == 200
-    assert listing.json()["total"] == 30
+    assert listing.json()["total"] == 31
 
     detail = client.get("/v1/connectors/slack")
     assert detail.status_code == 200
@@ -89,5 +89,5 @@ def test_connector_endpoints() -> None:
 
     status = client.get("/v1/mcp/status")
     assert status.status_code == 200
-    assert status.json()["connectors"] == 30
+    assert status.json()["connectors"] == 31
     assert status.json()["execution"] == "not_configured"
