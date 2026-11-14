@@ -276,7 +276,7 @@
 | 출처 데이터 최소화 | ✅ | 문서 원문을 클라이언트에 반환하지 않음 |
 | CORS 제한 | ✅ | `ALLOWED_ORIGINS` 기반 |
 | 비밀정보 저장 | 🔶 | `.env` 사용, `.gitignore` 처리. 시크릿 매니저 미연동 |
-| OIDC/JWT 인증 | ⛔ | 헤더 신원은 개발용, 프로덕션 부적합 |
+| OIDC/JWT 인증 | 🔶 | API Bearer 토큰 검증·RBAC 구현(`AUTH_MODE=oidc`). 웹 PKCE 로그인은 미구현 |
 | Rate limiting | ✅ | Redis fixed-window, 사용자·조직당 분당 제한 (다중 노드 정교한 정책은 ⛔) |
 | CSRF/보안 헤더 | ⛔ | 쿠키 인증·CSP·HSTS 등 미적용 |
 | 완전한 PII 탐지 | 🔶 | 전화번호 패턴만 예시로 제공 |

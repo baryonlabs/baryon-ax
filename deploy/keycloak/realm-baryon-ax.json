@@ -1,0 +1,173 @@
+{
+  "realm": "baryon-ax",
+  "enabled": true,
+  "displayName": "Baryon AX",
+  "displayNameHtml": "<strong>Baryon AX</strong> identity",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 900,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "groups": [
+    {
+      "name": "baryon-admin",
+      "path": "/baryon-admin",
+      "attributes": {},
+      "realmRoles": [],
+      "clientRoles": {}
+    },
+    {
+      "name": "baryon-member",
+      "path": "/baryon-member",
+      "attributes": {},
+      "realmRoles": [],
+      "clientRoles": {}
+    },
+    {
+      "name": "baryon-legal",
+      "path": "/baryon-legal",
+      "attributes": {},
+      "realmRoles": [],
+      "clientRoles": {}
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@example.com",
+      "firstName": "Baryon",
+      "lastName": "Admin",
+      "emailVerified": true,
+      "attributes": {
+        "organization": ["local-org"]
+      },
+      "groups": ["/baryon-admin"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "baryon-admin",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "member",
+      "enabled": true,
+      "email": "member@example.com",
+      "firstName": "Baryon",
+      "lastName": "Member",
+      "emailVerified": true,
+      "attributes": {
+        "organization": ["local-org"]
+      },
+      "groups": ["/baryon-member"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "baryon-member",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "legal",
+      "enabled": true,
+      "email": "legal@example.com",
+      "firstName": "Baryon",
+      "lastName": "Legal",
+      "emailVerified": true,
+      "attributes": {
+        "organization": ["local-org"]
+      },
+      "groups": ["/baryon-legal"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "baryon-legal",
+          "temporary": false
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "baryon-ax-web",
+      "name": "Baryon AX Web",
+      "description": "Browser login for the Baryon AX workspace (PKCE public client)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:3001/*",
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3001",
+        "http://localhost:5173"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3001/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "organization",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "organization",
+            "claim.name": "organization",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "baryon-ax-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "baryon-ax-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "baryon-ax-api",
+      "name": "Baryon AX API",
+      "description": "Audience for API access tokens",
+      "enabled": true,
+      "bearerOnly": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
+    }
+  ]
+}

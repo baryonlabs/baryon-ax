@@ -25,6 +25,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import __version__
+from .auth import OIDCConfig, OIDCAuthMiddleware
 from .ingest import Acl as IngestAcl
 from .ingest import REGISTRY, chunk_document, normalize_text
 from .ingest.adapters import register_default_adapters
@@ -1340,8 +1341,13 @@ def dashboard_links() -> dict:
 
 register_default_adapters()
 
+AUTH_CONFIG = OIDCConfig.from_env()
+AUTH_CONFIG.validate()
+
 app = FastAPI(title="Baryon AX API", version=__version__, lifespan=lifespan)
 origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3001,http://localhost:5173").split(",") if origin.strip()]
+# Auth runs inside CORS so 401 responses keep the browser-readable CORS headers.
+app.add_middleware(OIDCAuthMiddleware, config=AUTH_CONFIG)
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 policy = PolicyEngine()
 vector = VectorIndex()
@@ -1578,6 +1584,7 @@ def principal_from_headers(user_id: str | None, organization_id: str | None, rol
 async def health() -> dict:
     return {
         "status": "ok", "version": __version__,
+        "auth_mode": AUTH_CONFIG.mode,
         "model_adapter": "openai-compatible" if model_adapter.base_url else "demo-local",
         "vector_backend": "qdrant" if vector.enabled else "lexical",
         "audit_backend": "postgresql" if audit.db_ready else "jsonl",
@@ -2360,6 +2367,11 @@ async def admin_settings(
     return {
         "version": __version__,
         "organization_id": principal.organization_id,
+        "auth": {
+            "mode": AUTH_CONFIG.mode,
+            "issuer": AUTH_CONFIG.issuer or None,
+            "role_claim": AUTH_CONFIG.role_claim,
+        },
         "model": {
             "name": model_adapter.model,
             "adapter": "openai-compatible" if model_adapter.base_url else "demo-local",

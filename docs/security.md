@@ -2,7 +2,7 @@
 
 Before production use, implement these controls:
 
-- Replace development identity headers with validated OIDC/OAuth2 tokens and enforce RBAC at every API boundary.
+- Replace development identity headers with validated OIDC/OAuth2 tokens and enforce RBAC at every API boundary. The API now supports `AUTH_MODE=oidc` bearer-token validation (Keycloak reference profile); the browser PKCE login is still pending. See [auth-oidc.md](auth-oidc.md).
 - Store secrets in an approved secret manager; never place live API keys in Compose files, images, or browser code.
 - Encrypt transport, database, object store, and backup paths according to organizational policy.
 - Enforce tenant and document ACL filters in the retrieval query itself, not after results are returned. The Qdrant path applies organization/role/owner filters and rechecks them after retrieval.
