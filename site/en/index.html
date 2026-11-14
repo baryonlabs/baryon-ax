@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Baryon AX — On-premises AI Agents with Grounded RAG</title>
-<meta name="description" content="Baryon AX: MIT-licensed on-premises AI agent platform on Docker with grounded RAG citations, HWP/HWPX/PDF/Office parsing, org and role ACLs, and audit logs.">
+<title>Baryon AX — The on-prem AI that asks first | Tacit knowledge capture</title>
+<meta name="description" content="Baryon AX answers from your documents and, during low-usage hours, turns knowledge gaps into questions for your experts. Their answers become cited, auditable documents. MIT-licensed on-premises AI with HWP/PDF/Office parsing, role ACLs, and audit logs.">
 <link rel="canonical" href="https://baryon-ax.baryon.ai/en/">
 <link rel="alternate" hreflang="ko" href="https://baryon-ax.baryon.ai/">
 <link rel="alternate" hreflang="en" href="https://baryon-ax.baryon.ai/en/">
@@ -16,16 +16,16 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Baryon AX">
 <meta property="og:locale" content="en_US">
-<meta property="og:title" content="Baryon AX — On-premises AI Agents with Grounded RAG">
-<meta property="og:description" content="Baryon AX: MIT-licensed on-premises AI agent platform on Docker with grounded RAG citations, HWP/HWPX/PDF/Office parsing, org and role ACLs, and audit logs.">
+<meta property="og:title" content="Baryon AX — The on-prem AI that asks first | Tacit knowledge capture">
+<meta property="og:description" content="Baryon AX answers from your documents and, during low-usage hours, turns knowledge gaps into questions for your experts. Their answers become cited, auditable documents. MIT-licensed on-premises AI with HWP/PDF/Office parsing, role ACLs, and audit logs.">
 <meta property="og:url" content="https://baryon-ax.baryon.ai/en/">
 <meta property="og:image" content="https://baryon-ax.baryon.ai/assets/og-en.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Baryon AX — on-premises AI agents with grounded RAG and citations">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Baryon AX — On-premises AI Agents with Grounded RAG">
-<meta name="twitter:description" content="Baryon AX: MIT-licensed on-premises AI agent platform on Docker with grounded RAG citations, HWP/HWPX/PDF/Office parsing, org and role ACLs, and audit logs.">
+<meta name="twitter:title" content="Baryon AX — The on-prem AI that asks first | Tacit knowledge capture">
+<meta name="twitter:description" content="Baryon AX answers from your documents and, during low-usage hours, turns knowledge gaps into questions for your experts. Their answers become cited, auditable documents. MIT-licensed on-premises AI with HWP/PDF/Office parsing, role ACLs, and audit logs.">
 <meta name="twitter:image" content="https://baryon-ax.baryon.ai/assets/og-en.jpg">
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="../assets/style.css">
@@ -43,7 +43,7 @@
       "@type": "SoftwareApplication",
       "@id": "https://baryon-ax.baryon.ai/#app",
       "name": "Baryon AX",
-      "description": "On-premises AI agent platform for grounded chat, document knowledge, tacit-knowledge capture, and governance.",
+      "description": "On-premises AI agent platform that answers from documents and asks experts for the tacit knowledge they never wrote down during low-usage hours.",
       "url": "https://baryon-ax.baryon.ai/",
       "downloadUrl": "https://github.com/baryonlabs/baryon-ax",
       "applicationCategory": "BusinessApplication",
@@ -69,14 +69,14 @@
       "@type": "WebPage",
       "@id": "https://baryon-ax.baryon.ai/en/#page",
       "url": "https://baryon-ax.baryon.ai/en/",
-      "name": "Baryon AX — On-premises AI Agents with Grounded RAG",
+      "name": "Baryon AX — The on-prem AI that asks first | Tacit knowledge capture",
       "inLanguage": "en",
       "dateModified": "2026-11-13",
       "about": {
         "@id": "https://baryon-ax.baryon.ai/#app"
       },
       "primaryImageOfPage": "https://baryon-ax.baryon.ai/assets/og-en.jpg",
-      "description": "Baryon AX: MIT-licensed on-premises AI agent platform on Docker with grounded RAG citations, HWP/HWPX/PDF/Office parsing, org and role ACLs, and audit logs.",
+      "description": "Baryon AX answers from your documents and, during low-usage hours, turns knowledge gaps into questions for your experts. Their answers become cited, auditable documents. MIT-licensed on-premises AI with HWP/PDF/Office parsing, role ACLs, and audit logs.",
       "isPartOf": {
         "@id": "https://baryon-ax.baryon.ai/#website"
       }
@@ -173,7 +173,15 @@
           "name": "What is Baryon AX?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Baryon AX is an open-source, on-premises AI agent platform that runs grounded RAG over your own documents, tacit knowledge, and memory, then answers with source citations. It ships with organization and role access control, audit logging, and model-agnostic inference, so enterprise knowledge is retrieved, cited, and audited without leaving your network."
+            "text": "Baryon AX is an open-source, on-premises AI agent platform that answers from your documents and uses low-usage hours to turn knowledge gaps into questions for your experts. Answers carry source citations, published tacit knowledge grounds the next answer, and organization/role ACLs plus audit logging keep everything on your network."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does the AI ask experts first during idle time?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Questions that cannot be answered become knowledge gaps. During low-usage hours, the agent clusters those gaps and repeated questions into a queue for experts. Published answers follow the same document pipeline and become searchable, citable, auditable knowledge."
           }
         },
         {
@@ -296,8 +304,8 @@
     <div class="wrap hero-grid">
       <div>
         <p class="release"><a href="https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0">v0.6.0 first release</a> · One-line Mac mini start · MIT</p>
-        <h1>Your team's questions,<br><span>answered from your knowledge</span><br>on your premises.</h1>
-        <p class="lead">Baryon AX connects documents, expert know-how, and memory so employees can find <strong>answers with sources</strong> immediately. Data stays inside the company, and every answer is auditable.</p>
+        <h1>The knowledge your documents miss,<br><span>your AI asks for first.</span></h1>
+        <p class="lead">Baryon AX answers from documents and memory, then uses quiet hours to turn knowledge gaps into questions for your experts. Their answers become documents that ground the next employee. Data stays on-prem, and every answer is auditable.</p>
         <p class="sub">On-premises AI for DX and AX leaders. Start on a Mac mini without a GPU, then connect your own models when needed.</p>
         <div class="cta">
           <a class="btn btn-primary" href="#start">Start on a Mac mini</a>
@@ -305,7 +313,7 @@
         </div>
         <ul class="facts" aria-label="Adoption highlights">
           <li><b>1 line</b><span>Mac mini<br>start</span></li>
-          <li><b>No GPU</b><span>Demo model<br>included</span></li>
+          <li><b>Idle time</b><span>AI asks for<br>tacit knowledge</span></li>
           <li><b>Sources</b><span>Every answer<br>cited</span></li>
           <li><b>On-prem</b><span>Data stays<br>inside</span></li>
         </ul>
@@ -316,7 +324,7 @@
           <img src="../assets/screenshots/chat.webp" width="1200" height="974" loading="eager" fetchpriority="high" decoding="async" alt="Baryon AX grounded chat showing a cited answer with three numbered document sources and a per-step retrieval and generation trace.">
         </div>
         <div class="float-card float-citations"><strong>3 sources</strong><span>document · chunk citations</span></div>
-        <div class="float-card float-mascot"><img src="../assets/mascots/chat.svg" alt="" width="34" height="34"><span>Grounded<br>answers</span></div>
+        <div class="float-card float-mascot"><img src="../assets/mascots/tacit.svg" alt="" width="34" height="34"><span>Asks first<br>for tacit knowledge</span></div>
       </div>
     </div>
   </section>
@@ -666,9 +674,20 @@
   <section class="section tacit-section" id="tacit">
     <div class="wrap">
       <div class="section-head">
-        <p class="eyebrow">Tacit knowledge loop</p>
-        <h2>Why tacit knowledge capture works.</h2>
-        <p>The AI does not invent the answer. It surfaces the judgment your experts already hold and turns it into a <strong>searchable, citable, auditable document</strong>. The key is that published tacit knowledge follows the <strong>same pipeline</strong> as any uploaded document.</p>
+        <p class="eyebrow">Proactive tacit knowledge</p>
+        <h2>When no one is asking,<br>the agent asks for you.</h2>
+        <p>Questions that cannot be answered become <strong>knowledge gaps</strong>. During low-usage hours, the agent clusters those gaps and repeated questions into a queue for your experts. Published answers follow the <strong>same pipeline</strong> as any document, so they are searchable, citable, and auditable.</p>
+      </div>
+
+      <div class="loop-key">
+        <div>
+          <p class="eyebrow">Idle-time agent</p>
+          <h3>Knowledge grows while the office is quiet.</h3>
+          <p>The agent reviews knowledge gaps and repeated questions during quiet hours and prepares a question queue for judgment criteria, exceptions, and local vocabulary. Experts start the day with questions worth answering — and their answers ground the next employee.</p>
+        </div>
+        <div class="pipeline" aria-label="Idle-time tacit knowledge flow">
+          <span>detect idle</span><span>cluster gaps</span><span>question queue</span><span>notify expert</span><span>publish answer</span><span>ground the next answer</span>
+        </div>
       </div>
 
       <ol class="loop-grid">
@@ -811,7 +830,8 @@ docker compose down
       </div>
       <div class="faq">
         <h3>Frequently asked questions</h3>
-        <details><summary>What is Baryon AX?</summary><p>Baryon AX is an open-source, on-premises AI agent platform that runs grounded RAG over your own documents, tacit knowledge, and memory, then answers with source citations. It ships with organization and role access control, audit logging, and model-agnostic inference, so enterprise knowledge is retrieved, cited, and audited without leaving your network.</p></details>
+        <details><summary>What is Baryon AX?</summary><p>Baryon AX is an open-source, on-premises AI agent platform that answers from your documents and uses low-usage hours to turn knowledge gaps into questions for your experts. Answers carry source citations, published tacit knowledge grounds the next answer, and organization/role ACLs plus audit logging keep everything on your network.</p></details>
+        <details><summary>Does the AI ask experts first during idle time?</summary><p>Yes. Questions that cannot be answered become knowledge gaps. During low-usage hours, the agent clusters those gaps and repeated questions into a queue for experts, with templates for judgment criteria, exceptions, and local vocabulary. Published answers follow the same pipeline as any document and become searchable, citable, auditable knowledge.</p></details>
         <details><summary>Can I start on a Mac mini?</summary><p>Yes. Install Docker Desktop on an Apple Silicon Mac mini, then paste <code>git clone https://github.com/baryonlabs/baryon-ax.git &amp;&amp; cd baryon-ax &amp;&amp; cp .env.example .env &amp;&amp; docker compose up --build</code> into Terminal. The demo model runs without a GPU or API key; connect an on-prem GPU or any OpenAI-compatible model when needed. If installation is blocked, <a href="#support">technical support</a> can help.</p></details>
         <details><summary>What are the minimum hardware requirements?</summary><p>The Basic Core runs on 2 vCPU, 4GB RAM, and 10GB disk with the demo model. The full stack (Qdrant, PostgreSQL, Redis, Langfuse, Mem0) recommends 8 vCPU, 16GB RAM (32GB recommended), and 100GB disk. GPU inference starts with an RTX 4090 24GB for a 7B model. See <a href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md">hardware requirements</a>.</p></details>
         <details><summary>Does it work in an air-gapped network?</summary><p>Yes. Baryon AX runs fully offline with no outbound calls required. Mirror the Docker images, model weights, and packages, then keep the model, vector store, and document stores inside your network. See the <a href="https://github.com/baryonlabs/baryon-ax/blob/main/docs/open-source.md">open-source component and license inventory</a> for what to mirror.</p></details>
