@@ -93,15 +93,19 @@ curl -s http://127.0.0.1:8000/v1/mcp/status | jq
 ```bash
 cp .env.mcp.example .env.mcp
 # .env.mcp의 change-me 값을 실제 값으로 교체
+docker volume create baryon-ax-mcp_mcp-data
+docker run --rm -v baryon-ax-mcp_mcp-data:/data alpine chown -R 10001:10001 /data
 docker compose --env-file .env.mcp -f docker-compose.mcp.yml up -d
 ```
 
 | 항목 | 값 |
 |---|---|
-| ContextForge Admin UI | http://127.0.0.1:4444/admin |
+| ContextForge Admin UI | http://127.0.0.1:4444/admin/login |
 | API | http://127.0.0.1:4444 |
 | 저장소 | `mcp-data` 볼륨의 SQLite |
 | 기본 바인딩 | `127.0.0.1`만. API 컨테이너에서 접근하려면 `MCP_GATEWAY_BIND=172.17.0.1` |
+| 볼륨 소유권 | `/data`를 `10001:10001`로 chown해야 SQLite가 생성됨 |
+| 워커 | SQLite 개발 모드는 `GUNICORN_WORKERS=1` 권장 |
 
 API가 게이트웨이를 바라보게 하려면 `.env`에 다음을 추가합니다.
 
