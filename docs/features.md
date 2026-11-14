@@ -241,6 +241,11 @@
 | `GET` | `/v1/audit-events` | 관리자 | 조직 감사 이벤트 |
 | `POST` | `/v1/admin/reindex` | 관리자 | Qdrant 벡터 재색인 |
 | `GET` | `/v1/admin/settings` | 관리자 | 런타임·정책·저장소·통합·카운트 |
+| `GET` | `/v1/connectors` | 멤버·관리자 | 큐레이션 SaaS 커넥터 카탈로그 |
+| `GET` | `/v1/connectors/{id}` | 멤버·관리자 | 커넥터 상세와 도구 목록 |
+| `GET` | `/v1/tools` | 멤버·관리자 | 도구 목록·필터 |
+| `GET` | `/v1/tools/search` | 멤버·관리자 | 의도 기반 도구 검색 |
+| `GET` | `/v1/mcp/status` | 멤버·관리자 | 게이트웨이 설정·카탈로그 상태 |
 
 ### 요청 옵션 (`POST /v1/chat/completions`)
 

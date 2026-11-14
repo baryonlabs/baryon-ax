@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 
 from . import __version__
 from .auth import OIDCConfig, OIDCAuthMiddleware
+from .connectors import CONNECTOR_BY_ID, CONNECTORS, TOOLS, connector_payload, get_connector, get_tool, search_tools, tool_payload
 from .ingest import Acl as IngestAcl
 from .ingest import REGISTRY, chunk_document, normalize_text
 from .ingest.adapters import register_default_adapters
@@ -1599,6 +1600,121 @@ async def health() -> dict:
 async def open_source() -> dict:
     """License inventory for the Settings > Open Source screen."""
     return open_source_payload()
+
+
+@app.get("/v1/connectors")
+async def list_connectors(
+    q: str = Query("", max_length=120),
+    category: str | None = Query(None, max_length=60),
+    auth: str | None = Query(None, max_length=40),
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    """Curated SaaS connector catalog (metadata only)."""
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    query = q.strip().lower()
+    items = []
+    for connector in CONNECTORS:
+        if category and connector.category != category:
+            continue
+        if auth and connector.auth != auth:
+            continue
+        if query and query not in " ".join([connector.id, connector.name, *connector.aliases]).lower():
+            continue
+        items.append(connector_payload(connector))
+    return {
+        "items": items,
+        "total": len(items),
+        "categories": sorted({connector.category for connector in CONNECTORS}),
+        "auth_types": sorted({connector.auth for connector in CONNECTORS}),
+        "organization_id": principal.organization_id,
+    }
+
+
+@app.get("/v1/connectors/{connector_id}")
+async def connector_detail(
+    connector_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    connector = get_connector(connector_id)
+    if connector is None:
+        raise HTTPException(404, "Connector not found")
+    return {
+        **connector_payload(connector),
+        "tools": [tool_payload(tool, connector, principal.roles) for tool in connector.actions],
+    }
+
+
+@app.get("/v1/tools/search")
+async def search_connector_tools(
+    q: str = Query(..., min_length=1, max_length=120),
+    limit: int = Query(10, ge=1, le=50),
+    connector_id: str | None = Query(None, max_length=80),
+    risk: str | None = Query(None, pattern="^(read|write)$"),
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    """Lexical tool search; the interface is stable for the Qdrant phase."""
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    matches = search_tools(q, limit=limit, connector_id=connector_id, risk=risk)
+    return {
+        "query": q,
+        "items": [tool_payload(match.tool, match.connector, principal.roles) for match in matches],
+        "total": len(matches),
+    }
+
+
+@app.get("/v1/tools")
+async def list_connector_tools(
+    connector_id: str | None = Query(None, max_length=80),
+    risk: str | None = Query(None, pattern="^(read|write)$"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    items = []
+    for tool in TOOLS:
+        if connector_id and tool.connector_id != connector_id:
+            continue
+        if risk and tool.risk != risk:
+            continue
+        items.append(tool)
+    page = items[offset:offset + limit]
+    return {
+        "items": [tool_payload(tool, CONNECTOR_BY_ID[tool.connector_id], principal.roles) for tool in page],
+        "total": len(items),
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@app.get("/v1/tools/{tool_id}")
+async def connector_tool_detail(
+    tool_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    tool = get_tool(tool_id)
+    if tool is None:
+        raise HTTPException(404, "Tool not found")
+    connector = CONNECTOR_BY_ID[tool.connector_id]
+    return tool_payload(tool, connector, principal.roles)
+
+
+@app.get("/v1/mcp/status")
+async def mcp_status(
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    return {
+        "organization_id": principal.organization_id,
+        "gateway_url_configured": bool(os.getenv("MCP_GATEWAY_URL", "").strip()),
+        "connectors": len(CONNECTORS),
+        "tools": len(TOOLS),
+        "read_tools": sum(1 for tool in TOOLS if tool.risk == "read"),
+        "write_tools": sum(1 for tool in TOOLS if tool.risk == "write"),
+        "execution": "not_configured",
+    }
 
 
 @app.get("/v1/models")

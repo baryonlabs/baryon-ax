@@ -1,0 +1,25 @@
+name: baryon-ax-mcp
+
+# Optional MCP gateway profile. The API catalog works without this service.
+# Pin MCP_GATEWAY_IMAGE to a digest in production.
+services:
+  contextforge:
+    image: ${MCP_GATEWAY_IMAGE:-ghcr.io/ibm/mcp-context-forge:latest}
+    environment:
+      JWT_SECRET_KEY: ${MCP_GATEWAY_JWT_SECRET:?set MCP_GATEWAY_JWT_SECRET in .env.mcp}
+      AUTH_ENCRYPTION_SECRET: ${MCP_GATEWAY_ENCRYPTION_SECRET:?set MCP_GATEWAY_ENCRYPTION_SECRET in .env.mcp}
+      PLATFORM_ADMIN_EMAIL: ${MCP_GATEWAY_ADMIN_EMAIL:-admin@example.com}
+      PLATFORM_ADMIN_PASSWORD: ${MCP_GATEWAY_ADMIN_PASSWORD:?set MCP_GATEWAY_ADMIN_PASSWORD in .env.mcp}
+      HOST: 0.0.0.0
+      DATABASE_URL: sqlite:////data/mcp.db
+      MCPGATEWAY_UI_ENABLED: "true"
+      MCPGATEWAY_ADMIN_API_ENABLED: "true"
+      SECURE_COOKIES: "false"
+    ports:
+      - "127.0.0.1:${MCP_GATEWAY_PORT:-4444}:4444"
+    volumes:
+      - mcp-data:/data
+    restart: unless-stopped
+
+volumes:
+  mcp-data:
