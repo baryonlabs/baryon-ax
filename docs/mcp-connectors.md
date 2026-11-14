@@ -100,7 +100,7 @@ docker compose --env-file .env.mcp -f docker-compose.mcp.yml up -d
 
 | 항목 | 값 |
 |---|---|
-| ContextForge Admin UI | http://127.0.0.1:4444/admin |
+| ContextForge Admin UI | http://127.0.0.1:4444/admin/login |
 | API | http://127.0.0.1:4444 |
 | 저장소 | `mcp-data` 볼륨의 SQLite |
 | 기본 바인딩 | `127.0.0.1`만. API 컨테이너에서 접근하려면 `MCP_GATEWAY_BIND=172.17.0.1` |
