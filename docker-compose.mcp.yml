@@ -16,7 +16,7 @@ services:
       MCPGATEWAY_ADMIN_API_ENABLED: "true"
       SECURE_COOKIES: "false"
     ports:
-      - "127.0.0.1:${MCP_GATEWAY_PORT:-4444}:4444"
+      - "${MCP_GATEWAY_BIND:-127.0.0.1}:${MCP_GATEWAY_PORT:-4444}:4444"
     volumes:
       - mcp-data:/data
     restart: unless-stopped
