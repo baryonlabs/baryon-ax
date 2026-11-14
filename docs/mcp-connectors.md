@@ -40,7 +40,8 @@ ContextForge (MCP Gateway, optional)
 | 도구 검색 | ✅ | 어휘 기반 `GET /v1/tools/search` (한/영 alias 지원) |
 | 정책 판정 | ✅ | 읽기 허용, 쓰기는 관리자 또는 승인 필요 표시 |
 | ContextForge 프로필 | ✅ | `docker-compose.mcp.yml` (선택 실행) |
-| 실행/OAuth | ⛔ | 2단계 |
+| MCP 실행 프록시 | ✅ | `POST /v1/tools/{id}/call` (게이트웨이 토큰 필요) |
+| OAuth 볼트 | ⛔ | 2단계 |
 | Qdrant 임베딩 검색 | ⛔ | 2단계 (인터페이스는 동일) |
 | OpenAPI 생성기 | ⛔ | 2단계 |
 
@@ -52,6 +53,10 @@ curl -s 'http://127.0.0.1:8000/v1/tools/search?q=slack%20message&limit=5' | jq
 curl -s 'http://127.0.0.1:8000/v1/tools/search?q=슬랙%20메시지' | jq
 curl -s http://127.0.0.1:8000/v1/connectors/slack | jq
 curl -s http://127.0.0.1:8000/v1/mcp/status | jq
+
+# 실제 MCP 호출 (ContextForge에 baryon_probe 도구가 등록되어 있어야 함)
+curl -s -X POST http://127.0.0.1:8000/v1/tools/baryon-ax.probe/call \
+  -H "X-Roles: admin" -H "Content-Type: application/json" -d '{}' | jq
 ```
 
 `AUTH_MODE=oidc`에서는 `Authorization: Bearer <token>`이 필요합니다. `AUTH_MODE=dev`에서는 기존 `X-Roles` 헤더로 정책을 확인할 수 있습니다.
@@ -118,6 +123,31 @@ MCP_GATEWAY_URL=http://127.0.0.1:4444
 
 > 운영에서는 `MCP_GATEWAY_IMAGE`를 digest로 고정하고, `start` 모드·TLS·외부 DB·SSO를 사용하세요. `latest` 태그는 개발용입니다.
 
+### 테스트 도구 등록
+
+ContextForge는 초기 상태에서 도구가 0개입니다. Baryon AX의 `baryon-ax.probe` 도구가 호출할 `baryon_probe` REST 도구를 등록합니다.
+
+```bash
+TOKEN=$(docker exec baryon-ax-mcp-contextforge-1 sh -c \
+  'python -m mcpgateway.utils.create_jwt_token --username admin@baryon.ai --exp 525600 --secret "$JWT_SECRET_KEY"')
+
+curl -s -X POST http://127.0.0.1:4444/v1/tools \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"tool":{"name":"baryon_probe","displayName":"Baryon AX health",
+       "description":"Baryon AX API health",
+       "url":"http://127.0.0.1:4444/health",
+       "integration_type":"REST","request_type":"GET",
+       "inputSchema":{"type":"object","properties":{}}}}' | jq
+```
+
+API에 서비스 토큰을 설정합니다.
+
+```env
+MCP_GATEWAY_TOKEN=<위에서 생성한 TOKEN>
+```
+
+토큰은 만료되므로 운영에서는 서비스 계정·시크릿 매니저로 교체하세요.
+
 ---
 
 ## 5. 라이선스
@@ -141,7 +171,7 @@ MCP_GATEWAY_URL=http://127.0.0.1:4444
 ## 6. 2단계 로드맵
 
 1. **OAuth 볼트**: 사용자·조직별 연결, 토큰 암호화, 갱신, 연결 해제
-2. **실행 프록시**: `POST /v1/tools/{id}/call` → ContextForge/MCP, 쓰기 승인 게이트
+2. **실행 프록시**: ✅ `POST /v1/tools/{id}/call` → ContextForge/MCP (쓰기 승인은 후속)
 3. **Qdrant 도구 검색**: 도구 설명 임베딩, top-k + LLM shortlist
 4. **OpenAPI → MCP**: 스펙에서 도구 스키마 생성·검증·버전 관리
 5. **Top 30 연결 검증**: 인증·권한·rate limit·오류 처리

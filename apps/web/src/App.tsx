@@ -64,6 +64,7 @@ const CONNECTOR_CATEGORY_LABELS: Record<string, { ko: string; en: string }> = {
   hcm: { ko: "인사", en: "HCM" },
   design: { ko: "디자인", en: "Design" },
   database: { ko: "데이터베이스", en: "Database" },
+  system: { ko: "시스템", en: "System" },
 };
 type CitedChunk = { number: number; content: string; heading_path?: string | null; page?: number | null; kind?: string | null };
 type DocumentDetail = {

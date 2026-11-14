@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 
 from . import __version__
 from .auth import OIDCConfig, OIDCAuthMiddleware
-from .connectors import CONNECTOR_BY_ID, CONNECTORS, TOOLS, connector_payload, get_connector, get_tool, search_tools, tool_payload
+from .connectors import CONNECTOR_BY_ID, CONNECTORS, TOOLS, connector_payload, decide_tool, get_connector, get_tool, search_tools, tool_payload
 from .ingest import Acl as IngestAcl
 from .ingest import REGISTRY, chunk_document, normalize_text
 from .ingest.adapters import register_default_adapters
@@ -35,6 +35,7 @@ from .ingest.parsers import ParseError
 from .ingest.pipeline import PipelineConfig, PermanentError, run_pipeline
 from .feedback import FeedbackStore
 from .gaps import GapStore, PackStore, build_pack, cluster_gaps, verify_pack
+from .mcp import MCPClient, MCPGatewayError
 from .open_source import open_source_payload
 from .tacit import QUESTION_TEMPLATES, TacitStore, suggest_questions
 
@@ -117,6 +118,10 @@ class FeedbackCreate(BaseModel):
     answer_excerpt: str = Field(default="", max_length=500)
     citations: int = Field(default=0, ge=0, le=100)
     model: str = Field(default="", max_length=120)
+
+
+class ToolCallRequest(BaseModel):
+    arguments: dict[str, object] = Field(default_factory=dict)
 
 
 class TacitEntryCreate(BaseModel):
@@ -1701,11 +1706,54 @@ async def connector_tool_detail(
     return tool_payload(tool, connector, principal.roles)
 
 
+@app.post("/v1/tools/{tool_id}/call")
+async def call_connector_tool(
+    tool_id: str,
+    request: ToolCallRequest | None = None,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    """Call a registered MCP tool through ContextForge.
+
+    Phase 1 supports read tools and admin write tools. Member write tools are
+    blocked until the approval workflow exists. The gateway token is a service
+    token and is never exposed to the client.
+    """
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    tool = get_tool(tool_id)
+    if tool is None:
+        raise HTTPException(404, "Tool not found")
+    decision = decide_tool(tool, principal.roles)
+    if not decision.allowed:
+        raise HTTPException(403, decision.reason)
+    if decision.requires_approval:
+        raise HTTPException(403, "Write tool requires administrator approval")
+
+    gateway_url = os.getenv("MCP_GATEWAY_URL", "").strip()
+    gateway_token = os.getenv("MCP_GATEWAY_TOKEN", "").strip()
+    if not gateway_url or not gateway_token:
+        raise HTTPException(503, "MCP gateway is not configured")
+
+    gateway_tool = tool.gateway_tool or tool.id
+    trace_id = str(uuid.uuid4())
+    try:
+        result = await MCPClient(gateway_url, gateway_token).call_tool(
+            gateway_tool,
+            request.arguments if request else {},
+        )
+    except MCPGatewayError as error:
+        audit.emit("tool.failed", principal, trace_id, tool=tool.id, gateway_tool=gateway_tool, error=type(error).__name__)
+        raise HTTPException(502, f"MCP tool call failed: {error}") from error
+
+    audit.emit("tool.called", principal, trace_id, tool=tool.id, gateway_tool=gateway_tool, risk=tool.risk)
+    return {"tool": tool.id, "gateway_tool": gateway_tool, "result": result, "trace_id": trace_id}
+
+
 @app.get("/v1/mcp/status")
 async def mcp_status(
     x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
 ) -> dict:
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    gateway_ready = bool(os.getenv("MCP_GATEWAY_URL", "").strip() and os.getenv("MCP_GATEWAY_TOKEN", "").strip())
     return {
         "organization_id": principal.organization_id,
         "gateway_url_configured": bool(os.getenv("MCP_GATEWAY_URL", "").strip()),
@@ -1713,7 +1761,7 @@ async def mcp_status(
         "tools": len(TOOLS),
         "read_tools": sum(1 for tool in TOOLS if tool.risk == "read"),
         "write_tools": sum(1 for tool in TOOLS if tool.risk == "write"),
-        "execution": "not_configured",
+        "execution": "ready" if gateway_ready else "not_configured",
     }
 
 
