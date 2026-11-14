@@ -51,6 +51,7 @@ def _connector(
     docs_url: str,
     aliases: tuple[str, ...],
     actions: Iterable[tuple[str, str, str, tuple[str, ...]]],
+    roles: tuple[str, ...] = (),
 ) -> Connector:
     tools = tuple(
         Tool(
@@ -60,6 +61,7 @@ def _connector(
             description=description,
             risk=risk,
             tags=tags,
+            allowed_roles=roles,
         )
         for action, description, risk, tags in actions
     )
@@ -183,6 +185,7 @@ _CONNECTORS: tuple[Connector, ...] = (
             ("query_business_partners", "Query business partners", READ, ("erp", "business-partner", "query")),
             ("create_sales_order", "Create a sales order", WRITE, ("erp", "sales-order", "create")),
         ),
+        roles=("admin",),
     ),
     _connector(
         "oracle-fusion", "Oracle Fusion", "erp", "oauth2", "https://docs.oracle.com/en/cloud/saas/", ("오라클", "Oracle"),
@@ -190,6 +193,7 @@ _CONNECTORS: tuple[Connector, ...] = (
             ("query_suppliers", "Query suppliers", READ, ("erp", "suppliers", "query")),
             ("create_requisition", "Create a purchase requisition", WRITE, ("erp", "purchase", "create")),
         ),
+        roles=("admin",),
     ),
     _connector(
         "workday", "Workday", "hcm", "oauth2", "https://community.workday.com/api", ("워크데이",),
@@ -197,6 +201,7 @@ _CONNECTORS: tuple[Connector, ...] = (
             ("search_workers", "Search worker records", READ, ("hcm", "workers", "search")),
             ("create_time_off_request", "Create a time-off request", WRITE, ("hcm", "time-off", "create")),
         ),
+        roles=("admin",),
     ),
     _connector(
         "sharepoint", "SharePoint", "storage", "oauth2",
