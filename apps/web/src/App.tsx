@@ -6,7 +6,7 @@ import remarkGfm from "remark-gfm";
 
 export type Locale = "ko" | "en";
 type Role = "member" | "admin";
-type View = "chat" | "knowledge" | "memory" | "governance" | "gaps" | "tacit" | "settings";
+type View = "chat" | "knowledge" | "memory" | "governance" | "gaps" | "tacit" | "settings" | "connectors";
 type TraceStep = { step: string; status: string; ms: number; detail?: string };
 type ChatTrace = { trace_id?: string; steps: TraceStep[]; total_ms?: number | null; memory_count?: number; retrieval_count?: number };
 type ChatMessage = { role: "user" | "assistant"; content: string; citations?: Citation[]; trace?: ChatTrace };
@@ -20,6 +20,50 @@ const MENU_MASCOTS: Record<View, { src: string; tagline: Record<Locale, string> 
   governance: { src: "/mascots/governance.svg", tagline: { ko: "모든 변화를 기록", en: "Every change, recorded" } },
   gaps: { src: "/mascots/gaps.svg", tagline: { ko: "부족한 지식을 찾아서", en: "Find what is missing" } },
   settings: { src: "/mascots/settings.svg", tagline: { ko: "시스템을 한눈에", en: "The system at a glance" } },
+  connectors: { src: "/mascots/gaps.svg", tagline: { ko: "SaaS 도구를 한곳에", en: "SaaS tools in one place" } },
+};
+
+const CONNECTOR_COPY = {
+  ko: {
+    nav: "연결", title: "MCP 커넥터", body: "SaaS 커넥터와 사용 가능한 도구를 확인합니다. 관리자는 전체 카탈로그를, 멤버는 권한 내 도구를 봅니다.",
+    adminView: "관리자 전체 보기", memberView: "내가 사용 가능한 도구", allConnectors: "전체 커넥터", availableConnectors: "사용 가능 커넥터",
+    allTools: "전체 도구", availableTools: "사용 가능 도구", readTools: "읽기 도구", writeTools: "쓰기 도구",
+    gatewayConnected: "MCP 게이트웨이 연결됨", gatewayDisconnected: "MCP 게이트웨이 미연결",
+    gatewayNotice: "1단계는 카탈로그·권한 확인입니다. 실제 SaaS 연결과 실행은 OAuth 볼트·게이트웨이 단계에서 활성화됩니다.",
+    search: "커넥터 또는 도구 검색", allCategories: "전체 분야", allRisks: "전체 위험도", refresh: "새로고침",
+    failed: "커넥터 목록을 불러올 수 없습니다.", empty: "조건에 맞는 커넥터가 없습니다.", emptyBody: "검색어나 필터를 바꿔보세요.",
+    toolsLabel: "도구", approval: "승인 필요", adminNote: "관리자: 전체 커넥터와 모든 도구를 볼 수 있습니다.",
+    memberNote: "멤버: 권한 내 커넥터와 도구만 표시됩니다. 쓰기 도구는 승인 후 사용할 수 있고, ERP·HCM은 관리자 전용입니다.", docs: "문서 열기",
+    loading: "커넥터를 불러오는 중…", catalogStatus: "카탈로그",
+  },
+  en: {
+    nav: "Connectors", title: "MCP connectors", body: "Browse SaaS connectors and the tools available to you. Admins see the full catalog; members see what their role allows.",
+    adminView: "Admin full catalog", memberView: "Tools available to me", allConnectors: "All connectors", availableConnectors: "Available connectors",
+    allTools: "All tools", availableTools: "Available tools", readTools: "Read tools", writeTools: "Write tools",
+    gatewayConnected: "MCP gateway connected", gatewayDisconnected: "MCP gateway not configured",
+    gatewayNotice: "Phase 1 is catalog and permission inspection. Real SaaS connections and execution arrive with the OAuth vault and gateway phase.",
+    search: "Search connectors or tools", allCategories: "All categories", allRisks: "All risk levels", refresh: "Refresh",
+    failed: "Could not load connectors.", empty: "No connectors match these filters.", emptyBody: "Try a different search or filter.",
+    toolsLabel: "tools", approval: "Approval required", adminNote: "Admin: the full connector catalog and every tool are visible.",
+    memberNote: "Member: only connectors and tools allowed for your role are shown. Write tools require approval; ERP and HCM are admin-only.", docs: "Open docs",
+    loading: "Loading connectors…", catalogStatus: "Catalog",
+  },
+} as const;
+
+const CONNECTOR_CATEGORY_LABELS: Record<string, { ko: string; en: string }> = {
+  communication: { ko: "커뮤니케이션", en: "Communication" },
+  productivity: { ko: "생산성", en: "Productivity" },
+  storage: { ko: "스토리지", en: "Storage" },
+  knowledge: { ko: "지식", en: "Knowledge" },
+  "project-management": { ko: "프로젝트", en: "Project management" },
+  engineering: { ko: "개발", en: "Engineering" },
+  crm: { ko: "CRM", en: "CRM" },
+  support: { ko: "고객지원", en: "Support" },
+  itsm: { ko: "ITSM", en: "ITSM" },
+  erp: { ko: "ERP", en: "ERP" },
+  hcm: { ko: "인사", en: "HCM" },
+  design: { ko: "디자인", en: "Design" },
+  database: { ko: "데이터베이스", en: "Database" },
 };
 type CitedChunk = { number: number; content: string; heading_path?: string | null; page?: number | null; kind?: string | null };
 type DocumentDetail = {
@@ -104,6 +148,19 @@ type AdminSettings = {
   counts: { documents: number; audit_events: number };
   system: SystemInfo;
   links: Record<string, string>;
+};
+type Connector = {
+  id: string; name: string; category: string; auth: string; docs_url: string;
+  aliases: string[]; status: string; tool_count: number;
+};
+type ConnectorTool = {
+  id: string; name: string; connector_id: string; connector_name: string; category: string;
+  description: string; risk: "read" | "write"; tags: string[]; auth: string;
+  decision: { allowed: boolean; requires_approval: boolean; reason: string };
+};
+type McpStatus = {
+  organization_id: string; gateway_url_configured: boolean; connectors: number;
+  tools: number; read_tools: number; write_tools: number; execution: string;
 };
 const API = "/api";
 const CURRENT_USER = "local-user";
@@ -434,6 +491,14 @@ export default function App() {
   const [auditError, setAuditError] = useState<"forbidden" | "failed" | null>(null);
   const [settings, setSettings] = useState<AdminSettings | null>(null);
   const [settingsError, setSettingsError] = useState(false);
+  const [connectors, setConnectors] = useState<Connector[]>([]);
+  const [connectorTools, setConnectorTools] = useState<ConnectorTool[]>([]);
+  const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
+  const [connectorQuery, setConnectorQuery] = useState("");
+  const [connectorCategory, setConnectorCategory] = useState("");
+  const [connectorRisk, setConnectorRisk] = useState("");
+  const [connectorError, setConnectorError] = useState(false);
+  const [connectorBusy, setConnectorBusy] = useState(false);
   const [reindexBusy, setReindexBusy] = useState(false);
   const [reindexMessage, setReindexMessage] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -734,9 +799,32 @@ export default function App() {
     }
   }, []);
 
+  const loadConnectors = useCallback(async () => {
+    setConnectorBusy(true);
+    try {
+      const [connectorResponse, toolResponse, statusResponse] = await Promise.all([
+        fetch(`${API}/v1/connectors`, { headers: identity(role) }),
+        fetch(`${API}/v1/tools?limit=200`, { headers: identity(role) }),
+        fetch(`${API}/v1/mcp/status`, { headers: identity(role) }),
+      ]);
+      if (!connectorResponse.ok || !toolResponse.ok) throw new Error("Connector load failed");
+      const connectorData = await connectorResponse.json();
+      const toolData = await toolResponse.json();
+      setConnectors(connectorData.items || []);
+      setConnectorTools(toolData.items || []);
+      setMcpStatus(statusResponse.ok ? await statusResponse.json() : null);
+      setConnectorError(false);
+    } catch {
+      setConnectorError(true);
+    } finally {
+      setConnectorBusy(false);
+    }
+  }, [role]);
+
   useEffect(() => {
     if (view === "settings" && settingsTab === "open-source") void loadOpenSource();
   }, [view, settingsTab, loadOpenSource]);
+  useEffect(() => { if (view === "connectors") void loadConnectors(); }, [view, loadConnectors]);
 
   useEffect(() => { if (view === "knowledge") void loadKnowledge(); }, [view, loadKnowledge]);
   useEffect(() => { if (view === "tacit") void loadTacit(); }, [view, loadTacit]);
@@ -1106,6 +1194,7 @@ export default function App() {
     if (view === "gaps") return t.gaps;
     if (view === "tacit") return t.tacit;
     if (view === "settings") return t.adminSettings;
+    if (view === "connectors") return CONNECTOR_COPY[locale].title;
     return t.groundedChat;
   }
 
@@ -1161,6 +1250,27 @@ export default function App() {
     return t.osStatusTest;
   }
 
+  const connectorCopy = CONNECTOR_COPY[locale];
+  const roleConnectorTools = connectorTools.filter(tool => role === "admin" || tool.decision.allowed);
+  const roleConnectors = connectors.filter(connector => role === "admin" || roleConnectorTools.some(tool => tool.connector_id === connector.id));
+  const connectorReadCount = roleConnectorTools.filter(tool => tool.risk === "read").length;
+  const connectorWriteCount = roleConnectorTools.filter(tool => tool.risk === "write").length;
+  const connectorQueryValue = connectorQuery.trim().toLowerCase();
+  const filteredConnectors = roleConnectors
+    .map(connector => ({
+      ...connector,
+      tools: roleConnectorTools.filter(tool => tool.connector_id === connector.id && (!connectorRisk || tool.risk === connectorRisk)),
+    }))
+    .filter(connector => role === "admin" ? (connector.tools.length > 0 || !connectorRisk) : connector.tools.length > 0)
+    .filter(connector => !connectorCategory || connector.category === connectorCategory)
+    .filter(connector => !connectorQueryValue || [
+      connector.name,
+      connector.id,
+      ...connector.aliases,
+      ...connector.tools.map(tool => `${tool.name} ${tool.description}`),
+    ].join(" ").toLowerCase().includes(connectorQueryValue));
+  const connectorCategories = Array.from(new Set(filteredConnectors.map(connector => connector.category))).sort();
+
   return <main className={`shell theme-${view} ${role === "admin" ? "admin" : ""}`}>
     <a className="skip-link" href="#main-content">{t.skipToContent}</a>
     <button className={`sidebar-backdrop ${sidebarOpen ? "open" : ""}`} aria-label={t.closeMenu} onClick={() => setSidebarOpen(false)}/>
@@ -1175,6 +1285,7 @@ export default function App() {
         <button className={view === "tacit" ? "active" : ""} onClick={() => setView("tacit")}><img className="nav-mascot" src={MENU_MASCOTS.tacit.src} alt=""/>{t.tacit}</button>
         <button className={view === "memory" ? "active" : ""} onClick={() => setView("memory")}><img className="nav-mascot" src={MENU_MASCOTS.memory.src} alt=""/>{t.memory}</button>
         <button className={view === "governance" ? "active" : ""} onClick={() => setView("governance")}><img className="nav-mascot" src={MENU_MASCOTS.governance.src} alt=""/>{t.governance}</button>
+        <button className={view === "connectors" ? "active" : ""} onClick={() => setView("connectors")}><img className="nav-mascot" src={MENU_MASCOTS.connectors.src} alt=""/>{CONNECTOR_COPY[locale].nav}</button>
         {role === "admin" && <button className={view === "gaps" ? "active" : ""} onClick={() => setView("gaps")}><img className="nav-mascot" src={MENU_MASCOTS.gaps.src} alt=""/>{t.gaps}</button>}
         {role === "admin" && <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><img className="nav-mascot" src={MENU_MASCOTS.settings.src} alt=""/>{t.settings}</button>}
       </nav>
@@ -1514,6 +1625,75 @@ export default function App() {
           </div>}
         </>}
       </div>}
+      {view === "connectors" && <div className="knowledge">
+        <div className="knowledge-top">
+          <div><h2>{connectorCopy.title}</h2><p>{connectorCopy.body}</p></div>
+          <div className="setting-actions">
+            <button className="primary" disabled={connectorBusy} onClick={() => void loadConnectors()}><RefreshCw size={16}/>{connectorCopy.refresh}</button>
+          </div>
+        </div>
+        <div className="settings-grid">
+          <section className="setting-card">
+            <h3><Network size={15}/>{role === "admin" ? connectorCopy.adminView : connectorCopy.memberView}</h3>
+            <div className="metric-head"><strong>{roleConnectors.length}</strong><span>{role === "admin" ? connectorCopy.allConnectors : connectorCopy.availableConnectors}</span></div>
+            <p className="muted">{role === "admin" ? connectorCopy.adminNote : connectorCopy.memberNote}</p>
+          </section>
+          <section className="setting-card">
+            <h3><Boxes size={15}/>{role === "admin" ? connectorCopy.allTools : connectorCopy.availableTools}</h3>
+            <div className="metric-head"><strong>{roleConnectorTools.length}</strong><span>{connectorCopy.toolsLabel}</span></div>
+            <dl>
+              <div><dt>{connectorCopy.readTools}</dt><dd>{connectorReadCount}</dd></div>
+              <div><dt>{connectorCopy.writeTools}</dt><dd>{connectorWriteCount}</dd></div>
+            </dl>
+          </section>
+          <section className="setting-card">
+            <h3><Server size={15}/>MCP</h3>
+            <dl>
+              <div><dt>{mcpStatus?.gateway_url_configured ? connectorCopy.gatewayConnected : connectorCopy.gatewayDisconnected}</dt><dd>{mcpStatus?.gateway_url_configured ? "OK" : "—"}</dd></div>
+              <div><dt>Execution</dt><dd>{mcpStatus?.execution ?? "—"}</dd></div>
+              <div><dt>{connectorCopy.allConnectors}</dt><dd>{mcpStatus?.connectors ?? connectors.length}</dd></div>
+            </dl>
+            <p className="muted">{connectorCopy.gatewayNotice}</p>
+          </section>
+        </div>
+        {connectorError && <div className="empty"><AlertTriangle size={28}/><h3>{connectorCopy.failed}</h3></div>}
+        {connectorBusy && connectors.length === 0 && <div className="empty"><RefreshCw size={28}/><h3>{connectorCopy.loading}</h3></div>}
+        <div className="open-source-controls">
+          <label className="search-field"><Search size={15}/><input value={connectorQuery} onChange={event => setConnectorQuery(event.target.value)} placeholder={connectorCopy.search} aria-label={connectorCopy.search}/></label>
+          <select value={connectorCategory} onChange={event => setConnectorCategory(event.target.value)} aria-label={connectorCopy.allCategories}>
+            <option value="">{connectorCopy.allCategories}</option>
+            {Array.from(new Set(connectors.map(connector => connector.category))).sort().map(category =>
+              <option key={category} value={category}>{CONNECTOR_CATEGORY_LABELS[category]?.[locale] ?? category}</option>)}
+          </select>
+          <select value={connectorRisk} onChange={event => setConnectorRisk(event.target.value)} aria-label={connectorCopy.allRisks}>
+            <option value="">{connectorCopy.allRisks}</option>
+            <option value="read">{connectorCopy.readTools}</option>
+            <option value="write">{connectorCopy.writeTools}</option>
+          </select>
+        </div>
+        {filteredConnectors.length === 0 ? <div className="empty"><Network size={28}/><h3>{connectorCopy.empty}</h3><p>{connectorCopy.emptyBody}</p></div> : <div className="os-groups">
+          {connectorCategories.map(category => {
+            const items = filteredConnectors.filter(connector => connector.category === category);
+            return <section className="os-group" key={category}>
+              <h3>{CONNECTOR_CATEGORY_LABELS[category]?.[locale] ?? category}<span className="badge">{items.length}</span></h3>
+              <div className="os-list">
+                {items.map(connector => <div className="os-row" key={connector.id}>
+                  <div className="os-main">
+                    <strong>{connector.name} <span className="license-badge">{connector.auth}</span></strong>
+                    <p>{connector.tools.length} {connectorCopy.toolsLabel} · {connector.status === "curated" ? connectorCopy.catalogStatus : connector.status}</p>
+                    <div className="connector-tools">
+                      {connector.tools.map(tool => <span key={tool.id} className={`status-pill ${tool.risk === "write" ? "optional" : "active"}`} title={tool.description}>
+                        {tool.name}{tool.decision.requires_approval ? ` · ${connectorCopy.approval}` : ""}
+                      </span>)}
+                    </div>
+                  </div>
+                  <a className="os-link" href={connector.docs_url} target="_blank" rel="noreferrer" aria-label={`${connector.name} ${connectorCopy.docs}`}><ExternalLink size={14}/></a>
+                </div>)}
+              </div>
+            </section>;
+          })}
+        </div>}
+      </div>}
       {view === "settings" && <div className={`knowledge ${settingsTab === "open-source" ? "settings-open-source" : ""}`}>
         <div className="knowledge-top">
           <div><h2>{t.adminSettings}</h2><p>{t.adminSettingsBody}</p></div>
@@ -1532,6 +1712,7 @@ export default function App() {
           <button onClick={() => setView("memory")}><Brain size={15}/>{t.memory}</button>
           <button onClick={() => setView("governance")}><ShieldCheck size={15}/>{t.governance}</button>
           <button onClick={() => setView("gaps")}><Network size={15}/>{t.gaps}</button>
+          <button onClick={() => setView("connectors")}><Boxes size={15}/>{CONNECTOR_COPY[locale].nav}</button>
         </div>
         {settingsTab === "open-source" && <section className="open-source-panel">
           {openSourceError ? <div className="empty"><Boxes size={28}/><h3>{t.openSourceFailed}</h3><p>{t.openSourceBody}</p></div> : !openSourceData ? <div className="empty"><Boxes size={28}/><h3>{t.working}</h3><p>{t.openSourceBody}</p></div> : <>

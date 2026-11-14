@@ -59,6 +59,15 @@ def test_role_restriction_denies_unknown_roles() -> None:
     assert not decision.allowed
 
 
+def test_erp_and_hcm_connectors_are_admin_only() -> None:
+    for connector_id in ("sap-s4hana", "oracle-fusion", "workday"):
+        connector = CONNECTOR_BY_ID[connector_id]
+        assert connector.actions
+        for tool in connector.actions:
+            assert not decide_tool(tool, {"member"}).allowed
+            assert decide_tool(tool, {"admin"}).allowed
+
+
 def test_connector_endpoints() -> None:
     client = TestClient(app)
     listing = client.get("/v1/connectors")
