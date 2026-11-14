@@ -39,6 +39,22 @@ async def test_mcp_client_initializes_and_calls_a_tool() -> None:
 
 
 @pytest.mark.asyncio
+async def test_mcp_client_supports_stateless_gateways() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        if payload["method"] == "initialize":
+            return httpx.Response(200, json={"result": {"serverInfo": {"name": "ContextForge"}}})
+        if payload["method"] == "notifications/initialized":
+            assert "mcp-session-id" not in request.headers
+            return httpx.Response(202)
+        return httpx.Response(200, json={"result": {"content": [{"type": "text", "text": "ok"}]}})
+
+    client = MCPClient("http://gateway", "token", transport=httpx.MockTransport(handler))
+    result = await client.call_tool("baryon-probe", {})
+    assert result["content"][0]["text"] == "ok"
+
+
+@pytest.mark.asyncio
 async def test_mcp_client_surfaces_tool_errors() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)

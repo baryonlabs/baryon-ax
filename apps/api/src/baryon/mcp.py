@@ -50,9 +50,10 @@ class MCPClient:
                     },
                 },
             )
+            # ContextForge (and some gateways) are stateless and omit the
+            # session header. In that case the initialized notification and
+            # tools/call are sent without Mcp-Session-Id.
             session_id = initialize.headers.get("mcp-session-id")
-            if not session_id:
-                raise MCPGatewayError("MCP gateway did not return a session id")
             await self._post(
                 client,
                 {"jsonrpc": "2.0", "method": "notifications/initialized"},
