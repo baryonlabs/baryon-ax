@@ -35,7 +35,7 @@ colorlog==6.12.0
     # via rapidocr
 cuda-bindings==13.5.0
     # via torch
-cuda-pathfinder==1.8.6
+cuda-pathfinder==1.9.0
     # via cuda-bindings
 cuda-toolkit==13.2.2
     # via torch
@@ -47,23 +47,23 @@ dill==0.4.1
     # via multiprocess
 doclang==0.9.0
     # via docling-core
-docling==2.150.0
+docling==2.150.1
     # via -r requirements.in
-docling-core==2.106.0
+docling-core==2.107.0
     # via
     #   docling-parse
     #   docling-slim
 docling-ibm-models==4.0.4
     # via docling-slim
-docling-parse==7.25.0
+docling-parse==7.26.0
     # via docling-slim
-docling-slim==2.150.0
+docling-slim==2.150.1
     # via docling
 et-xmlfile==2.0.0
     # via openpyxl
 faker==40.54.0
     # via polyfactory
-fastapi==0.162.5
+fastapi==0.162.7
     # via -r requirements.in
 filelock==4.2.10
     # via
@@ -233,7 +233,7 @@ pydantic==2.14.3
     #   pydantic-settings
 pydantic-core==2.50.4
     # via pydantic
-pydantic-settings==2.16.2
+pydantic-settings==2.16.3
     # via
     #   docling-core
     #   docling-slim
@@ -338,7 +338,7 @@ tqdm==4.70.1
     #   rapidocr
     #   semchunk
     #   transformers
-transformers==5.22.2
+transformers==5.23.0
     # via
     #   docling-core
     #   docling-ibm-models
