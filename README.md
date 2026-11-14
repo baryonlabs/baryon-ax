@@ -5,9 +5,9 @@
 
 [Website](https://baryon-ax.baryon.ai/) · [도움말](https://baryon-ax.baryon.ai/#help) · [지원 형식](https://baryon-ax.baryon.ai/#formats) · [오픈소스·라이선스](https://baryon-ax.baryon.ai/open-source/) · [빠른 시작](#quick-start) · [릴리스](https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0)
 
-**Baryon AX** is an on-premises, model-agnostic foundation for enterprise AI agents and grounded chat.
+**Baryon AX** is an on-premises, model-agnostic foundation for enterprise AI agents that answer from your documents and ask experts for the tacit knowledge they never wrote down.
 
-> Connect models. Orchestrate agents. Ground knowledge. Observe everything.
+> Connect models. Ask first. Ground knowledge. Observe everything.
 
 This repository is an executable Basic Core v0.6 reference implementation. It offers a complete vertical slice: role-aware chat, OpenAI-compatible model routing, document ingestion and vector retrieval with citations, policy checks, audit events, memory, and a browser UI. The Basic Core runs with a local demo model and file storage; the **full-stack profile** connects Ollama, Qdrant, PostgreSQL, Redis, Langfuse, LangGraph, LlamaIndex, and Mem0. See [docs/full-stack.md](docs/full-stack.md) for the applied stack.
 
@@ -46,7 +46,7 @@ Eight captured screens cover grounded chat, the source viewer, knowledge upload,
 - **LangGraph** policy/retrieval orchestration, **FastEmbed** multilingual embeddings
 - Role-aware document ACLs, inline administrator editing, and organization isolation
 - **Tacit knowledge capture**: question-and-answer sessions (from open gaps or curated prompts) with file attachments; publishing an answer indexes it as searchable knowledge
-- **Knowledge-gap capture**: ungrounded or vague answers are clustered into admin-reviewed **ontology pack drafts** (entities, relations, required sources)
+- **Proactive tacit-knowledge loop**: idle-time gap analysis builds an expert question queue, and published answers become cited, ACL-scoped documents
 - **PostgreSQL audit events** with JSONL mirroring, **Redis rate limiting**, and **Langfuse tracing**
 - **Mem0 user memory** with Qdrant + Ollama, managed from a dedicated UI tab and **injected into chat answers**
 - **Pipeline trace** under each answer: rate limit, policy, memory search, document search, model, and audit steps with timings
