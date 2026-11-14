@@ -1,0 +1,41 @@
+name: baryon-ax-auth
+
+services:
+  keycloak-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak-dev}
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak-dev}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-http://localhost:8180}
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_LOG_LEVEL: ${KEYCLOAK_LOG_LEVEL:-info}
+    ports:
+      - "127.0.0.1:${KEYCLOAK_PORT:-8180}:8080"
+    volumes:
+      - ./deploy/keycloak/realm-baryon-ax.json:/opt/keycloak/data/import/realm-baryon-ax.json:ro
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+
+volumes:
+  keycloak-db-data:
