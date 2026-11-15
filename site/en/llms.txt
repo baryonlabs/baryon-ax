@@ -31,6 +31,8 @@ Baryon AX runs inside the customer's environment, including air-gapped networks.
 - Mem0-based long-term user memory injected by relevance.
 - Tacit-knowledge capture and Q&A for expertise not written in documents.
 - Knowledge-gap clustering that produces ontology pack drafts for human review.
+- Apache Ossie import/export, and knowledge gaps downloadable as Ossie drafts to enrich and re-import.
+- MCP tool connections via an optional gateway, selected with `/` in the composer and permission-checked on the server.
 - Security CI: security-sweep on every PR, with P0/P1 findings blocking merge; weekly image, SBOM, and git-history secret scans.
 - Docker Compose Basic Core and full-stack profiles, plus Kubernetes starter manifests.
 
@@ -92,4 +94,4 @@ It suits pilots and controlled internal deployment. Replace the development iden
 
 ## Last updated
 
-2026-11-13 (v0.6.0). License: MIT.
+2026-11-16 (v0.6.0 plus Ossie interchange and the MCP tool picker on `main`). License: MIT.
