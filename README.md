@@ -11,6 +11,16 @@
 
 This repository is an executable Basic Core v0.6 reference implementation. It offers a complete vertical slice: role-aware chat, OpenAI-compatible model routing, document ingestion and vector retrieval with citations, policy checks, audit events, memory, and a browser UI. The Basic Core runs with a local demo model and file storage; the **full-stack profile** connects Ollama, Qdrant, PostgreSQL, Redis, Langfuse, LangGraph, LlamaIndex, and Mem0. See [docs/full-stack.md](docs/full-stack.md) for the applied stack.
 
+## What's new
+
+**Apache Ossie 지식 교환 · 지식 공백 꾸러미 · MCP 도구 선택** ([#58](https://github.com/baryonlabs/baryon-ax/pull/58))
+
+- **Apache Ossie 가져오기/내보내기** — **지식** 탭에서 Ossie 의미 모델(JSON/YAML)을 가져오면 데이터셋·필드·메트릭·관계가 검색 가능한 지식 문서로 색인됩니다. **Ossie 다운로드**는 내 권한 범위의 문서만 `baryon-knowledge.ossie.json`으로 내보냅니다.
+- **지식 공백 → Ossie 초안** — 채팅 답변이 근거를 찾지 못하면 관리자에게 "부족한 지식을 발견했습니다" 카드가 뜹니다. 버튼 하나로 해당 공백의 온톨로지 팩과 Ossie 초안을 만들어 내려받고, 신뢰할 수 있는 데이터로 보완해 다시 가져오면 다음 대화부터 검색에 쓰입니다.
+- **입력창 MCP 도구 선택** — 입력창에 `/`를 치면 사용 가능한 MCP 도구를 검색해 선택할 수 있습니다. 클라이언트는 도구 ID만 보내고, 서버가 호출자 역할로 권한을 다시 확인합니다. 승인이 필요한 도구는 시스템 프롬프트에 노출되지 않습니다.
+
+기존 설치를 업데이트하려면 [Updating an existing install](#updating-an-existing-install)을 참고하세요.
+
 ## Platform at a glance
 
 ![Baryon AX platform overview: user flow, layered architecture, and core engines](docs/images/baryon-ax-platform-overview.png)
@@ -47,6 +57,8 @@ Eight captured screens cover grounded chat, the source viewer, knowledge upload,
 - Role-aware document ACLs, inline administrator editing, and organization isolation
 - **Tacit knowledge capture**: question-and-answer sessions (from open gaps or curated prompts) with file attachments; publishing an answer indexes it as searchable knowledge
 - **Proactive tacit-knowledge loop**: idle-time gap analysis builds an expert question queue, and published answers become cited, ACL-scoped documents
+- **Apache Ossie interchange**: import Ossie semantic models (JSON/YAML) as searchable knowledge, export permitted documents as Ossie, and turn a chat knowledge gap into a downloadable Ossie draft (admin)
+- **MCP tool picker in the composer**: type `/` to select MCP tools; the server re-checks each tool against the caller's roles before exposing it to the model
 - **PostgreSQL audit events** with JSONL mirroring, **Redis rate limiting**, and **Langfuse tracing**
 - **Mem0 user memory** with Qdrant + Ollama, managed from a dedicated UI tab and **injected into chat answers**
 - **Pipeline trace** under each answer: rate limit, policy, memory search, document search, model, and audit steps with timings
@@ -138,6 +150,21 @@ To accept HWP/HWPX/PDF/Office/images, add the parser sidecars:
 docker compose -f docker-compose.yml -f docker-compose.parsers.yml --profile parsers up -d --build
 ```
 
+### Updating an existing install
+
+Pull the latest `main` and rebuild with the same Compose files you started with. Data in the Compose named volumes (documents, audit, gaps, tacit, memory, and the full-stack databases) is kept; do not run `docker compose down -v`.
+
+```bash
+git pull --ff-only
+docker compose up -d --build                                   # Basic Core
+# docker compose -f docker-compose.yml -f docker-compose.full.yml up -d --build   # Full stack
+```
+
+- If `docker compose ps` still shows the old containers after the build, recreate them: `docker compose up -d --force-recreate api web`.
+- If you run the parser sidecars, rebuild them too so refreshed parser dependencies (for example the docling pins) are applied: `docker compose -f docker-compose.yml -f docker-compose.parsers.yml --profile parsers up -d --build`.
+- Verify with `curl http://localhost:8000/health` and open `http://localhost:3001`.
+- For local development without Docker, reinstall API dependencies after pulling (this release adds `PyYAML`): `cd apps/api && uv sync --extra dev`.
+
 ### Full stack (Ollama + Qdrant + PostgreSQL + Redis + Langfuse + Mem0)
 
 ```bash
@@ -219,6 +246,9 @@ See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/b300-v
 | `GET /v1/admin/gaps/clusters` | Proposed ontology clusters (admin) |
 | `POST /v1/admin/ontology-packs` | Create a draft ontology pack from selected gaps (admin) |
 | `GET /v1/admin/ontology-packs` | List draft ontology packs (admin) |
+| `GET /v1/admin/ontology-packs/{id}/ossie` | Download an ontology pack as an Apache Ossie draft (admin) |
+| `POST /v1/ossie/import` | Import an Apache Ossie JSON/YAML model as searchable knowledge |
+| `GET /v1/ossie/export` | Export the caller's permitted knowledge as an Apache Ossie model |
 | `POST /v1/admin/reindex` | Reindex documents into Qdrant (administrator) |
 | `GET /v1/admin/settings` | Effective runtime, storage, policy, and integration settings for administrators |
 
