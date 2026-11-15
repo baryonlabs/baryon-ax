@@ -28,6 +28,8 @@ Baryon AX runs entirely inside the customer's environment, including air-gapped 
 - **User memory.** Mem0-based long-term memory is stored and retrieved, then injected into answers by relevance.
 - **Tacit-knowledge Q&A.** Structured capture of expertise that is not written in documents, reviewed and reused as answer material.
 - **Knowledge gaps to ontology drafts.** Unanswered questions are clustered, missing-data hints are proposed, and ontology pack drafts are generated for review.
+- **Apache Ossie interchange.** Apache Ossie semantic models (JSON/YAML) can be imported as searchable, ACL-scoped knowledge, and the caller's permitted knowledge can be exported as Ossie. Administrators can download a chat knowledge gap as an Ossie draft, enrich it, and re-import it.
+- **MCP tool connections.** Internal and SaaS tools connect through an optional MCP gateway (IBM ContextForge). Users select tools in the composer by typing `/`; the client sends only tool IDs and the server re-checks role permissions, never exposing approval-gated tools to the model.
 - **Security CI.** Every pull request runs security-sweep (dependency CVEs, secrets, misconfiguration); P0/P1 findings block merge. Weekly image, SBOM, and full git-history secret scans run on a schedule.
 - **Deployment options.** Docker Compose Basic Core profile, a full-stack profile with data services, and a Kubernetes starter for the API.
 

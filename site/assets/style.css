@@ -866,3 +866,8 @@ details p { color: var(--muted); }
   .oneline-block pre { font-size: .75rem; }
   .support-fab { right: 14px; bottom: 14px; padding: 10px 13px; font-size: .76rem; }
 }
+
+/* Update-an-existing-install block in the start section */
+.update-block { margin-top: 22px; }
+.update-block h3 { margin: 0 0 10px; font-size: 1rem; }
+.update-block .code-block pre { font-size: .84rem; }
