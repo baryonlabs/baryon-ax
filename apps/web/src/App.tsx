@@ -1,5 +1,5 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, BookOpen, Bot, Boxes, Brain, ChevronRight, Copy, Cpu, ExternalLink, FileCode, FileImage, FileSpreadsheet, FileText, FileType, FileUp, Globe2, HardDrive, Menu, MessagesSquare, Network, Paperclip, Plus, RefreshCw, RotateCcw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, UploadCloud, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Bot, Boxes, Brain, ChevronRight, Copy, Cpu, Download, ExternalLink, FileCode, FileImage, FileSpreadsheet, FileText, FileType, FileUp, Globe2, HardDrive, Menu, MessagesSquare, Network, Paperclip, Plus, RefreshCw, RotateCcw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, UploadCloud, Wrench, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
@@ -9,7 +9,8 @@ type Role = "member" | "admin";
 type View = "chat" | "knowledge" | "memory" | "governance" | "gaps" | "tacit" | "settings" | "connectors";
 type TraceStep = { step: string; status: string; ms: number; detail?: string };
 type ChatTrace = { trace_id?: string; steps: TraceStep[]; total_ms?: number | null; memory_count?: number; retrieval_count?: number };
-type ChatMessage = { role: "user" | "assistant"; content: string; citations?: Citation[]; trace?: ChatTrace };
+type KnowledgeGapPrompt = { id: string; question: string; reasons: string[]; terms: string[]; occurrences: number };
+type ChatMessage = { role: "user" | "assistant"; content: string; citations?: Citation[]; trace?: ChatTrace; gap?: KnowledgeGapPrompt };
 type Citation = { document_id: string; title: string; chunk: number };
 
 const MENU_MASCOTS: Record<View, { src: string; tagline: Record<Locale, string> }> = {
@@ -66,6 +67,19 @@ const CONNECTOR_CATEGORY_LABELS: Record<string, { ko: string; en: string }> = {
   database: { ko: "데이터베이스", en: "Database" },
   system: { ko: "시스템", en: "System" },
 };
+
+const MCP_COMPOSER_COPY = {
+  ko: {
+    trigger: "MCP 도구", empty: "사용 가능한 MCP 도구가 없습니다.",
+    title: "MCP 도구 선택", hint: "/ 입력으로 도구를 검색", selected: "선택된 MCP 도구",
+    add: "추가", remove: "제거", approval: "승인 필요", unavailable: "권한 없음",
+  },
+  en: {
+    trigger: "MCP tools", empty: "No MCP tools are available.",
+    title: "Select an MCP tool", hint: "Type / to search tools", selected: "Selected MCP tools",
+    add: "Add", remove: "Remove", approval: "Approval required", unavailable: "Not permitted",
+  },
+} as const;
 type CitedChunk = { number: number; content: string; heading_path?: string | null; page?: number | null; kind?: string | null };
 type DocumentDetail = {
   id: string; title: string; owner_id: string; allowed_roles: string[]; created_at: string;
@@ -265,6 +279,8 @@ const copy = {
     upload: "문서 업로드", category: "카테고리", tags: "태그", allCategories: "전체 카테고리", filterTag: "태그 필터",
     categoryPlaceholder: "카테고리 (예: 계약, 인사, 연구)", tagsPlaceholder: "태그 (쉼표 구분: 2026, 예산)",
     editMetadata: "분류 편집", metadataUpdated: "카테고리와 태그를 저장했습니다.", metadataFailed: "분류를 저장할 수 없습니다.",
+    ossieImport: "Ossie 가져오기", ossieExport: "Ossie 다운로드", ossieImported: (name: string) => `Apache Ossie 모델 “${name}”을 검색 가능한 지식으로 추가했습니다.`, ossieFailed: "Apache Ossie 모델을 처리할 수 없습니다. JSON/YAML과 필수 항목(version, name, datasets)을 확인하세요.",
+    gapBundleTitle: "부족한 지식을 발견했습니다", gapBundleBody: "이 주제의 Ossie 지식 꾸러미 초안을 만들고 내려받아, 신뢰할 수 있는 데이터로 보완한 뒤 다시 가져올 수 있습니다.", gapBundleCreate: "Ossie 초안 만들고 다운로드", gapBundleCreated: "Ossie 지식 꾸러미 초안을 다운로드했습니다. 보완 후 지식 화면에서 가져오면 다음 대화부터 검색에 사용됩니다.",
     clearFilter: "필터 해제", uncategorized: "미분류", uploadedMany: (count: number) => `${count}개 파일을 업로드했습니다.`,
     noDocs: "아직 문서가 없습니다", noDocsBody: "PDF·HWP·Office·이미지·Markdown을 올리면 자동으로 파싱·색인되어 근거 기반 채팅에 사용됩니다.",
     chunks: "청크", roles: "역할", deleteDocument: "문서 삭제", onPremises: "온프레미스 프로필", language: "언어", profile: "local-org",
@@ -360,6 +376,8 @@ const copy = {
     upload: "Upload document", category: "Category", tags: "Tags", allCategories: "All categories", filterTag: "Filter by tag",
     categoryPlaceholder: "Category (e.g. contracts, HR, research)", tagsPlaceholder: "Tags (comma separated: 2026, budget)",
     editMetadata: "Edit classification", metadataUpdated: "Category and tags saved.", metadataFailed: "Could not save classification.",
+    ossieImport: "Import Ossie", ossieExport: "Download Ossie", ossieImported: (name: string) => `Added Apache Ossie model “${name}” as searchable knowledge.`, ossieFailed: "Could not process the Apache Ossie model. Check JSON/YAML and required version, name, and datasets fields.",
+    gapBundleTitle: "Knowledge gap detected", gapBundleBody: "Create and download an Ossie knowledge-bundle draft, enrich it with authoritative data, then import it so later chats can search it.", gapBundleCreate: "Create and download Ossie draft", gapBundleCreated: "Downloaded an Ossie knowledge-bundle draft. Enrich and import it from Knowledge to use it in future searches.",
     clearFilter: "Clear filters", uncategorized: "Uncategorized", uploadedMany: (count: number) => `Uploaded ${count} file(s).`,
     noDocs: "No documents yet", noDocsBody: "Upload PDF, HWP, Office, image, or Markdown files; they are parsed and indexed for grounded chat.",
     chunks: "chunk(s)", roles: "roles", deleteDocument: "Delete document", onPremises: "On-premises profile", language: "Language", profile: "local-org",
@@ -494,6 +512,9 @@ export default function App() {
   const [settingsError, setSettingsError] = useState(false);
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [connectorTools, setConnectorTools] = useState<ConnectorTool[]>([]);
+  const [selectedTools, setSelectedTools] = useState<ConnectorTool[]>([]);
+  const [toolMenuOpen, setToolMenuOpen] = useState(false);
+  const [toolMenuIndex, setToolMenuIndex] = useState(0);
   const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
   const [connectorQuery, setConnectorQuery] = useState("");
   const [connectorCategory, setConnectorCategory] = useState("");
@@ -525,6 +546,7 @@ export default function App() {
   const tacitFormRef = useRef<HTMLElement>(null);
   const tacitAnswerRef = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const ossieFileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => { fetch(`${API}/v1/models`).then(response => response.json()).then(result => result.data?.[0] && setModel(result.data[0].id)).catch(() => undefined); }, []);
   useEffect(() => { document.documentElement.lang = locale; localStorage.setItem("baryon-locale", locale); }, [locale]);
@@ -822,10 +844,22 @@ export default function App() {
     }
   }, [role]);
 
+  const loadComposerTools = useCallback(async () => {
+    try {
+      const response = await fetch(`${API}/v1/tools?limit=200`, { headers: identity(role) });
+      if (!response.ok) throw new Error("Tool load failed");
+      const result = await response.json();
+      setConnectorTools(result.items || []);
+    } catch {
+      setConnectorTools([]);
+    }
+  }, [role]);
+
   useEffect(() => {
     if (view === "settings" && settingsTab === "open-source") void loadOpenSource();
   }, [view, settingsTab, loadOpenSource]);
   useEffect(() => { if (view === "connectors") void loadConnectors(); }, [view, loadConnectors]);
+  useEffect(() => { if (view === "chat") void loadComposerTools(); }, [view, loadComposerTools]);
 
   useEffect(() => { if (view === "knowledge") void loadKnowledge(); }, [view, loadKnowledge]);
   useEffect(() => { if (view === "tacit") void loadTacit(); }, [view, loadTacit]);
@@ -840,6 +874,11 @@ export default function App() {
       if (view === "settings" || view === "gaps") setView("chat");
     }
   }, [role, view]);
+  useEffect(() => {
+    // Tool authorization is role-dependent.  Drop prior selections until the
+    // freshly fetched catalog for the new role is available.
+    setSelectedTools([]);
+  }, [role]);
 
   async function uploadFiles(files: FileList | File[], meta?: { category?: string; tags?: string }) {
     const list = Array.from(files);
@@ -878,6 +917,64 @@ export default function App() {
 
   async function upload(file: File) {
     await uploadFiles([file]);
+  }
+
+  async function importOssie(file: File) {
+    setUploadBusy(true);
+    setUploadNote(null);
+    try {
+      const data = new FormData();
+      data.append("file", file);
+      const response = await fetch(`${API}/v1/ossie/import`, { method: "POST", body: data, headers: identity(role) });
+      if (!response.ok) throw new Error("Ossie import failed");
+      const result = await response.json();
+      const message = t.ossieImported(result.model);
+      setUploadNote({ ok: true, text: message });
+      setMessages(previous => [...previous, { role: "assistant", content: message }]);
+      await loadKnowledge();
+    } catch {
+      setUploadNote({ ok: false, text: t.ossieFailed });
+    } finally {
+      setUploadBusy(false);
+    }
+  }
+
+  async function downloadOssie() {
+    try {
+      const response = await fetch(`${API}/v1/ossie/export`, { headers: identity(role) });
+      if (!response.ok) throw new Error("Ossie export failed");
+      const url = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "baryon-knowledge.ossie.json";
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch {
+      setToast(t.ossieFailed);
+    }
+  }
+
+  async function createGapBundle(gap: KnowledgeGapPrompt) {
+    if (role !== "admin") return;
+    try {
+      const created = await fetch(`${API}/v1/admin/ontology-packs`, {
+        method: "POST", headers: { "Content-Type": "application/json", ...identity(role) },
+        body: JSON.stringify({ gap_ids: [gap.id] }),
+      });
+      if (!created.ok) throw new Error("Pack creation failed");
+      const pack = await created.json();
+      const response = await fetch(`${API}/v1/admin/ontology-packs/${pack.id}/ossie`, { headers: identity(role) });
+      if (!response.ok) throw new Error("Ossie draft download failed");
+      const url = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${pack.id}.ossie.json`;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setToast(t.gapBundleCreated);
+    } catch {
+      setToast(t.ossieFailed);
+    }
   }
 
   async function openSource(citation: Citation) {
@@ -1024,8 +1121,26 @@ export default function App() {
     }
   }
 
+  const composerTools = connectorTools.filter(tool => tool.decision.allowed && !tool.decision.requires_approval);
+  const toolQuery = input.startsWith("/") ? input.slice(1).trim().toLowerCase() : "";
+  const visibleComposerTools = composerTools.filter(tool => !toolQuery || [tool.id, tool.name, tool.connector_name, tool.description, ...tool.tags].join(" ").toLowerCase().includes(toolQuery)).slice(0, 8);
+
+  function selectComposerTool(tool: ConnectorTool) {
+    setSelectedTools(previous => previous.some(item => item.id === tool.id) ? previous : [...previous, tool]);
+    setInput("");
+    setToolMenuOpen(false);
+    window.setTimeout(() => composerRef.current?.focus(), 0);
+  }
+
   function composerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key !== "Enter" || !event.shiftKey || event.nativeEvent.isComposing) return;
+    if (event.nativeEvent.isComposing) return;
+    if (toolMenuOpen && visibleComposerTools.length) {
+      if (event.key === "ArrowDown") { event.preventDefault(); setToolMenuIndex(index => (index + 1) % visibleComposerTools.length); return; }
+      if (event.key === "ArrowUp") { event.preventDefault(); setToolMenuIndex(index => (index - 1 + visibleComposerTools.length) % visibleComposerTools.length); return; }
+      if (event.key === "Enter" || event.key === "Tab") { event.preventDefault(); selectComposerTool(visibleComposerTools[toolMenuIndex] ?? visibleComposerTools[0]); return; }
+      if (event.key === "Escape") { event.preventDefault(); setToolMenuOpen(false); return; }
+    }
+    if (event.key !== "Enter" || !event.shiftKey) return;
     event.preventDefault();
     if (!busy && input.trim()) event.currentTarget.form?.requestSubmit();
   }
@@ -1059,7 +1174,7 @@ export default function App() {
       const response = await fetch(`${API}/v1/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...identity(role) },
-        body: JSON.stringify({ model, messages: next, stream: true, use_retrieval: retrieval, locale }),
+        body: JSON.stringify({ model, messages: next, stream: true, use_retrieval: retrieval, locale, selected_tool_ids: selectedTools.map(tool => tool.id) }),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) throw new Error("Chat request failed");
@@ -1085,6 +1200,7 @@ export default function App() {
               content: current.content + (item.type === "token" ? item.content : ""),
               citations: item.type === "citations" ? item.data : current.citations,
               trace: item.type === "trace" ? item.data : current.trace,
+              gap: item.type === "knowledge_gap" ? item.data : current.gap,
             };
             return copied;
           });
@@ -1353,6 +1469,10 @@ export default function App() {
               </details>}
               {message.role === "assistant" && message.trace && message.content && retrieval && (!message.citations || message.citations.length === 0) &&
                 <div className="grounding-warning" role="note"><AlertTriangle size={14}/><span>{t.noGrounding}</span></div>}
+              {message.role === "assistant" && message.gap && role === "admin" && <section className="gap-bundle" aria-label={t.gapBundleTitle}>
+                <div><strong>{t.gapBundleTitle}</strong><p>{t.gapBundleBody}</p></div>
+                <button className="primary small" onClick={() => void createGapBundle(message.gap!)}><Download size={14}/>{t.gapBundleCreate}</button>
+              </section>}
               {message.citations && message.citations.length > 0
                 ? <div className="sources"><span>{t.groundedIn(message.citations.length)}</span>{message.citations.map((citation, citationIndex) => <button key={`${citation.document_id}-${citation.chunk}`} onClick={() => void openSource(citation)} title={`${citation.title} · chunk ${citation.chunk}`}><span className="source-index">{citationIndex + 1}</span><BookOpen size={13}/>{citation.title}<small>#{citation.chunk}</small><ChevronRight size={13}/></button>)}</div>
                 : message.role === "assistant" && message.content && typeof message.trace?.total_ms === "number" && !retrieval && <p className="no-sources">{t.noSources}</p>}
@@ -1367,10 +1487,19 @@ export default function App() {
         </div>
         <footer className="composer">
           <input ref={fileInput} type="file" accept={UPLOAD_ACCEPT} hidden onChange={event => event.target.files?.[0] && upload(event.target.files[0])}/>
+          {selectedTools.length > 0 && <div className="tool-chips" aria-label={MCP_COMPOSER_COPY[locale].selected}>
+            {selectedTools.map(tool => <span className="tool-chip" key={tool.id}><Wrench size={12}/>{tool.connector_name} · {tool.name}<button type="button" onClick={() => setSelectedTools(previous => previous.filter(item => item.id !== tool.id))} aria-label={`${MCP_COMPOSER_COPY[locale].remove} ${tool.connector_name} ${tool.name}`} title={MCP_COMPOSER_COPY[locale].remove}><X size={12}/></button></span>)}
+          </div>}
           <div className="composer-box">
             <button className="upload" title={t.upload} aria-label={t.upload} onClick={() => openFilePicker()}><FileUp size={18}/></button>
             <form onSubmit={send}>
-              <textarea ref={composerRef} value={input} onChange={event => setInput(event.target.value)} onKeyDown={composerKeyDown} placeholder={t.ask} rows={1} aria-describedby="composer-hint"/>
+              <div className="composer-input-wrap">
+                <textarea ref={composerRef} value={input} onChange={event => { const value = event.target.value; setInput(value); setToolMenuIndex(0); setToolMenuOpen(value.startsWith("/")); }} onFocus={() => input.startsWith("/") && setToolMenuOpen(true)} onKeyDown={composerKeyDown} placeholder={t.ask} rows={1} aria-describedby="composer-hint" aria-autocomplete="list" aria-expanded={toolMenuOpen} aria-controls="mcp-tool-menu"/>
+                {toolMenuOpen && <div className="tool-menu" id="mcp-tool-menu" role="listbox" aria-label={MCP_COMPOSER_COPY[locale].title}>
+                  <div className="tool-menu-title"><Wrench size={14}/><span>{MCP_COMPOSER_COPY[locale].title}</span><small>{MCP_COMPOSER_COPY[locale].hint}</small></div>
+                  {visibleComposerTools.length > 0 ? visibleComposerTools.map((tool, index) => <button type="button" role="option" aria-selected={index === toolMenuIndex} className={index === toolMenuIndex ? "active" : ""} key={tool.id} onMouseDown={event => event.preventDefault()} onClick={() => selectComposerTool(tool)}><span><strong>/{tool.connector_name}/{tool.name}</strong><small>{tool.description}</small></span><em>{MCP_COMPOSER_COPY[locale].add}</em></button>) : <p>{MCP_COMPOSER_COPY[locale].empty}</p>}
+                </div>}
+              </div>
               {busy
                 ? <button type="button" className="stop" onClick={stopGenerating} aria-label={t.stop} title={t.stop}><Square size={15}/></button>
                 : <button type="submit" aria-label={t.chat} aria-keyshortcuts="Shift+Enter" disabled={!input.trim()}><Send size={17}/></button>}
@@ -1378,7 +1507,7 @@ export default function App() {
           </div>
           <div className="composer-meta" id="composer-hint">
             <span>{t.scope}</span>
-            <span>{t.sendHint}</span>
+            <span>{t.sendHint} · {MCP_COMPOSER_COPY[locale].hint}</span>
             {busy && <span className="live" role="status"><span className="spinner"/>{t.working}</span>}
           </div>
         </footer>
@@ -1386,6 +1515,9 @@ export default function App() {
       {view === "knowledge" && <div className="knowledge">
         <div className="knowledge-top">
           <div><h2>{t.indexedDocs}</h2><p>{t.visibleDocs}</p></div>
+          <input ref={ossieFileInput} type="file" accept=".json,.yaml,.yml,application/json,application/yaml,text/yaml" hidden onChange={event => { const file = event.target.files?.[0]; if (file) void importOssie(file); event.target.value = ""; }}/>
+          <button className="ghost" disabled={uploadBusy} onClick={() => ossieFileInput.current?.click()}><FileCode size={16}/>{t.ossieImport}</button>
+          <button className="ghost" onClick={() => void downloadOssie()}><Download size={16}/>{t.ossieExport}</button>
           <button className="primary" disabled={uploadBusy} onClick={() => openFilePicker()}><FileUp size={16}/>{uploadBusy ? t.uploading : t.upload}</button>
           <input ref={fileInput} type="file" accept={UPLOAD_ACCEPT} multiple hidden onChange={event => void uploadFiles(event.target.files ?? [], { category: uploadCategory, tags: uploadTags })}/>
         </div>

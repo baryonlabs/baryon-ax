@@ -90,6 +90,37 @@ def test_document_list_and_owner_delete() -> None:
     assert client.delete(f"/v1/documents/{document_id}", headers=headers(user="owner")).status_code == 200
 
 
+def test_apache_ossie_model_imports_as_searchable_knowledge_and_exports() -> None:
+    model = b"""version: 0.3.0.dev0
+name: sales_semantic_model
+description: Sales metrics for governed analysis.
+datasets:
+  - name: orders
+    source: warehouse.orders
+    fields:
+      - name: order_id
+        expression: {sql: order_id}
+        datatype: String
+        description: Unique order identifier
+metrics:
+  - name: order_count
+    expression: {sql: COUNT(orders.order_id)}
+    datatype: Integer
+    description: Number of orders
+"""
+    response = client.post("/v1/ossie/import", files={"file": ("sales.ossie.yaml", model, "application/yaml")}, headers=headers(user="ossie-user"))
+    assert response.status_code == 200
+    assert response.json()["model"] == "sales_semantic_model"
+    matches = client.get("/v1/documents/search", params={"q": "order_count"}, headers=headers(user="ossie-user"))
+    assert matches.status_code == 200
+    assert any("sales_semantic_model" in item["title"] for item in matches.json()["data"])
+    exported = client.get("/v1/ossie/export", headers=headers(user="ossie-user"))
+    assert exported.status_code == 200
+    assert exported.headers["content-disposition"].startswith("attachment;")
+    assert exported.json()["version"] == "0.3.0.dev0"
+    assert exported.json()["datasets"][0]["name"] == "knowledge_documents"
+
+
 def test_owner_can_view_and_retrieve_without_matching_role(tmp_path) -> None:
     store = DocumentService(tmp_path)
     owner = Principal("owner", "org-acl", {"viewer"})
@@ -233,6 +264,21 @@ def test_system_prompt_enforces_korean_and_grounding(monkeypatch) -> None:
     assert "제공된 문서에서" in prompt
     assert "local-org" in prompt
     assert "없음" in prompt
+
+
+def test_system_prompt_only_exposes_permitted_selected_mcp_tools() -> None:
+    adapter = ModelAdapter()
+    request = ChatRequest(
+        messages=[Message(role="user", content="슬랙을 확인해줘")],
+        locale="ko",
+        selected_tool_ids=["slack.search_messages", "slack.post_message", "missing.tool"],
+    )
+    prompt = adapter.system_prompt(request, Principal("user", "local-org", {"member"}), [])
+    assert "사용자가 선택한 MCP 도구" in prompt
+    assert "Slack.search_messages" in prompt
+    # Member write tools stay behind the approval boundary even if a forged
+    # client request includes their ID.
+    assert "Slack.post_message" not in prompt
 
 
 def test_qwen35_prompt_profile_is_selected(monkeypatch) -> None:

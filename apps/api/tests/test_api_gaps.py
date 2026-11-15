@@ -74,6 +74,12 @@ def test_ungrounded_chat_becomes_ontology_pack() -> None:
     converted = client.get("/v1/admin/gaps?status=all", headers=headers(organization=org)).json()["data"]
     assert next(item for item in converted if item["id"] == gap["id"])["status"] == "converted"
 
+    ossie = client.get(f"/v1/admin/ontology-packs/{pack['id']}/ossie", headers=headers(organization=org))
+    assert ossie.status_code == 200
+    assert ossie.headers["content-disposition"].startswith("attachment;")
+    assert ossie.json()["version"] == "0.3.0.dev0"
+    assert ossie.json()["datasets"][0]["name"] == "knowledge_gap"
+
 
 def test_streaming_chat_also_records_gap() -> None:
     org = "org-gap-stream"
