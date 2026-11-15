@@ -372,6 +372,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 .message-actions button.active { color: var(--accent); background: rgba(127, 176, 255, .12); border-color: rgba(127, 176, 255, .3); }
 .grounding-warning { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; padding: 9px 11px; border: 1px solid #6b5327; border-radius: 9px; background: rgba(240, 180, 90, .08); color: #f3d9a4; font-size: 12px; line-height: 1.5; }
 .grounding-warning svg { flex: 0 0 auto; margin-top: 1px; }
+.gap-bundle { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 10px; padding: 11px; border: 1px solid rgba(127, 176, 255, .4); border-radius: 10px; background: rgba(127, 176, 255, .08); }
+.gap-bundle strong { color: #dbeaff; font-size: 13px; }
+.gap-bundle p { margin: 3px 0 0; color: var(--text-soft); font-size: 12px; line-height: 1.45; }
+.gap-bundle button { flex: 0 0 auto; }
 .sources { gap: 6px; }
 .sources button { padding: 5px 8px; border-radius: 7px; max-width: 100%; }
 .sources button:hover { background: var(--surface-2); border-color: var(--border-strong); }
@@ -384,9 +388,25 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 .prompt-grid button:hover { border-color: var(--border-strong); background: var(--surface-2); color: var(--text); transform: translateY(-1px); }
 
 .composer { position: sticky; bottom: 0; width: min(940px, 100%); padding: 12px 28px 18px; background: linear-gradient(180deg, transparent, rgba(11, 16, 32, .94) 30%); }
+.tool-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 7px 4px; }
+.tool-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 4px 6px 4px 8px; border: 1px solid rgba(127, 176, 255, .42); border-radius: 999px; background: rgba(127, 176, 255, .12); color: #c9ddff; font-size: 11px; white-space: nowrap; }
+.tool-chip button { display: inline-grid; place-items: center; width: 18px; height: 18px; padding: 0; border-radius: 50%; background: transparent; color: inherit; }
+.tool-chip button:hover { background: rgba(255, 255, 255, .14); }
 .composer-box { display: flex; align-items: flex-end; gap: 8px; padding: 8px; border: 1px solid var(--border-strong); border-radius: 14px; background: rgba(17, 28, 47, .92); box-shadow: var(--shadow); }
 .composer .upload { float: none; margin: 0; flex: 0 0 auto; width: 40px; height: 40px; border-radius: 10px; background: transparent; }
-.composer form { flex: 1; align-items: flex-end; border: 0; border-radius: 0; background: transparent; }
+.composer form { flex: 1; display: flex; align-items: flex-end; border: 0; border-radius: 0; background: transparent; }
+.composer-input-wrap { position: relative; flex: 1; min-width: 0; }
+.composer-input-wrap textarea { width: 100%; }
+.tool-menu { position: absolute; z-index: 30; right: 0; bottom: calc(100% + 10px); left: 0; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 12px; background: #14213a; box-shadow: 0 18px 44px -20px #000; }
+.tool-menu-title { display: flex; align-items: center; gap: 7px; padding: 9px 11px; border-bottom: 1px solid var(--border); color: var(--text-soft); font-size: 12px; }
+.tool-menu-title small { margin-left: auto; color: var(--muted); font-size: 10px; }
+.tool-menu > button { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 48px; padding: 8px 11px; border-radius: 0; background: transparent; color: var(--text); text-align: left; }
+.tool-menu > button:hover, .tool-menu > button.active { background: rgba(127, 176, 255, .13); }
+.tool-menu > button span { display: grid; gap: 2px; min-width: 0; }
+.tool-menu > button strong { color: #dceaff; font-size: 12px; }
+.tool-menu > button small { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.tool-menu > button em { flex: 0 0 auto; color: var(--accent); font-size: 11px; font-style: normal; }
+.tool-menu > p { margin: 0; padding: 15px 12px; color: var(--muted); font-size: 12px; }
 .composer textarea { min-height: 40px; max-height: 180px; padding: 9px 6px; }
 .composer form button { width: 38px; height: 38px; margin: 0 2px 1px; border-radius: 10px; }
 .composer form button.stop { background: #3a2430; color: #ffb3b3; }

@@ -19,6 +19,7 @@ from typing import Annotated, AsyncIterator, Literal, TypedDict
 from urllib.parse import urlparse
 
 import httpx
+import yaml
 from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -103,6 +104,9 @@ class ChatRequest(BaseModel):
     use_memory: bool = True
     thread_id: str | None = None
     locale: Literal["ko", "en"] = "ko"
+    # The composer sends only tool IDs from the user's explicit selection.  The
+    # server resolves these again so a client cannot grant itself a connector.
+    selected_tool_ids: list[str] = Field(default_factory=list, max_length=12)
 
 
 class OntologyPackRequest(BaseModel):
@@ -980,12 +984,30 @@ class ModelAdapter:
         profile = self.prompt_profile(request)
         base = BASE_SYSTEM_PROMPTS[request.locale]
         hint = PROFILE_HINTS[profile][request.locale]
+        selected_tools = []
+        if principal:
+            for tool_id in request.selected_tool_ids:
+                tool = get_tool(tool_id)
+                decision = decide_tool(tool, principal.roles) if tool else None
+                if tool and decision and decision.allowed and not decision.requires_approval:
+                    connector = CONNECTOR_BY_ID[tool.connector_id]
+                    selected_tools.append(f"- {connector.name}.{tool.name}: {tool.description}")
+        tools_section = "\n".join(selected_tools) or ("없음" if request.locale == "ko" else "None")
+        tool_instruction = (
+            "\n\n[사용자가 선택한 MCP 도구]\n"
+            f"{tools_section}\n"
+            "선택된 도구는 이 요청에서 사용할 수 있도록 지정되었습니다. 도구 실행 결과가 제공되지 않았다면 실행했다고 주장하거나 결과를 지어내지 마세요."
+            if request.locale == "ko" else
+            "\n\n[User-selected MCP tools]\n"
+            f"{tools_section}\n"
+            "These tools were explicitly selected for this request. Do not claim a tool was executed or invent results unless tool output is provided."
+        )
         return base.format(
             organization_id=principal.organization_id if principal else "unknown",
             roles=", ".join(sorted(principal.roles)) if principal else "unknown",
             memories=memory_block,
             context=context_block,
-        ) + (f"\n\n{hint}" if hint else "")
+        ) + tool_instruction + (f"\n\n{hint}" if hint else "")
 
     def payload(self, request: ChatRequest, context: list[dict], stream: bool, principal: Principal | None = None, memories: list[dict] | None = None) -> dict:
         messages = [message.model_dump() for message in request.messages]
@@ -1483,6 +1505,92 @@ async def ingest_upload(
     return document
 
 
+def parse_ossie_model(payload: bytes, filename: str) -> dict:
+    """Parse the portable JSON/YAML subset needed for a safe Ossie import."""
+    try:
+        value = json.loads(payload) if filename.lower().endswith(".json") else yaml.safe_load(payload)
+    except (json.JSONDecodeError, yaml.YAMLError, UnicodeDecodeError) as error:
+        raise HTTPException(422, f"Invalid Apache Ossie JSON/YAML: {error}") from error
+    if not isinstance(value, dict):
+        raise HTTPException(422, "Apache Ossie model must be a JSON/YAML object")
+    if not isinstance(value.get("version"), str) or not str(value.get("name", "")).strip():
+        raise HTTPException(422, "Apache Ossie model requires version and name")
+    datasets = value.get("datasets")
+    if not isinstance(datasets, list) or not datasets:
+        raise HTTPException(422, "Apache Ossie model requires at least one dataset")
+    for dataset in datasets:
+        if not isinstance(dataset, dict) or not str(dataset.get("name", "")).strip() or not str(dataset.get("source", "")).strip():
+            raise HTTPException(422, "Each Apache Ossie dataset requires name and source")
+    return value
+
+
+def render_ossie_model(model: dict) -> str:
+    """Create grounded, searchable text from an Ossie interchange document."""
+    lines = [
+        f"# Apache Ossie 의미 모델: {model['name']}", "",
+        str(model.get("description") or "Apache Ossie semantic interchange model."), "",
+        f"- Ossie 버전: {model['version']}", f"- 데이터셋: {len(model.get('datasets', []))}",
+        f"- 관계: {len(model.get('relationships', []))}", f"- 메트릭: {len(model.get('metrics', []))}",
+    ]
+    for dataset in model.get("datasets", []):
+        lines.extend(["", f"## 데이터셋: {dataset.get('name', '')}", f"원본: {dataset.get('source', '')}"])
+        if dataset.get("description"):
+            lines.append(str(dataset["description"]))
+        for field in dataset.get("fields", []):
+            if isinstance(field, dict) and field.get("name"):
+                lines.append(f"- 필드 {field['name']}: {field.get('description') or field.get('label') or ''}".rstrip())
+        for metric in dataset.get("metrics", []):
+            if isinstance(metric, dict) and metric.get("name"):
+                lines.append(f"- 메트릭 {metric['name']}: {metric.get('description') or ''}".rstrip())
+    if model.get("metrics"):
+        lines.extend(["", "## 모델 메트릭"])
+        lines.extend(f"- {item.get('name', '')}: {item.get('description', '')}" for item in model["metrics"] if isinstance(item, dict))
+    if model.get("relationships"):
+        lines.extend(["", "## 관계"])
+        lines.extend(f"- {item.get('name', '')}: {item.get('from', '')} → {item.get('to', '')}" for item in model["relationships"] if isinstance(item, dict))
+    return "\n".join(lines)
+
+
+def ossie_catalog(principal: Principal) -> dict:
+    """Export the visible knowledge catalog as a portable Ossie model."""
+    visible = documents.list_for(principal)
+    return {
+        "version": "0.3.0.dev0", "name": "baryon_knowledge_catalog",
+        "description": "Baryon AX knowledge documents visible to the exporting principal.",
+        "ai_context": {"instructions": "Use document metadata to locate authoritative Baryon AX knowledge.", "synonyms": ["knowledge base", "documents"]},
+        "datasets": [{
+            "name": "knowledge_documents", "source": "baryon.documents", "primary_key": ["document_id"],
+            "description": "Indexed documents accessible to this principal.",
+            "fields": [
+                {"name": "document_id", "expression": {"sql": "document_id"}, "datatype": "String", "description": "Baryon document identifier"},
+                {"name": "title", "expression": {"sql": "title"}, "dimension": {}, "datatype": "String", "description": "Document title"},
+                {"name": "category", "expression": {"sql": "category"}, "dimension": {}, "datatype": "String", "description": "Knowledge category"},
+                {"name": "created_at", "expression": {"sql": "created_at"}, "dimension": {"is_time": True}, "datatype": "DateTime", "description": "Indexed timestamp"},
+            ],
+            "metrics": [{"name": "document_count", "expression": {"sql": "COUNT(document_id)"}, "datatype": "Integer", "description": "Count of accessible documents"}],
+        }],
+        "relationships": [], "metrics": [],
+        "nonportable_extensions": [{"vendor_name": "Baryon AX", "data": {"documents": visible}}],
+    }
+
+
+def ossie_model_for_pack(pack: dict) -> dict:
+    """Turn an approved user-requested gap scaffold into a portable Ossie draft."""
+    fields = [{"name": "gap_id", "expression": {"sql": "gap_id"}, "datatype": "String", "description": "Knowledge gap identifier"}]
+    for entity in pack.get("entities") or []:
+        name = str(entity.get("name") or "").strip()
+        if name:
+            fields.append({"name": name, "expression": {"sql": name}, "dimension": {}, "datatype": "String", "description": str(entity.get("type") or "Business concept")})
+    return {
+        "version": "0.3.0.dev0", "name": f"baryon_{pack['id']}",
+        "description": f"Draft Apache Ossie semantic model for knowledge gap: {pack.get('name', '')}",
+        "ai_context": {"instructions": "Complete the source and expressions with authoritative data, then import this model into Baryon AX.", "examples": pack.get("acceptance_questions") or []},
+        "datasets": [{"name": "knowledge_gap", "source": "baryon.knowledge_gaps", "primary_key": ["gap_id"], "fields": fields}],
+        "relationships": [], "metrics": [],
+        "nonportable_extensions": [{"vendor_name": "Baryon AX", "data": {"ontology_pack": pack}}],
+    }
+
+
 def apply_pack_verification(pack: dict, principal: Principal, trigger: str, trace_id: str) -> dict:
     """Re-run acceptance questions and persist the result; resolve gaps on success."""
     verified = verify_pack(
@@ -1837,6 +1945,41 @@ async def search_documents(
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
     return {"data": await asyncio.to_thread(documents.search, principal, q)}
 
+
+@app.post("/v1/ossie/import")
+async def import_ossie_model(
+    file: UploadFile = File(...), allowed_roles: str = Form("member,admin"),
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    """Index an Apache Ossie JSON/YAML semantic model as searchable knowledge."""
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    filename = file.filename or "ossie-model.yaml"
+    if not filename.lower().endswith((".json", ".yaml", ".yml")):
+        raise HTTPException(415, "Apache Ossie imports must be JSON or YAML")
+    payload = await file.read(MAX_DOCUMENT_BYTES + 1)
+    if len(payload) > MAX_DOCUMENT_BYTES:
+        raise HTTPException(413, f"Document exceeds the {MAX_DOCUMENT_BYTES} byte limit")
+    model = parse_ossie_model(payload, filename)
+    trace_id = str(uuid.uuid4())
+    document = await ingest_upload(
+        principal, f"ossie-{model['name']}.md", render_ossie_model(model).encode("utf-8"),
+        roles_from_header(allowed_roles), trace_id, mime="text/markdown", category="ossie", tags=["apache-ossie", "semantic-model"],
+    )
+    audit.emit("ossie.imported", principal, trace_id, document_id=document.id, model=model["name"], datasets=len(model["datasets"]))
+    return {"id": document.id, "title": document.title, "model": model["name"], "datasets": len(model["datasets"]), "trace_id": trace_id}
+
+
+@app.get("/v1/ossie/export")
+async def export_ossie_model(
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+):
+    """Download a JSON Apache Ossie model without exposing out-of-scope documents."""
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    trace_id = str(uuid.uuid4())
+    audit.emit("ossie.exported", principal, trace_id)
+    return JSONResponse(ossie_catalog(principal), headers={"Content-Disposition": 'attachment; filename="baryon-knowledge.ossie.json"'})
+
+
 def _document_for(principal: Principal, document_id: str) -> Document:
     document = documents.documents.get(document_id)
     if not document or document.organization_id != principal.organization_id or not documents.can_view(principal, document):
@@ -2089,7 +2232,7 @@ def tacit_entry_payload(entry) -> dict:
     return data
 
 
-def record_knowledge_gap(principal: Principal, request: ChatRequest, answer: str, citations: list[dict], trace_id: str) -> None:
+def record_knowledge_gap(principal: Principal, request: ChatRequest, answer: str, citations: list[dict], trace_id: str) -> dict | None:
     """Record an ungrounded exchange and emit an audit event.
 
     Never raises: gap capture must not break a chat response.
@@ -2108,13 +2251,15 @@ def record_knowledge_gap(principal: Principal, request: ChatRequest, answer: str
         )
     except Exception:
         logger.exception("Knowledge gap recording failed")
-        return
+        return None
     if gap:
         audit.emit(
             "knowledge.gap_detected", principal, trace_id,
             gap_id=gap.id, reasons=gap.reasons, citations=len(citations),
             occurrences=gap.occurrences,
         )
+        return {"id": gap.id, "question": gap.question, "reasons": gap.reasons, "terms": gap.terms, "occurrences": gap.occurrences}
+    return None
 
 
 def _finish_trace(trace_payload: dict, model_ms: float, audit_ms: float, started: float, trace_id: str) -> dict:
@@ -2152,9 +2297,11 @@ async def stream_chat(
                    latency_ms=round((time.perf_counter() - started) * 1000),
                    citations=[item["document_id"] for item in citations], streamed=True)
         audit_ms = round((time.perf_counter() - audit_started) * 1000, 2)
-        record_knowledge_gap(principal, request, "".join(answer_parts), citations, trace_id)
+        gap = record_knowledge_gap(principal, request, "".join(answer_parts), citations, trace_id)
         yield sse({"type": "trace", "data": _finish_trace(trace_payload, model_ms, audit_ms, started, trace_id)})
         yield sse({"type": "citations", "data": citation_payload(citations), "trace_id": trace_id})
+        if gap:
+            yield sse({"type": "knowledge_gap", "data": gap})
         yield "data: [DONE]\n\n"
     except asyncio.CancelledError:
         tracer.finish(generation, "".join(answer_parts), "cancelled")
@@ -2485,6 +2632,23 @@ async def approve_ontology_pack(
     trace_id = str(uuid.uuid4())
     audit.emit("ontology.pack_approved", principal, trace_id, pack_id=pack_id, name=pack.get("name", ""))
     return pack
+
+
+@app.get("/v1/admin/ontology-packs/{pack_id}/ossie")
+async def download_ontology_pack_ossie(
+    pack_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+):
+    """Download a user-approved gap scaffold as an Apache Ossie draft."""
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if "admin" not in principal.roles:
+        raise HTTPException(403, "Administrator role required")
+    pack = pack_store.get(principal.organization_id, pack_id)
+    if not pack:
+        raise HTTPException(404, "Ontology pack not found")
+    trace_id = str(uuid.uuid4())
+    audit.emit("ontology.pack_ossie_downloaded", principal, trace_id, pack_id=pack_id, name=pack.get("name", ""))
+    return JSONResponse(ossie_model_for_pack(pack), headers={"Content-Disposition": f'attachment; filename="{pack_id}.ossie.json"'})
 
 
 @app.post("/v1/admin/ontology-packs/{pack_id}/verify")
