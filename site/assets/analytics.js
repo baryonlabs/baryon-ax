@@ -6,9 +6,9 @@
   "use strict";
 
   var CLARITY_ID = "ze3vvsj84m";
-  // Set to the GA4 measurement ID (G-XXXXXXXXXX) to enable Google Analytics.
-  // When you do, add Google Analytics to the analytics notice in each page footer.
-  var GA4_ID = "";
+  // GA4 measurement ID. Set to "" to turn Google Analytics off, and remove it from
+  // the analytics notice in each page footer when you do.
+  var GA4_ID = "G-NS5EZB0TLE";
 
   // Skip local previews so test visits don't pollute the numbers.
   var host = location.hostname;
