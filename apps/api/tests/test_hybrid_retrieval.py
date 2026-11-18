@@ -59,3 +59,35 @@ def test_fuse_ranks_shared_hits_first_and_dedupes() -> None:
     fused = DocumentService._fuse([a, b], [c, b], limit=2)
     assert [item["document_id"] for item in fused] == ["b", "a"]
     assert len(DocumentService._fuse([a, b], [b, c], limit=10)) == 3
+
+
+def test_vector_index_rejects_dimension_mismatch(monkeypatch) -> None:
+    import qdrant_client
+    from types import SimpleNamespace
+
+    from baryon.main import VectorIndex
+
+    class FakeClient:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def get_collections(self):
+            return []
+
+        def collection_exists(self, _name):
+            return True
+
+        def get_collection(self, _name):
+            return SimpleNamespace(config=SimpleNamespace(params=SimpleNamespace(vectors=SimpleNamespace(size=384))))
+
+        def create_payload_index(self, *_args, **_kwargs):
+            pass
+
+    monkeypatch.setattr(qdrant_client, "QdrantClient", FakeClient)
+    monkeypatch.setenv("QDRANT_URL", "http://qdrant.test:6333")
+    monkeypatch.setenv("EMBEDDING_DIMENSION", "1024")
+    index = VectorIndex()
+    assert index.enabled is False
+    assert "384-dim" in index.last_error
+    monkeypatch.setenv("EMBEDDING_DIMENSION", "384")
+    assert VectorIndex().enabled is True

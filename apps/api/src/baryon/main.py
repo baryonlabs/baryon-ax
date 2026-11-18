@@ -583,6 +583,14 @@ class VectorIndex:
             client.get_collections()
             if not client.collection_exists(self.collection):
                 client.create_collection(self.collection, vectors_config=VectorParams(size=self.dimension, distance=Distance.COSINE))
+            else:
+                vectors = client.get_collection(self.collection).config.params.vectors
+                size = getattr(vectors, "size", None)
+                if size is not None and size != self.dimension:
+                    raise RuntimeError(
+                        f"Qdrant collection '{self.collection}' stores {size}-dim vectors but EMBEDDING_DIMENSION={self.dimension}; "
+                        "use a new QDRANT_COLLECTION (with QDRANT_REINDEX_ON_START=true) after changing EMBEDDING_MODEL"
+                    )
             for field in ("organization_id", "owner_id", "document_id", "allowed_roles"):
                 try:
                     client.create_payload_index(self.collection, field_name=field, field_schema=PayloadSchemaType.KEYWORD)
