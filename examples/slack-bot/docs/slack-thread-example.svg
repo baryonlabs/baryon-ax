@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="760" viewBox="0 0 1000 760" font-family="'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR','Segoe UI',sans-serif">
+  <title>baryon-ax Slack 봇 예시 화면 (예시 이미지, 실제 스크린샷 아님)</title>
+  <defs>
+    <style>
+      .name{font-size:15px;font-weight:700;fill:#1d1c1d}
+      .time{font-size:12px;fill:#616061}
+      .txt{font-size:15px;fill:#1d1c1d}
+      .b{font-weight:700}
+      .mention{fill:#1264a3}
+      .src{font-size:14px;font-weight:700;fill:#1d1c1d}
+      .quote{font-size:13px;fill:#454245}
+      .ctx{font-size:12px;fill:#616061}
+      .code{font-size:12px;fill:#e01e5a;font-family:Consolas,Menlo,monospace}
+      .note{font-size:14px;fill:#1d1c1d}
+      .noteh{font-size:14px;font-weight:700;fill:#1264a3}
+    </style>
+  </defs>
+
+  <!-- window -->
+  <rect x="0" y="0" width="1000" height="760" rx="14" fill="#f4f4f6"/>
+  <rect x="20" y="20" width="640" height="720" rx="10" fill="#ffffff" stroke="#dddddd"/>
+  <rect x="20" y="20" width="640" height="52" rx="10" fill="#ffffff"/>
+  <line x1="20" y1="72" x2="660" y2="72" stroke="#e8e8e8"/>
+  <text x="40" y="52" class="name" font-size="17">스레드</text>
+  <text x="100" y="52" class="time"># 사내-질문</text>
+  <rect x="520" y="34" width="124" height="24" rx="12" fill="#fff4d6"/>
+  <text x="582" y="51" text-anchor="middle" font-size="12" fill="#8a6100">예시 이미지</text>
+
+  <!-- msg 1: user mention -->
+  <rect x="40" y="90" width="38" height="38" rx="8" fill="#7c5cbf"/>
+  <text x="59" y="115" text-anchor="middle" font-size="15" fill="#fff" font-weight="700">민</text>
+  <text x="92" y="104" class="name">김민지</text>
+  <text x="152" y="104" class="time">오후 2:47</text>
+  <text x="92" y="128" class="txt"><tspan class="mention">@baryon</tspan> 연차휴가는 며칠이야?</text>
+  <rect x="92" y="138" width="44" height="24" rx="12" fill="#e8f5fa" stroke="#1d9bd1"/>
+  <text x="114" y="155" text-anchor="middle" font-size="13">✅ 1</text>
+
+  <line x1="40" y1="178" x2="640" y2="178" stroke="#eeeeee"/>
+  <text x="40" y="196" class="time">답글 3개</text>
+
+  <!-- msg 2: bot answer with sources -->
+  <rect x="40" y="210" width="38" height="38" rx="8" fill="#1e293b"/>
+  <text x="59" y="235" text-anchor="middle" font-size="15" fill="#fff" font-weight="700">b</text>
+  <text x="92" y="224" class="name">baryon</text>
+  <rect x="148" y="211" width="32" height="16" rx="3" fill="#e8e8e8"/>
+  <text x="164" y="223" text-anchor="middle" font-size="10" fill="#616061" font-weight="700">APP</text>
+  <text x="188" y="224" class="time">오후 2:47</text>
+  <text x="92" y="248" class="txt">입사 1년이 지나면 연차휴가는 <tspan class="b">15일</tspan>입니다.</text>
+  <text x="92" y="270" class="txt">3년 이상 근속하면 2년마다 1일씩 늘어납니다.</text>
+  <line x1="92" y1="286" x2="630" y2="286" stroke="#dddddd"/>
+  <text x="92" y="310" class="src">📑 근거</text>
+  <text x="92" y="334" class="src">1. 취업규칙.md <tspan class="ctx" font-weight="400">· chunk 12</tspan></text>
+  <rect x="92" y="342" width="3" height="20" fill="#dddddd"/>
+  <text x="104" y="357" class="quote">제25조(연차휴가) 1년간 80% 이상 출근한 직원에게 15일의 유급휴가를 …</text>
+  <text x="92" y="384" class="src">2. 복리후생_안내.md <tspan class="ctx" font-weight="400">· chunk 3</tspan></text>
+  <rect x="92" y="392" width="3" height="20" fill="#dddddd"/>
+  <text x="104" y="407" class="quote">근속 3년 이상은 매 2년마다 연차 1일 가산 …</text>
+  <text x="92" y="434" class="ctx">baryon-ax · trace <tspan class="code">5c0e757e-63de-465a…</tspan></text>
+
+  <!-- msg 3: follow-up without mention -->
+  <rect x="40" y="458" width="38" height="38" rx="8" fill="#7c5cbf"/>
+  <text x="59" y="483" text-anchor="middle" font-size="15" fill="#fff" font-weight="700">민</text>
+  <text x="92" y="472" class="name">김민지</text>
+  <text x="152" y="472" class="time">오후 2:48</text>
+  <text x="92" y="496" class="txt">그럼 반차로 나눠 써도 돼?</text>
+  <rect x="92" y="506" width="44" height="24" rx="12" fill="#e8f5fa" stroke="#1d9bd1"/>
+  <text x="114" y="523" text-anchor="middle" font-size="13">✅ 1</text>
+
+  <!-- msg 4: bot follow-up answer -->
+  <rect x="40" y="548" width="38" height="38" rx="8" fill="#1e293b"/>
+  <text x="59" y="573" text-anchor="middle" font-size="15" fill="#fff" font-weight="700">b</text>
+  <text x="92" y="562" class="name">baryon</text>
+  <rect x="148" y="549" width="32" height="16" rx="3" fill="#e8e8e8"/>
+  <text x="164" y="561" text-anchor="middle" font-size="10" fill="#616061" font-weight="700">APP</text>
+  <text x="188" y="562" class="time">오후 2:48</text>
+  <text x="92" y="586" class="txt">네, 연차는 <tspan class="b">0.5일(반차) 단위</tspan>로 나눠 쓸 수 있습니다.</text>
+  <line x1="92" y1="602" x2="630" y2="602" stroke="#dddddd"/>
+  <text x="92" y="626" class="src">📑 근거</text>
+  <text x="92" y="650" class="src">1. 취업규칙.md <tspan class="ctx" font-weight="400">· chunk 13</tspan></text>
+  <rect x="92" y="658" width="3" height="20" fill="#dddddd"/>
+  <text x="104" y="673" class="quote">연차휴가는 반일(4시간) 단위로 나누어 사용할 수 있다 …</text>
+  <text x="92" y="700" class="ctx">baryon-ax · trace <tspan class="code">2fa992ff-2539-47ad…</tspan></text>
+
+  <!-- annotations -->
+  <g>
+    <circle cx="700" cy="118" r="14" fill="#1264a3"/>
+    <text x="700" y="123" text-anchor="middle" font-size="14" fill="#fff" font-weight="700">1</text>
+    <text x="724" y="114" class="noteh">@멘션으로 질문</text>
+    <text x="724" y="136" class="note">👀 반응 → 스레드에 "준비 중"</text>
+    <text x="724" y="156" class="note">→ 답변으로 교체 → ✅</text>
+    <line x1="660" y1="118" x2="686" y2="118" stroke="#1264a3" stroke-dasharray="4 3"/>
+  </g>
+  <g>
+    <circle cx="700" cy="318" r="14" fill="#1264a3"/>
+    <text x="700" y="323" text-anchor="middle" font-size="14" fill="#fff" font-weight="700">2</text>
+    <text x="724" y="314" class="noteh">답변 + 근거</text>
+    <text x="724" y="336" class="note">문서 이름 · 청크 번호 · 인용문</text>
+    <text x="724" y="356" class="note">trace id로 baryon-ax에서 추적</text>
+    <line x1="660" y1="318" x2="686" y2="318" stroke="#1264a3" stroke-dasharray="4 3"/>
+  </g>
+  <g>
+    <circle cx="700" cy="486" r="14" fill="#1264a3"/>
+    <text x="700" y="491" text-anchor="middle" font-size="14" fill="#fff" font-weight="700">3</text>
+    <text x="724" y="482" class="noteh">멘션 없이 후속 질문</text>
+    <text x="724" y="504" class="note">멘션된 스레드는 구독 상태</text>
+    <text x="724" y="524" class="note">스레드 전체를 대화 이력으로 전달</text>
+    <line x1="660" y1="486" x2="686" y2="486" stroke="#1264a3" stroke-dasharray="4 3"/>
+  </g>
+  <g>
+    <circle cx="700" cy="640" r="14" fill="#2b7a4b"/>
+    <text x="700" y="645" text-anchor="middle" font-size="14" fill="#fff" font-weight="700">✓</text>
+    <text x="724" y="636" class="noteh" fill="#2b7a4b">근거 없으면 경고</text>
+    <text x="724" y="658" class="note">"근거 문서를 찾지 못했습니다"</text>
+    <text x="724" y="678" class="note">API 오류 시 ❌ 와 안내</text>
+  </g>
+</svg>

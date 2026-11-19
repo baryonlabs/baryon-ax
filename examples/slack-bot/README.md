@@ -18,20 +18,54 @@ Slack ──(Socket Mode, outbound WS)── baryon_slack_bot.py ──HTTP─�
 | 근거 문서 없음 | "근거 문서를 찾지 못했습니다" 경고 표시 |
 | API 오류 | 준비 중 메시지를 오류 안내로 바꾸고 ❌ |
 
-답변 예시:
+사용 예시 (예시 데이터로 그린 화면이며, 실제 스크린샷이 아닙니다):
 
-> 입사 1년이 지나면 연차휴가는 *15일*입니다. 3년 이상 근속하면 2년마다 1일씩 늘어납니다.
-> ───
-> 📑 *근거*
-> *1. 취업규칙.md* · chunk 12
-> > 제25조(연차휴가) 1년간 80% 이상 출근한 직원에게 15일의 유급휴가를 준다 …
-> *2. 복리후생_안내.md* · chunk 3
-> > 근속 3년 이상은 매 2년마다 연차 1일 가산 …
-> baryon-ax · trace `d147634b-…`
+![Slack 스레드에서 @baryon 멘션 질문에 답변과 근거가 달리고, 멘션 없는 후속 질문에도 답하는 예시 화면](docs/slack-thread-example.svg)
 
 - Slack 사용자마다 `X-User-Id: slack:<USER_ID>` 로 요청하므로 감사 로그·지식 공백 기록이 사람별로 남습니다.
 - 문서 열람 권한은 `BARYON_ROLES`(기본 `member`)로 걸러집니다. 운영에서 OIDC를 켰다면 이 헤더를 넣어 주는 게이트웨이 뒤에 두거나 `BARYON_API_TOKEN`을 쓰세요.
 - 스레드 대화는 `thread_id = slack:<채널>:<스레드 ts>` 로 묶여 baryon-ax 메모리·트레이스와 연결됩니다.
+
+## AI 에이전트로 설치하기 (프롬프트)
+
+Claude Code 같은 코딩 에이전트에게 아래 프롬프트를 그대로 붙여 넣으면 설치부터 Slack 연동 확인까지 진행합니다.
+`< >` 부분만 환경에 맞게 바꾸세요. 토큰 발급·앱 설치 승인처럼 계정 권한이 필요한 단계는 에이전트가 사람에게 요청합니다.
+
+````text
+baryon-ax 문서 QA를 Slack @멘션 봇으로 연결하려고 한다. 저장소: <baryon-ax 경로>
+
+목표: Slack에서 "@baryon 질문"을 하면 스레드에 답변과 근거(문서·청크·인용문)가 달리고,
+같은 스레드에서는 멘션 없이 후속 질문에도 답하게 한다.
+
+1. baryon-ax API 준비
+   - API가 <http://127.0.0.1:8000> 에서 동작하는지 /health 로 확인한다. 없으면 README의 Quick start대로 띄운다.
+   - LLM은 OpenAI 호환 엔드포인트 <MODEL_BASE_URL>, 모델 <MODEL_NAME> 을 .env에 설정한다.
+   - 한국어 문서면 QDRANT_URL을 켜고 RETRIEVAL_MODE=hybrid,
+     EMBEDDING_MODEL=intfloat/multilingual-e5-large, EMBEDDING_DIMENSION=1024,
+     새 QDRANT_COLLECTION 이름과 QDRANT_REINDEX_ON_START=true(첫 실행만)로 설정한다.
+2. 문서 등록
+   - <문서 폴더>의 파일을 POST /v1/documents (multipart file, allowed_roles=member,admin) 로 올린다.
+   - 파일명은 UTF-8로 보낸다(Windows에서는 curl 대신 Python으로).
+   - 정답을 아는 질문 5~10개로 /v1/chat/completions 를 호출해 답과 citations를 확인하고 결과를 표로 보여 준다.
+3. Slack 앱
+   - examples/slack-bot/manifest.yml 로 앱을 만들거나, 기존 앱 <앱 이름>의 App Manifest에
+     같은 bot 권한·event_subscriptions·socket_mode_enabled를 추가한다.
+   - App-Level Token(connections:write)을 만들고 앱을 (재)설치한다. 이 두 단계는 나에게 승인을 받는다.
+   - 봇을 <채널>에 초대한다.
+4. 봇 실행
+   - examples/slack-bot 에 venv를 만들고 requirements.txt 를 설치한다.
+   - .env.example 을 .env 로 복사해 토큰과 BARYON_API_URL, BARYON_ORGANIZATION_ID, BARYON_ROLES 를 채운다.
+   - python -m pytest -q tests 가 통과하는지 확인한 뒤 python baryon_slack_bot.py 를 백그라운드로 실행한다.
+5. 연동 확인 (<채널>에서)
+   - "@봇 <정답을 아는 질문>" → 👀, 준비 중 메시지, 답변 + 근거 + trace id, ✅ 순서인지 본다.
+   - 같은 스레드에서 멘션과 함께 후속 질문 → 앞 대화를 이어받는지 본다.
+   - 같은 스레드에서 멘션 없이 질문 → 구독 스레드로 답하는지 본다.
+6. 정리
+   - 토큰이 든 .env, 조직 전용 설정, 평가 질문과 결과는 저장소 루트 local/ 에 두고 커밋하지 않는다
+     (.gitignore에 local/, .env.* 가 있다).
+   - 공개 저장소에 올리는 변경에는 조직·과제 이름이나 내부 주소가 들어가지 않게 확인한다.
+   - 무엇을 설정했고 어디서 확인했는지, 남은 일을 한국어로 보고한다.
+````
 
 ## 1. Slack 앱 만들기
 
