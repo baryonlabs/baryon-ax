@@ -15,9 +15,9 @@ from baryon_slack_bot import (  # noqa: E402
 
 BOT = "UBOT"
 CITATIONS = [
-    {"document_id": "d1", "title": "제안요청서.md", "chunk": 6},
-    {"document_id": "d1", "title": "제안요청서.md", "chunk": 6},
-    {"document_id": "d2", "title": "사업수행계획서.md", "chunk": 3},
+    {"document_id": "d1", "title": "취업규칙.md", "chunk": 6},
+    {"document_id": "d1", "title": "취업규칙.md", "chunk": 6},
+    {"document_id": "d2", "title": "복리후생_안내.md", "chunk": 3},
 ]
 
 
@@ -28,11 +28,11 @@ def fake_api(requests: list[httpx.Request], fail: bool = False) -> httpx.Client:
             return httpx.Response(502, json={"detail": "model down"})
         if request.url.path == "/v1/chat/completions":
             return httpx.Response(200, json={
-                "id": "trace-1", "choices": [{"message": {"role": "assistant", "content": "사업기간은 **계약일로부터 180일**입니다."}}],
+                "id": "trace-1", "choices": [{"message": {"role": "assistant", "content": "연차휴가는 **입사 1년 후 15일**입니다."}}],
                 "citations": CITATIONS,
             })
         return httpx.Response(200, json={"data": [
-            {"document_id": "d1", "chunk": 6, "content": "사업기간: 계약체결일로부터   180일 이내"},
+            {"document_id": "d1", "chunk": 6, "content": "제25조(연차휴가) 1년간 80% 이상 출근 시   15일"},
         ]})
     return httpx.Client(base_url="http://api.test", transport=httpx.MockTransport(handler))
 
@@ -73,33 +73,33 @@ def responder(requests, **kwargs) -> Responder:
 
 
 def test_strip_mentions_and_mrkdwn() -> None:
-    assert strip_mentions("<@UBOT> 사업기간은? <@U123|kim>") == "사업기간은?"
+    assert strip_mentions("<@UBOT> 연차는 며칠? <@U123|kim>") == "연차는 며칠?"
     assert to_mrkdwn("## 요약\n[RFP](https://x.test/a)") == "*요약*\n<https://x.test/a|RFP>"
-    assert to_mrkdwn("기간은 **180일**입니다") == "기간은 ​*180일*​입니다"
+    assert to_mrkdwn("기간은 **15일**입니다") == "기간은 ​*15일*​입니다"
 
 
 def test_thread_messages_maps_roles_and_skips_status_posts() -> None:
     replies = [
-        {"user": "U1", "text": "<@UBOT> 사업기간은?", "ts": "1"},
-        {"user": BOT, "bot_id": "B1", "text": "180일입니다.", "ts": "2"},
+        {"user": "U1", "text": "<@UBOT> 연차는 며칠?", "ts": "1"},
+        {"user": BOT, "bot_id": "B1", "text": "15일입니다.", "ts": "2"},
         {"user": BOT, "bot_id": "B1", "text": PENDING_TEXT, "ts": "3"},
         {"user": "U1", "subtype": "channel_join", "text": "joined", "ts": "4"},
-        {"user": "U1", "text": "그럼 시작일은?", "ts": "5"},
+        {"user": "U1", "text": "그럼 반차도 돼?", "ts": "5"},
     ]
     assert thread_messages(replies, BOT, 10) == [
-        {"role": "user", "content": "사업기간은?"},
-        {"role": "assistant", "content": "180일입니다."},
-        {"role": "user", "content": "그럼 시작일은?"},
+        {"role": "user", "content": "연차는 며칠?"},
+        {"role": "assistant", "content": "15일입니다."},
+        {"role": "user", "content": "그럼 반차도 돼?"},
     ]
     assert thread_messages(replies, BOT, 2)[0]["role"] == "user"  # never starts with the assistant
 
 
 def test_build_blocks_dedupes_sources_and_quotes_snippets() -> None:
-    blocks = build_blocks(Answer("**180일**", CITATIONS, "trace-1"), {("d1", 6): "사업기간:   180일"}, max_sources=4)
+    blocks = build_blocks(Answer("**15일**", CITATIONS, "trace-1"), {("d1", 6): "연차휴가:   15일"}, max_sources=4)
     sources = blocks[2]["text"]["text"]
-    assert blocks[0]["text"]["text"] == "​*180일*​"
-    assert "*1. 제안요청서.md* · chunk 6\n> 사업기간: 180일" in sources
-    assert "*2. 사업수행계획서.md* · chunk 3" in sources and "3." not in sources
+    assert blocks[0]["text"]["text"] == "​*15일*​"
+    assert "*1. 취업규칙.md* · chunk 6\n> 연차휴가: 15일" in sources
+    assert "*2. 복리후생_안내.md* · chunk 3" in sources and "3." not in sources
     assert "trace-1" in blocks[-1]["elements"][0]["text"]
 
 
@@ -111,18 +111,18 @@ def test_build_blocks_warns_without_sources() -> None:
 def test_mention_answers_in_thread_with_sources() -> None:
     requests: list[httpx.Request] = []
     bot, web = responder(requests), FakeWeb()
-    bot.answer({"channel": "C1", "user": "U1", "ts": "100.1", "text": "<@UBOT> 제안요청서의 사업기간은?"}, web)
+    bot.answer({"channel": "C1", "user": "U1", "ts": "100.1", "text": "<@UBOT> 연차휴가는 며칠이야?"}, web)
 
     chat = json.loads(requests[0].content)
-    assert chat["messages"] == [{"role": "user", "content": "제안요청서의 사업기간은?"}]
+    assert chat["messages"] == [{"role": "user", "content": "연차휴가는 며칠이야?"}]
     assert chat["stream"] is False and chat["thread_id"] == "slack:C1:100.1"
     assert requests[0].headers["X-User-Id"] == "slack:U1" and requests[0].headers["X-Organization-Id"] == "org"
     assert requests[1].url.path == "/v1/documents/search"
 
     assert web.named("post")[0]["thread_ts"] == "100.1"
     update = web.named("update")[0]
-    assert update["ts"] == "200.1" and "180일" in update["text"]
-    assert "제안요청서.md" in json.dumps(update["blocks"], ensure_ascii=False)
+    assert update["ts"] == "200.1" and "15일" in update["text"]
+    assert "취업규칙.md" in json.dumps(update["blocks"], ensure_ascii=False)
     assert [c["name"] for c in web.named("react+")] == ["eyes", "white_check_mark"]
     assert web.named("react-")[0]["name"] == "eyes"
     assert not web.named("replies")  # top-level mention: no history to read
@@ -131,15 +131,15 @@ def test_mention_answers_in_thread_with_sources() -> None:
 
 def test_thread_mention_sends_history_and_survives_missing_scope() -> None:
     requests: list[httpx.Request] = []
-    replies = [{"user": "U1", "text": "사업기간은?", "ts": "1"}, {"user": BOT, "bot_id": "B", "text": "180일", "ts": "2"},
-               {"user": "U2", "text": "<@UBOT> 시작일은?", "ts": "3"}]
-    responder(requests).answer({"channel": "C1", "user": "U2", "ts": "3", "thread_ts": "1", "text": "<@UBOT> 시작일은?"}, FakeWeb(replies))
+    replies = [{"user": "U1", "text": "연차는 며칠?", "ts": "1"}, {"user": BOT, "bot_id": "B", "text": "15일", "ts": "2"},
+               {"user": "U2", "text": "<@UBOT> 반차도 돼?", "ts": "3"}]
+    responder(requests).answer({"channel": "C1", "user": "U2", "ts": "3", "thread_ts": "1", "text": "<@UBOT> 반차도 돼?"}, FakeWeb(replies))
     assert [m["role"] for m in json.loads(requests[0].content)["messages"]] == ["user", "assistant", "user"]
 
     requests.clear()
-    responder(requests).answer({"channel": "C1", "user": "U2", "ts": "3", "thread_ts": "1", "text": "<@UBOT> 시작일은?"},
+    responder(requests).answer({"channel": "C1", "user": "U2", "ts": "3", "thread_ts": "1", "text": "<@UBOT> 반차도 돼?"},
                                FakeWeb(history_error=True))
-    assert json.loads(requests[0].content)["messages"] == [{"role": "user", "content": "시작일은?"}]
+    assert json.loads(requests[0].content)["messages"] == [{"role": "user", "content": "반차도 돼?"}]
 
 
 def test_follow_up_only_in_subscribed_threads() -> None:

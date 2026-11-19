@@ -11,3 +11,9 @@ dist/
 coverage/
 data/
 graphify-out/
+
+# Local-only material: deployment settings, private evaluations, internal use cases.
+# Keep anything tied to a specific organization or project here, not in the repo.
+local/
+.env.*
+!.env*.example

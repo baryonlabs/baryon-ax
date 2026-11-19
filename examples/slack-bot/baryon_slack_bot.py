@@ -135,7 +135,7 @@ def strip_mentions(text: str | None) -> str:
 def to_mrkdwn(markdown: str) -> str:
     """Convert the model's CommonMark to Slack mrkdwn (bold, headings, links)."""
     # Slack only renders *bold* when the markers touch whitespace or punctuation, so
-    # Korean text glued to them ("**180일**입니다") gets zero-width spaces around it.
+    # Korean text glued to them ("**15일**입니다") gets zero-width spaces around it.
     bold = "​*\\1*​"
     text = re.sub(r"^#{1,6}\s+(.+)$", r"*\1*", markdown, flags=re.MULTILINE)
     text = re.sub(r"\*\*(.+?)\*\*", bold, text)
@@ -264,7 +264,7 @@ class Responder:
         thread_ts = event.get("thread_ts") or event["ts"]
         if not question:
             web.chat_postMessage(channel=channel, thread_ts=thread_ts,
-                                 text="무엇을 찾아드릴까요? `@봇 질문` 형태로 물어봐 주세요. 예: `@baryon 제안요청서의 사업기간은?`")
+                                 text="무엇을 찾아드릴까요? `@봇 질문` 형태로 물어봐 주세요. 예: `@baryon 연차휴가는 며칠이야?`")
             return
         if self.config.subscribe_threads:
             self.subscriptions.add(channel, thread_ts)
