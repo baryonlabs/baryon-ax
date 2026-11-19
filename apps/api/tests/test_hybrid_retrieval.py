@@ -29,16 +29,16 @@ def _store(tmp_path):
     vector = FakeVector()
     store = DocumentService(tmp_path, vector=vector)
     principal = Principal("user", "org-hybrid", {"member"})
-    lexical_doc = store.create(principal, "schedule.md", "사업기간은 계약체결일로부터 180일 이내", {"member"})
-    semantic_doc = store.create(principal, "plan.md", "프로젝트 일정 개요", {"member"})
-    vector.hits = [{"document_id": semantic_doc.id, "title": "plan.md", "chunk": 1, "content": "프로젝트 일정 개요", "score": 0.8}]
+    lexical_doc = store.create(principal, "leave-policy.md", "연차휴가는 입사 1년 후 15일을 부여한다", {"member"})
+    semantic_doc = store.create(principal, "benefits.md", "복리후생 제도 개요", {"member"})
+    vector.hits = [{"document_id": semantic_doc.id, "title": "benefits.md", "chunk": 1, "content": "복리후생 제도 개요", "score": 0.8}]
     return store, vector, principal, lexical_doc, semantic_doc
 
 
 def test_default_mode_returns_vector_hits_only(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("RETRIEVAL_MODE", raising=False)
     store, vector, principal, _, semantic_doc = _store(tmp_path)
-    results = store.search(principal, "사업기간", limit=4)
+    results = store.search(principal, "연차휴가", limit=4)
     assert [item["document_id"] for item in results] == [semantic_doc.id]
     assert vector.requested_limit == 4
 
@@ -46,7 +46,7 @@ def test_default_mode_returns_vector_hits_only(tmp_path, monkeypatch) -> None:
 def test_hybrid_mode_adds_lexical_hits(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("RETRIEVAL_MODE", "hybrid")
     store, vector, principal, lexical_doc, semantic_doc = _store(tmp_path)
-    results = store.search(principal, "사업기간", limit=4)
+    results = store.search(principal, "연차휴가", limit=4)
     ids = {item["document_id"] for item in results}
     assert ids == {lexical_doc.id, semantic_doc.id}
     assert vector.requested_limit == 8
