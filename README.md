@@ -252,6 +252,14 @@ See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/b300-v
 | `POST /v1/admin/reindex` | Reindex documents into Qdrant (administrator) |
 | `GET /v1/admin/settings` | Effective runtime, storage, policy, and integration settings for administrators |
 
+## Extension examples
+
+Practical integrations that run next to the platform and only use its public API:
+
+| Example | What it does |
+|---|---|
+| [`examples/slack-bot`](examples/slack-bot) | Slack `@mention` bot (Socket Mode): answers from your documents with the **answer + sources** (document, chunk, quoted passage), follows up in mentioned threads without another mention, and keeps per-user audit trails. Modeled on the OpenTag mention-gateway pattern. |
+
 For local development, callers can send `X-User-Id`, `X-Organization-Id`, and `X-Roles` headers. Replace this development identity adapter with OIDC/SSO before production use.
 
 ## Repository layout
@@ -263,6 +271,7 @@ deploy/         Compose and Kubernetes deployment assets
 docs/           Architecture, operations, security, full-stack, B300 deployment, research, inventory
 site/           Introduction, help, and GitHub Pages site
 scripts/        Ollama proxy, B300 vLLM serve/tunnel, full-stack smoke
+examples/       Extension examples built on the public API (Slack @mention bot)
 ```
 
 ## Development
