@@ -259,6 +259,7 @@ Practical integrations that run next to the platform and only use its public API
 | Example | What it does |
 |---|---|
 | [`examples/slack-bot`](examples/slack-bot) | Slack `@mention` bot (Socket Mode): answers from your documents with the **answer + sources** (document, chunk, quoted passage), follows up in mentioned threads without another mention, and keeps per-user audit trails. Modeled on the OpenTag mention-gateway pattern. Optional **proactive mode** asks people first: questions it could not answer are posted to a desk channel, a thread reply becomes a draft the author approves, and the published answer goes back to the original thread. Its README includes a copy-paste setup prompt for coding agents. |
+| [`examples/discord-bot`](examples/discord-bot) | The same bot for Discord over the Gateway (no public URL): `@mention` opens a thread with the answer and a sources embed, follow-ups in the thread need no mention, and the optional ask-first desk turns unanswered questions into published documents with approve buttons. |
 
 <p align="center"><img src="examples/slack-bot/docs/slack-thread-example.svg" width="720" alt="Illustrative Slack thread: an @baryon question answered with sources, then a follow-up answered without a mention"></p>
 <p align="center"><sub>Illustration with sample data, not a screenshot.</sub></p>
@@ -274,7 +275,7 @@ deploy/         Compose and Kubernetes deployment assets
 docs/           Architecture, operations, security, full-stack, B300 deployment, research, inventory
 site/           Introduction, help, and GitHub Pages site
 scripts/        Ollama proxy, B300 vLLM serve/tunnel, full-stack smoke
-examples/       Extension examples built on the public API (Slack @mention bot)
+examples/       Extension examples built on the public API (Slack and Discord bots)
 ```
 
 ## Development
