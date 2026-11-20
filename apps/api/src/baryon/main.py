@@ -563,7 +563,16 @@ class VectorIndex:
     def __init__(self) -> None:
         self.url = os.getenv("QDRANT_URL", "").rstrip("/")
         self.collection = os.getenv("QDRANT_COLLECTION", "baryon_documents")
+        # EMBEDDING_PROVIDER=fastembed (local, default) or openai (any OpenAI-compatible /v1/embeddings endpoint)
+        self.provider = os.getenv("EMBEDDING_PROVIDER", "fastembed").strip().lower()
         self.model_name = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+        self.query_model = os.getenv("EMBEDDING_QUERY_MODEL", "").strip() or self.model_name
+        self.base_url = (os.getenv("EMBEDDING_BASE_URL", "").strip() or os.getenv("MODEL_BASE_URL", "")).rstrip("/")
+        self.api_key = os.getenv("EMBEDDING_API_KEY", "").strip()
+        self.batch_size = max(1, int(os.getenv("EMBEDDING_BATCH_SIZE", "64")))
+        # Remote models reject inputs over their context window; wide table chunks can exceed it.
+        # Only the embedded text is truncated — the stored chunk keeps its full content.
+        self.max_chars = max(100, int(os.getenv("EMBEDDING_MAX_CHARS", "6000")))
         self.dimension = int(os.getenv("EMBEDDING_DIMENSION", "384"))
         self.min_score = float(os.getenv("RETRIEVAL_MIN_SCORE", "0.3"))
         self.client = None
@@ -603,6 +612,8 @@ class VectorIndex:
             logger.exception("Qdrant is unavailable; using lexical retrieval")
 
     def _embed(self, texts: list[str], query: bool = False) -> list[list[float]]:
+        if self.provider == "openai":
+            return self._embed_remote(texts, query)
         if self.embedder is None:
             with self._embedder_lock:
                 if self.embedder is None:
@@ -611,6 +622,25 @@ class VectorIndex:
         prefix = "query: " if query else "passage: "
         with self._embed_lock:
             return [vector.tolist() for vector in self.embedder.embed([prefix + text for text in texts])]
+
+    def _embed_remote(self, texts: list[str], query: bool) -> list[list[float]]:
+        """OpenAI-compatible embeddings; EMBEDDING_QUERY_MODEL lets asymmetric models use a separate query encoder."""
+        if not self.base_url:
+            raise RuntimeError("EMBEDDING_PROVIDER=openai needs EMBEDDING_BASE_URL (or MODEL_BASE_URL)")
+        model = self.query_model if query else self.model_name
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        vectors: list[list[float]] = []
+        with httpx.Client(timeout=120) as client:
+            for start in range(0, len(texts), self.batch_size):
+                batch = [(text or " ")[:self.max_chars] for text in texts[start:start + self.batch_size]]
+                response = client.post(f"{self.base_url}/embeddings", json={"model": model, "input": batch}, headers=headers)
+                if response.status_code >= 400:
+                    raise RuntimeError(f"Embedding request failed ({response.status_code}): {response.text[:300]}")
+                data = sorted(response.json()["data"], key=lambda item: item.get("index", 0))
+                vectors.extend(item["embedding"] for item in data)
+        if vectors and len(vectors[0]) != self.dimension:
+            raise RuntimeError(f"Embedding model '{model}' returned {len(vectors[0])}-dim vectors but EMBEDDING_DIMENSION={self.dimension}")
+        return vectors
 
     @staticmethod
     def _point_id(document_id: str, index: int) -> str:
