@@ -304,6 +304,7 @@ def create_app(config: Config | None = None):
     app = App(token=os.environ["SLACK_BOT_TOKEN"])
     bot_user_id = app.client.auth_test()["user_id"]
     responder = Responder(config, BaryonClient(config), bot_user_id)
+    desk = _create_desk(responder)
 
     @app.event("app_mention")
     def on_mention(event, client):
@@ -311,10 +312,35 @@ def create_app(config: Config | None = None):
 
     @app.event("message")
     def on_message(event, client):
-        if responder.should_follow_up(event):
+        gap_id = desk.answer_gap_id(event) if desk else None
+        if gap_id:
+            desk.on_answer(event, gap_id, client)
+        elif responder.should_follow_up(event):
             responder.answer(event, client)
 
+    if desk:
+        from proactive import ACTION_DISCARD, ACTION_DISMISS, ACTION_PUBLISH
+
+        for action_id, handler in ((ACTION_PUBLISH, desk.on_publish), (ACTION_DISCARD, desk.on_discard),
+                                   (ACTION_DISMISS, desk.on_dismiss)):
+            def on_action(ack, body, client, _handler=handler):
+                ack()
+                _handler(body, client)
+
+            app.action(action_id)(on_action)
+    app.desk = desk  # main() starts the scheduler once the socket is up
     return app
+
+
+def _create_desk(responder: Responder):
+    """Proactive mode (proactive.py) is on when PROACTIVE_CHANNEL is set."""
+    from proactive import GapDesk, KnowledgeClient, ProactiveConfig, ProactiveState
+
+    config = ProactiveConfig.from_env()
+    if not config.enabled:
+        return None
+    knowledge = KnowledgeClient(responder.baryon, config.service_roles)
+    return GapDesk(config, responder, knowledge, ProactiveState(config.state_path))
 
 
 def main() -> None:
@@ -328,6 +354,12 @@ def main() -> None:
 
     app = create_app()
     logger.info("baryon-ax Slack bot connecting over Socket Mode → %s", Config.from_env().api_url)
+    if app.desk:
+        from proactive import start_scheduler
+
+        start_scheduler(app.desk, app.client)
+        logger.info("proactive mode on: asking about knowledge gaps in %s every %.0f min",
+                    app.desk.config.channel, app.desk.config.interval_minutes)
     SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"]).start()
 
 
