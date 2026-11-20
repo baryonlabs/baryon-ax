@@ -99,6 +99,7 @@ cp .env.example .env
 | `QDRANT_URL` | `http://127.0.0.1:6333` | Qdrant |
 | `QDRANT_COLLECTION` | `baryon_documents` | 문서 벡터 컬렉션 |
 | `EMBEDDING_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | FastEmbed 모델 (384차원) |
+| `MCP_SERVER_ENABLED` | `true` | `POST /mcp`에 검색·근거 답변·지식 공백 도구를 MCP 서버로 노출 ([mcp-server.md](mcp-server.md)) |
 | `MEM0_ENABLED` | `true` | Mem0 메모리 활성화 |
 | `MEM0_LLM_MODEL` | `qwen2.5:7b` | 메모리 추출 모델 |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Mem0용 Ollama URL |
