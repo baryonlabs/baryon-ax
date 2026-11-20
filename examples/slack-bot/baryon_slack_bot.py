@@ -29,6 +29,8 @@ logger = logging.getLogger("baryon.slack")
 MENTION_RE = re.compile(r"<@[UW][A-Z0-9]+(?:\|[^>]*)?>")
 SECTION_LIMIT = 2900  # Slack section text limit is 3000 characters
 SNIPPET_CHARS = 180
+# "> 작성자: …" style front matter (e.g. who answered and when) is provenance, not content worth quoting.
+METADATA_LINE_RE = re.compile(r"^\s*>\s*[^:\n]{1,20}:\s.*$", re.MULTILINE)
 PENDING_TEXT = ":hourglass_flowing_sand: 문서를 찾아 답변을 준비하고 있습니다…"
 ERROR_PREFIX = ":x: 답변을 만들지 못했습니다"
 STATUS_PREFIXES = (PENDING_TEXT, ERROR_PREFIX)  # bot status posts are not conversation turns
@@ -165,6 +167,11 @@ def thread_messages(replies: list[dict], bot_user_id: str, max_turns: int) -> li
     return messages
 
 
+def quote_text(content: str) -> str:
+    """Chunk text for a one-line quote, without metadata blockquote lines."""
+    return " ".join(METADATA_LINE_RE.sub("", content).split())
+
+
 def source_lines(citations: list[dict], snippets: dict[tuple[str, int], str], max_sources: int) -> list[str]:
     seen: set[tuple[str, int]] = set()
     lines: list[str] = []
@@ -174,7 +181,7 @@ def source_lines(citations: list[dict], snippets: dict[tuple[str, int], str], ma
             continue
         seen.add(key)
         line = f"*{len(lines) + 1}. {item.get('title') or key[0]}* · chunk {key[1]}"
-        snippet = " ".join(snippets.get(key, "").split())
+        snippet = quote_text(snippets.get(key, ""))
         if snippet:
             line += f"\n> {_clip(snippet, SNIPPET_CHARS)}"
         lines.append(line)

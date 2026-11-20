@@ -300,16 +300,17 @@ class GapDesk:
                                 blocks=_note(f":white_check_mark: *답이 등록됐어요* (<@{user}> 님)\n{_quote(item.get('question', ''))}"))
             except Exception:
                 logger.info("could not update desk post", exc_info=True)
-        if self.config.reanswer:
-            self._reanswer(item, web)
+        # One re-answer per question: later answers are indexed too and will show up the next time it is asked.
+        if self.config.reanswer and not item.get("reanswered") and self._reanswer(item, web):
+            self.state.record(gap_id, reanswered=True)
         logger.info("published tacit answer %s for gap %s (%s)", entry_id, gap_id, document_id)
 
-    def _reanswer(self, item: dict, web) -> None:
+    def _reanswer(self, item: dict, web) -> bool:
         origin = item.get("origin_thread") or ""
         asked_by = (item.get("asked_by") or "").removeprefix("slack:")
         parts = origin.split(":")
         if len(parts) != 3 or parts[0] != "slack" or not asked_by:
-            return  # the question came from somewhere other than Slack
+            return False  # the question came from somewhere other than Slack
         _, channel, thread_ts = parts
         question = item.get("question", "")
         try:
@@ -317,12 +318,13 @@ class GapDesk:
             snippets = self.responder.baryon.snippets(question, asked_by) if self.responder.config.show_snippets and result.citations else {}
         except Exception:
             logger.exception("re-answer failed")
-            return
+            return False
         from baryon_slack_bot import build_blocks  # local import avoids a cycle
 
         lead = _note(f"<@{asked_by}> 지난번에 답하지 못했던 질문에 동료가 답을 남겨 줘서, 다시 답해 드려요.")
         web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=result.text,
                              blocks=lead + build_blocks(result, snippets, self.responder.config.max_sources))
+        return True
 
     def on_discard(self, body: dict, web) -> None:
         channel, ts = body["channel"]["id"], body["message"]["ts"]

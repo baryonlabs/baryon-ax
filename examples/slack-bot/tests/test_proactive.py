@@ -201,3 +201,22 @@ def test_action_listener_takes_only_bolt_arguments() -> None:
     acked = []
     listener(ack=lambda: acked.append(True), body={"x": 1}, client="web")
     assert acked == [True] and seen == [({"x": 1}, "web")]
+
+
+def test_second_publish_for_same_gap_does_not_reanswer_again(tmp_path) -> None:
+    api, web = FakeApi(), FakeWeb()
+    desk = make_desk(tmp_path, api, max_per_run=5)
+    desk.run_once(web, now=datetime(2026, 1, 5, 10))
+    desk.on_publish(action_body(ACTION_PUBLISH, "tac_1|gap_a"), web)
+    desk.on_publish(action_body(ACTION_PUBLISH, "tac_2|gap_a"), web)
+    assert len(api.find("/publish")) == 2
+    assert len(api.find("/v1/chat/completions")) == 1
+    assert desk.state.get("gap_a")["reanswered"] is True
+
+
+def test_quote_skips_metadata_lines() -> None:
+    from baryon_slack_bot import quote_text
+
+    chunk = ("암묵지: 연차는 며칠?\n\n> 답변자: slack:U123\n> 작성일: 2026-01-01T00:00:00+00:00\n\n"
+             "입사 1년 후 15일입니다.\n> 인용문은 그대로")
+    assert quote_text(chunk) == "암묵지: 연차는 며칠? 입사 1년 후 15일입니다. > 인용문은 그대로"
