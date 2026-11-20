@@ -187,3 +187,17 @@ def test_slack_only_skips_gaps_from_other_clients(tmp_path) -> None:
     desk = make_desk(tmp_path, api, max_per_run=5, slack_only=True)
     assert desk.run_once(web, now=datetime(2026, 1, 5, 10)) == 1
     assert "구내식당" in web.of("post")[0]["text"]
+
+
+def test_action_listener_takes_only_bolt_arguments() -> None:
+    import inspect
+
+    from baryon_slack_bot import action_listener
+
+    seen = []
+    listener = action_listener(lambda body, client: seen.append((body, client)))
+    # Bolt injects arguments by name; any extra parameter would arrive as None.
+    assert list(inspect.signature(listener).parameters) == ["ack", "body", "client"]
+    acked = []
+    listener(ack=lambda: acked.append(True), body={"x": 1}, client="web")
+    assert acked == [True] and seen == [({"x": 1}, "web")]

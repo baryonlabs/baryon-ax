@@ -323,13 +323,18 @@ def create_app(config: Config | None = None):
 
         for action_id, handler in ((ACTION_PUBLISH, desk.on_publish), (ACTION_DISCARD, desk.on_discard),
                                    (ACTION_DISMISS, desk.on_dismiss)):
-            def on_action(ack, body, client, _handler=handler):
-                ack()
-                _handler(body, client)
-
-            app.action(action_id)(on_action)
+            app.action(action_id)(action_listener(handler))
     app.desk = desk  # main() starts the scheduler once the socket is up
     return app
+
+
+def action_listener(handler):
+    """Bolt fills listener arguments by parameter name, so the handler is captured in a closure."""
+    def on_action(ack, body, client):
+        ack()
+        handler(body, client)
+
+    return on_action
 
 
 def _create_desk(responder: Responder):
