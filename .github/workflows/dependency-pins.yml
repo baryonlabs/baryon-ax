@@ -1,0 +1,59 @@
+name: dependency pins
+
+# Weekly freshness report for the docling parser pins. CI only checks that the pins
+# are consistent; this job notices when upstream has released newer versions and
+# keeps a single tracking issue open until someone runs scripts/refresh_docling_pins.sh.
+on:
+  schedule:
+    - cron: "17 0 * * 1" # Mondays 09:17 KST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  UV_VERSION: 0.13.7
+  ISSUE_TITLE: "chore: docling parser pins are behind upstream"
+
+jobs:
+  docling:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install "uv==${UV_VERSION}"
+      - name: Resolve latest allowed versions
+        working-directory: deploy/parsers/docling
+        run: |
+          uv pip compile requirements.in \
+            --python-version 3.12 --python-platform x86_64-manylinux_2_28 --no-header \
+            -o "$RUNNER_TEMP/latest.txt"
+          if diff -u requirements.txt "$RUNNER_TEMP/latest.txt" > "$RUNNER_TEMP/pins.diff"; then
+            echo "drift=false" >> "$GITHUB_ENV"
+          else
+            echo "drift=true" >> "$GITHUB_ENV"
+          fi
+      - name: Open or update the tracking issue
+        if: env.drift == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Newer versions are available for \`deploy/parsers/docling/requirements.txt\`."
+            echo
+            echo "Run \`scripts/refresh_docling_pins.sh\`, rebuild the docling image, and open a PR."
+            echo
+            echo '```diff'
+            grep -E '^[-+][a-z0-9]' "$RUNNER_TEMP/pins.diff" | grep -vE '^(\+\+\+|---)' || true
+            echo '```'
+            echo
+            echo "_Updated by the dependency pins workflow on $(date -u +%Y-%m-%d)._"
+          } > "$RUNNER_TEMP/body.md"
+          number="$(gh issue list --state open --search "\"$ISSUE_TITLE\" in:title" --json number --jq '.[0].number')"
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh issue create --title "$ISSUE_TITLE" --body-file "$RUNNER_TEMP/body.md"
+          fi
