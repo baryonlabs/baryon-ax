@@ -211,8 +211,9 @@ Baryon AX는 **채널 → 게이트웨이 → 오케스트레이션 → 지식·
 ### 1. 전체 아키텍처
 
 ```mermaid
-flowchart LR
+flowchart TB
   subgraph CH["채널"]
+    direction LR
     WEB["웹 워크스페이스<br/>React · Vite"]
     OAI["OpenAI 호환 클라이언트<br/>/v1/chat/completions"]
     BOT["Slack · Discord 봇<br/>examples/"]
@@ -220,6 +221,7 @@ flowchart LR
   end
 
   subgraph GW["게이트웨이 · FastAPI"]
+    direction LR
     AUTH["인증<br/>OIDC JWT 또는 개발 헤더"]
     RL["요청 제한<br/>Redis"]
     POL["정책 엔진<br/>입력 검사 · PII 마스킹"]
@@ -230,6 +232,7 @@ flowchart LR
   end
 
   subgraph KN["지식"]
+    direction LR
     ING["수집 파이프라인<br/>MIME 라우팅 · 구조 청킹"]
     PAR["파서 사이드카<br/>kordoc · docling · Tika"]
     EMB["임베딩<br/>FastEmbed 또는 OpenAI 호환"]
@@ -250,6 +253,7 @@ flowchart LR
   end
 
   subgraph GOV["거버넌스 · 관측"]
+    direction LR
     AUD[("감사 로그<br/>PostgreSQL · JSONL")]
     LF["Langfuse 트레이스"]
     GAP["지식 공백 · 암묵지 큐"]
