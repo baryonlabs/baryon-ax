@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .gaps import GapStore, salient_terms
+from .gaps import GapStore, rewrite_jsonl, salient_terms
 from .ingest.ir import normalize_text
 
 # Curated prompts for tacit knowledge that documents rarely capture.
@@ -187,6 +187,16 @@ class TacitStore:
             entry.updated_at = entry.published_at
             self._persist(entry)
             return entry
+
+    def purge_organization(self, organization_id: str) -> int:
+        with self._lock:
+            doomed = [entry_id for entry_id, entry in self._entries.items() if entry.organization_id == organization_id]
+            if not doomed:
+                return 0
+            for entry_id in doomed:
+                del self._entries[entry_id]
+            rewrite_jsonl(self.path, (entry.as_dict() for entry in self._entries.values()))
+            return len(doomed)
 
     def summary(self, organization_id: str) -> dict[str, int]:
         entries = [entry for entry in self._entries.values() if entry.organization_id == organization_id]

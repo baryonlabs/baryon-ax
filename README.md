@@ -459,6 +459,7 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 | `MODEL_PROMPT_PROFILE` | `auto` | 모델별 근거 시스템 프롬프트 (`qwen35`, `qwen`, `generic`) |
 | `MODEL_TIMEOUT_SECONDS` | `180` | 모델 연결·응답 제한 시간 |
 | `AUTH_MODE` | `dev` | `oidc`면 Bearer 토큰 검증. [auth-oidc.md](docs/auth-oidc.md) |
+| `TENANCY_MODE` | `single` | `pooled`면 공유 인스턴스(등록된 테넌트만 허용, 쿼터·계량). [multi-tenancy.md](docs/multi-tenancy.md) |
 | `QDRANT_URL` | 비어 있음 | 벡터 저장소 (비우면 어휘 검색) |
 | `RETRIEVAL_MODE` | `vector` | `hybrid`면 벡터 + 어휘 검색 RRF |
 | `RETRIEVAL_MIN_SCORE` | `0.3` | 인용으로 인정할 최소 유사도 |
@@ -568,7 +569,7 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 | GPU 서버 배포 | [b300-host-deploy.md](docs/b300-host-deploy.md) · [b300-vllm.md](docs/b300-vllm.md) |
 | 구조 · 설계 | [architecture.md](docs/architecture.md) · [ingestion/architecture.md](docs/ingestion/architecture.md) · [ux-principles.md](docs/ux-principles.md) · [research/knowledge-gap-loop.md](docs/research/knowledge-gap-loop.md) |
 | 기능 전체 | [features.md](docs/features.md) · [screenshots.md](docs/screenshots.md) |
-| 인증 · 보안 | [auth-oidc.md](docs/auth-oidc.md) · [security.md](docs/security.md) · [security-ci.md](docs/security-ci.md) · [SECURITY.md](SECURITY.md) |
+| 인증 · 보안 | [auth-oidc.md](docs/auth-oidc.md) · [multi-tenancy.md](docs/multi-tenancy.md) · [security.md](docs/security.md) · [security-ci.md](docs/security-ci.md) · [SECURITY.md](SECURITY.md) |
 | 연동 | [mcp-server.md](docs/mcp-server.md) · [mcp-connectors.md](docs/mcp-connectors.md) · [examples/](examples) |
 | 오픈소스 · 라이선스 | [open-source.md](docs/open-source.md) · [ingestion/open-source-inventory.md](docs/ingestion/open-source-inventory.md) |
 | 방향 | [roadmap.md](docs/roadmap.md) |
