@@ -206,15 +206,166 @@ OLLAMA_HOST_URL=http://host.docker.internal:11435 \
 
 ## Architecture
 
-```text
-Browser UI ──> FastAPI gateway ──> LangGraph policy/retrieval ──> model adapter ──> response stream
-                        │                    │                          │
-                        │                    ├──> Qdrant + FastEmbed ───┤
-                        │                    └──> Mem0 (Qdrant/Ollama)  │
-                        ├──> PostgreSQL audit / JSONL mirror
-                        ├──> Redis rate limiter
-                        └──> Langfuse traces
+Baryon AX는 **채널 → 게이트웨이 → 오케스트레이션 → 지식·모델·메모리 → 거버넌스** 순서로 요청을 처리합니다. 모든 요청은 게이트웨이에서 신원과 권한을 확정한 뒤에만 지식과 모델에 닿고, 모든 단계는 같은 `trace_id`로 감사 기록과 트레이스에 이어집니다.
+
+### 1. 전체 아키텍처
+
+```mermaid
+flowchart LR
+  subgraph CH["채널"]
+    WEB["웹 워크스페이스<br/>React · Vite"]
+    OAI["OpenAI 호환 클라이언트<br/>/v1/chat/completions"]
+    BOT["Slack · Discord 봇<br/>examples/"]
+    MCPC["MCP 클라이언트<br/>Claude · IDE"]
+  end
+
+  subgraph GW["게이트웨이 · FastAPI"]
+    AUTH["인증<br/>OIDC JWT 또는 개발 헤더"]
+    RL["요청 제한<br/>Redis"]
+    POL["정책 엔진<br/>입력 검사 · PII 마스킹"]
+  end
+
+  subgraph ORC["오케스트레이션 · LangGraph"]
+    G1["policy"] --> G2["memory"] --> G3["retrieve"]
+  end
+
+  subgraph KN["지식"]
+    ING["수집 파이프라인<br/>MIME 라우팅 · 구조 청킹"]
+    PAR["파서 사이드카<br/>kordoc · docling · Tika"]
+    EMB["임베딩<br/>FastEmbed 또는 OpenAI 호환"]
+    VEC[("Qdrant<br/>벡터 · ACL 필터")]
+    LEX["어휘 검색<br/>하이브리드 RRF"]
+  end
+
+  subgraph MD["모델"]
+    LLM["OpenAI 호환 어댑터<br/>Ollama · vLLM · demo-local"]
+  end
+
+  subgraph MEM["메모리"]
+    M0[("Mem0<br/>사용자별 장기 기억")]
+  end
+
+  subgraph TL["도구"]
+    CF["MCP 게이트웨이<br/>ContextForge · 선택"]
+  end
+
+  subgraph GOV["거버넌스 · 관측"]
+    AUD[("감사 로그<br/>PostgreSQL · JSONL")]
+    LF["Langfuse 트레이스"]
+    GAP["지식 공백 · 암묵지 큐"]
+  end
+
+  WEB & OAI & BOT & MCPC --> AUTH --> RL --> POL --> G1
+  G2 <--> M0
+  G3 --> VEC & LEX
+  ING --> PAR --> EMB --> VEC
+  G3 --> LLM
+  POL -. "허가된 도구만" .-> CF
+  LLM -. "근거 없는 답" .-> GAP
+  GW & ORC & LLM -. trace_id .-> AUD & LF
 ```
+
+| 계층 | 하는 일 | 구현 위치 |
+| --- | --- | --- |
+| 채널 | 사람이 묻는 곳. 웹, OpenAI 호환 API, 메신저 봇, MCP 클라이언트가 같은 API를 씁니다. | `apps/web`, `/v1/chat/completions`, `examples/` |
+| 게이트웨이 | 신원 확정(OIDC 또는 개발 헤더), 요청 제한, 입력 정책과 PII 마스킹. 브라우저와 봇은 모델·벡터 저장소에 직접 닿지 않습니다. | `auth.py`, `RateLimiter`, `PolicyEngine` |
+| 오케스트레이션 | `policy → memory → retrieve` 그래프로 근거를 모은 뒤 모델 스트리밍과 출력 마스킹을 수행합니다. | `main.py`의 LangGraph `StateGraph` |
+| 지식 | 파일을 MIME으로 판별해 파서로 보내고, 구조를 살려 청킹·임베딩해 Qdrant에 넣습니다. 검색은 조직·역할 ACL을 **모델에 넣기 전에** 적용합니다. | `ingest/`, `DocumentService`, `VectorIndex` |
+| 모델 | OpenAI 호환 `/chat/completions`이면 무엇이든 연결합니다. 모델이 없으면 `demo-local`로 동작합니다. | `ModelAdapter` |
+| 메모리 | 사용자별 장기 기억을 저장·검색해 답변에 넣습니다. | `MemoryService` (Mem0) |
+| 도구 | MCP 도구는 서버가 역할 권한을 다시 확인한 것만 모델에 노출합니다. | `connectors.py`, `mcp.py` |
+| 거버넌스 | 모든 요청·업로드·게시·도구 호출을 감사 로그와 트레이스로 남기고, 근거 없는 답은 지식 공백으로 기록합니다. | `AuditSink`, Langfuse, `gaps.py` |
+
+### 2. 기능 구조
+
+```mermaid
+flowchart TB
+  AX["Baryon AX"]
+  AX --> C["대화"]
+  AX --> K["지식"]
+  AX --> T["암묵지 루프"]
+  AX --> G["거버넌스"]
+  AX --> I["연동"]
+
+  C --> C1["근거 인용 스트리밍 답변"]
+  C --> C2["처리 과정 trace · 근거 없음 경고"]
+  C --> C3["사용자 메모리 주입"]
+
+  K --> K1["HWP · PDF · Office · 이미지 수집"]
+  K --> K2["벡터 · 하이브리드 검색"]
+  K --> K3["Apache Ossie 가져오기 · 내보내기"]
+
+  T --> T1["지식 공백 감지 · 클러스터링"]
+  T --> T2["전문가 질문 큐 · 답변 게시"]
+  T --> T3["온톨로지 팩 · Ossie 초안"]
+
+  G --> G1["조직 · 역할 ACL"]
+  G --> G2["감사 로그 · Langfuse"]
+  G --> G3["관리자 설정 · 시스템 상태"]
+
+  I --> I1["OpenAI 호환 모델 · 임베딩"]
+  I --> I2["MCP 도구 선택 · ContextForge"]
+  I --> I3["Slack · Discord 봇 · MCP 서버"]
+```
+
+다섯 기능 묶음은 따로 노는 모듈이 아니라 한 루프로 이어집니다. **대화**가 근거를 찾지 못하면 **암묵지 루프**가 공백으로 기록하고 전문가에게 질문합니다. 게시된 답변은 **지식**의 같은 수집 파이프라인을 거쳐 다음 **대화**의 근거가 됩니다. 이 모든 단계는 **거버넌스**의 ACL과 감사 아래에서 움직이고, **연동**은 같은 루프를 메신저와 외부 도구로 넓힙니다.
+
+### 3. 질문 하나가 처리되는 순서
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as 사용자
+  participant GW as 게이트웨이
+  participant LG as LangGraph
+  participant MEM as Mem0
+  participant KB as Qdrant · 어휘 검색
+  participant LLM as 모델
+  participant AUD as 감사 · Langfuse
+
+  U->>GW: 질문 (웹 · 봇 · API)
+  GW->>GW: 신원 확정 · 요청 제한 · 입력 정책
+  GW->>LG: Principal + 질문
+  LG->>MEM: 관련 기억 검색
+  LG->>KB: 조직 · 역할 ACL로 거른 근거 검색
+  LG->>LLM: 근거 + 기억 + 질문
+  LLM-->>GW: 토큰 스트림
+  GW-->>U: 출력 마스킹된 답변 + 출처
+  GW->>AUD: chat.completed (trace_id)
+  opt 근거가 없거나 모호함
+    GW->>AUD: 지식 공백 기록 → 전문가 질문 큐
+  end
+```
+
+### 4. 지식이 쌓이는 경로
+
+```mermaid
+flowchart LR
+  UP["문서 업로드"] --> MIME{"MIME 판별"}
+  MIME -->|HWP · HWPX| KO["kordoc"]
+  MIME -->|PDF · Office · 이미지| DO["docling"]
+  MIME -->|기타 형식| TI["Tika"]
+  MIME -->|텍스트 · Markdown| TX["내장 파서"]
+  OS["Apache Ossie 모델"] --> TX
+  TA["게시된 암묵지 답변"] --> TX
+  KO & DO & TI & TX --> CH["구조 청킹<br/>제목 경로 · 표 머리글"]
+  CH --> EM["임베딩"]
+  EM --> Q[("Qdrant")]
+  Q --> S["다음 대화의 근거 · 출처"]
+```
+
+업로드 문서, Ossie 의미 모델, 게시된 암묵지 답변은 모두 **같은 파이프라인**을 거칩니다. 그래서 출처 표시, 권한 필터, 재색인이 지식의 출처와 관계없이 똑같이 적용됩니다.
+
+### 실행 구성
+
+| 구성 | 실행되는 것 | 시작 명령 |
+| --- | --- | --- |
+| Basic Core | `api`, `web`, `demo-local` 모델, 파일 저장소 | `docker compose up --build` |
+| 파서 추가 | + kordoc, docling, Tika 사이드카 | `-f docker-compose.parsers.yml --profile parsers` |
+| Full stack | + Qdrant, PostgreSQL, Redis, Langfuse, Mem0 | `-f docker-compose.full.yml --profile deps` |
+| 인증 | + Keycloak (OIDC) | `-f docker-compose.auth.yml` · [docs/auth-oidc.md](docs/auth-oidc.md) |
+| MCP 도구 | + ContextForge 게이트웨이 | `-f docker-compose.mcp.yml` · [docs/mcp-connectors.md](docs/mcp-connectors.md) |
+| GPU 서버 | vLLM 등 사내 GPU 모델 | [docs/b300-host-deploy.md](docs/b300-host-deploy.md) |
 
 See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/b300-vllm.md](docs/b300-vllm.md) for the remote B300 GPU 7 vLLM test, [docs/b300-host-deploy.md](docs/b300-host-deploy.md) for the full platform on B300, [docs/research/strata-and-local-ai-shortlist.md](docs/research/strata-and-local-ai-shortlist.md) for the Strata/local-AI research, [docs/research/clawfit-positioning.md](docs/research/clawfit-positioning.md) for the clawfit comparison and registration strategy, [docs/research/knowledge-gap-loop.md](docs/research/knowledge-gap-loop.md) for the knowledge-gap and ontology loop, [docs/ux-principles.md](docs/ux-principles.md) for the applied UX and AI-interface principles, [docs/site-seo.md](docs/site-seo.md) for the static site SEO/AEO/GEO setup, [docs/auth-oidc.md](docs/auth-oidc.md) for Keycloak/OIDC authentication, [docs/mcp-connectors.md](docs/mcp-connectors.md) for the MCP SaaS connector layer, [docs/promotion-playbook.md](docs/promotion-playbook.md) for search-engine registration and promotion operations, [docs/promotion-drafts.md](docs/promotion-drafts.md) for ready-to-post launch copy, [docs/domain-migration.md](docs/domain-migration.md) for the custom-domain cutover, [docs/research/clawfit/](docs/research/clawfit/) for the clawfit research-watch draft and registry entry proposal, [docs/features.md](docs/features.md) for the complete feature inventory, [docs/open-source.md](docs/open-source.md) for the open-source component and license inventory, and [docs/architecture.md](docs/architecture.md), [docs/operations.md](docs/operations.md), and [docs/security.md](docs/security.md) for the intended production integration boundaries. Ingestion design lives in [docs/ingestion/architecture.md](docs/ingestion/architecture.md) and the parser/connector survey in [docs/ingestion/open-source-inventory.md](docs/ingestion/open-source-inventory.md).
 
