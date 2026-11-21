@@ -1,4 +1,5 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
+import GatewayCard, { type GatewayInfo } from "./GatewayCard";
 import { AlertTriangle, BookOpen, Bot, Boxes, Brain, ChevronRight, Copy, Cpu, Download, ExternalLink, FileCode, FileImage, FileSpreadsheet, FileText, FileType, FileUp, Globe2, HardDrive, LogOut, Menu, MessagesSquare, Network, Paperclip, Plus, RefreshCw, RotateCcw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, UploadCloud, Wrench, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -165,6 +166,7 @@ type AdminSettings = {
   counts: { documents: number; audit_events: number };
   system: SystemInfo;
   links: Record<string, string>;
+  gateway?: GatewayInfo | null;
 };
 type Connector = {
   id: string; name: string; category: string; auth: string; docs_url: string;
@@ -1950,6 +1952,7 @@ export default function App({ session = null }: { session?: AuthSession | null }
               {settings.links.ollama && <a href={settings.links.ollama} target="_blank" rel="noreferrer"><ExternalLink size={13}/>Ollama {t.docs}</a>}
             </div>
           </section>
+          {settings.gateway && <GatewayCard gateway={settings.gateway} locale={locale}/>}
           <section className="setting-card system-card">
             <h3><ExternalLink size={15}/>{t.adminLinks}</h3>
             <div className="link-grid">

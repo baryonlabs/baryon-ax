@@ -522,3 +522,26 @@ details.trace[open] summary::before { transform: rotate(90deg); }
 
 .pill.signed-in { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .auth-error { max-width: 480px; margin: 15vh auto; padding: 0 16px; color: var(--text-soft); }
+
+/* LLM gateway connection card (admin settings) */
+.gateway-card { grid-column: 1 / -1; }
+.gateway-card h4 { margin: 14px 0 6px; font-size: 12px; color: #a9bddb; font-weight: 600; }
+.gateway-copy { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gateway-copy code, .gateway-table code { font-size: 11px; color: #dce8fb; background: #0f1a2d; padding: 2px 6px; border-radius: 4px; word-break: break-all; }
+.gateway-chain { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 0; }
+.gateway-step { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid #2c4268; border-radius: 8px; background: #12203a; font-size: 12px; }
+.gateway-step + .gateway-step::before { content: "→"; color: #6f86aa; margin-right: 4px; }
+.gateway-index { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #233a60; color: #cfe0fb; font-size: 10px; }
+.gateway-badge { padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; }
+.gateway-badge.healthy { background: rgba(84, 201, 139, .16); color: #7fe0a9; }
+.gateway-badge.down { background: rgba(240, 110, 110, .16); color: #ff9b9b; }
+.gateway-badge.noKey { background: rgba(240, 190, 90, .16); color: #f3cf86; }
+.gateway-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.gateway-table th, .gateway-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #22344f; vertical-align: top; }
+.gateway-table th { color: #8ea4c6; font-weight: 600; }
+.gateway-warning { color: #f3cf86; font-size: 12px; }
+.gateway-examples { margin-top: 12px; }
+.gateway-examples summary { cursor: pointer; font-size: 12px; color: #a9c6f4; }
+.gateway-example { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; }
+.gateway-example pre { flex: 1; margin: 0; padding: 10px; background: #0b1424; border: 1px solid #22344f; border-radius: 6px; overflow-x: auto; font-size: 11px; }
+@media (max-width: 720px) { .gateway-example { flex-direction: column; } }
