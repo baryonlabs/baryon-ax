@@ -58,6 +58,7 @@ Eight captured screens cover grounded chat, the source viewer, knowledge upload,
 - **Tacit knowledge capture**: question-and-answer sessions (from open gaps or curated prompts) with file attachments; publishing an answer indexes it as searchable knowledge
 - **Proactive tacit-knowledge loop**: idle-time gap analysis builds an expert question queue, and published answers become cited, ACL-scoped documents
 - **Apache Ossie interchange**: import Ossie semantic models (JSON/YAML) as searchable knowledge, export permitted documents as Ossie, and turn a chat knowledge gap into a downloadable Ossie draft (admin)
+- **MCP server** at `POST /mcp`: search, grounded answers with sources and the knowledge-gap loop as tools for any MCP host (agent chat apps, desktop assistants, IDEs) — see [docs/mcp-server.md](docs/mcp-server.md)
 - **MCP tool picker in the composer**: type `/` to select MCP tools; the server re-checks each tool against the caller's roles before exposing it to the model
 - **PostgreSQL audit events** with JSONL mirroring, **Redis rate limiting**, and **Langfuse tracing**
 - **Mem0 user memory** with Qdrant + Ollama, managed from a dedicated UI tab and **injected into chat answers**
@@ -269,6 +270,7 @@ flowchart TB
   GW & ORC & LLM -. trace_id .-> AUD & LF
 ```
 
+<<<<<<< HEAD
 | 계층 | 하는 일 | 구현 위치 |
 | --- | --- | --- |
 | 채널 | 사람이 묻는 곳. 웹, OpenAI 호환 API, 메신저 봇, MCP 클라이언트가 같은 API를 씁니다. | `apps/web`, `/v1/chat/completions`, `examples/` |
@@ -360,6 +362,15 @@ flowchart LR
 
 업로드 문서, Ossie 의미 모델, 게시된 암묵지 답변은 모두 **같은 파이프라인**을 거칩니다. 그래서 출처 표시, 권한 필터, 재색인이 지식의 출처와 관계없이 똑같이 적용됩니다.
 
+<details>
+<summary>수집 파이프라인 상세 (원본 보관 → 라우터 → 파서 → Document IR → 청커 → 임베더 → Qdrant · 지식 카탈로그)</summary>
+
+![Baryon AX 수집 파이프라인 상세](docs/architecture-ingest.png)
+
+편집 가능한 원본은 [Excalidraw 보드](https://app.excalidraw.com/s/71iHvWeZdL/5PvcKxcjuan), 설계 설명은 [docs/ingestion/architecture.md](docs/ingestion/architecture.md)에 있습니다.
+
+</details>
+
 ### 실행 구성
 
 | 구성 | 실행되는 것 | 시작 명령 |
@@ -372,6 +383,9 @@ flowchart LR
 | GPU 서버 | vLLM 등 사내 GPU 모델 | [docs/b300-host-deploy.md](docs/b300-host-deploy.md) |
 
 See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/b300-vllm.md](docs/b300-vllm.md) for the remote B300 GPU 7 vLLM test, [docs/b300-host-deploy.md](docs/b300-host-deploy.md) for the full platform on B300, [docs/research/strata-and-local-ai-shortlist.md](docs/research/strata-and-local-ai-shortlist.md) for the Strata/local-AI research, [docs/research/clawfit-positioning.md](docs/research/clawfit-positioning.md) for the clawfit comparison and registration strategy, [docs/research/knowledge-gap-loop.md](docs/research/knowledge-gap-loop.md) for the knowledge-gap and ontology loop, [docs/ux-principles.md](docs/ux-principles.md) for the applied UX and AI-interface principles, [docs/site-seo.md](docs/site-seo.md) for the static site SEO/AEO/GEO setup, [docs/auth-oidc.md](docs/auth-oidc.md) for Keycloak/OIDC authentication, [docs/mcp-connectors.md](docs/mcp-connectors.md) for the MCP SaaS connector layer, [docs/promotion-playbook.md](docs/promotion-playbook.md) for search-engine registration and promotion operations, [docs/promotion-drafts.md](docs/promotion-drafts.md) for ready-to-post launch copy, [docs/domain-migration.md](docs/domain-migration.md) for the custom-domain cutover, [docs/research/clawfit/](docs/research/clawfit/) for the clawfit research-watch draft and registry entry proposal, [docs/features.md](docs/features.md) for the complete feature inventory, [docs/open-source.md](docs/open-source.md) for the open-source component and license inventory, and [docs/architecture.md](docs/architecture.md), [docs/operations.md](docs/operations.md), and [docs/security.md](docs/security.md) for the intended production integration boundaries. Ingestion design lives in [docs/ingestion/architecture.md](docs/ingestion/architecture.md) and the parser/connector survey in [docs/ingestion/open-source-inventory.md](docs/ingestion/open-source-inventory.md).
+=======
+See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/b300-vllm.md](docs/b300-vllm.md) for the remote B300 GPU 7 vLLM test, [docs/b300-host-deploy.md](docs/b300-host-deploy.md) for the full platform on B300, [docs/research/strata-and-local-ai-shortlist.md](docs/research/strata-and-local-ai-shortlist.md) for the Strata/local-AI research, [docs/research/clawfit-positioning.md](docs/research/clawfit-positioning.md) for the clawfit comparison and registration strategy, [docs/research/knowledge-gap-loop.md](docs/research/knowledge-gap-loop.md) for the knowledge-gap and ontology loop, [docs/ux-principles.md](docs/ux-principles.md) for the applied UX and AI-interface principles, [docs/site-seo.md](docs/site-seo.md) for the static site SEO/AEO/GEO setup, [docs/auth-oidc.md](docs/auth-oidc.md) for Keycloak/OIDC authentication, [docs/mcp-connectors.md](docs/mcp-connectors.md) for the MCP SaaS connector layer, [docs/mcp-server.md](docs/mcp-server.md) for using baryon-ax itself as an MCP server, [docs/promotion-playbook.md](docs/promotion-playbook.md) for search-engine registration and promotion operations, [docs/promotion-drafts.md](docs/promotion-drafts.md) for ready-to-post launch copy, [docs/domain-migration.md](docs/domain-migration.md) for the custom-domain cutover, [docs/research/clawfit/](docs/research/clawfit/) for the clawfit research-watch draft and registry entry proposal, [docs/features.md](docs/features.md) for the complete feature inventory, [docs/open-source.md](docs/open-source.md) for the open-source component and license inventory, and [docs/architecture.md](docs/architecture.md), [docs/operations.md](docs/operations.md), and [docs/security.md](docs/security.md) for the intended production integration boundaries. Ingestion design lives in [docs/ingestion/architecture.md](docs/ingestion/architecture.md) and the parser/connector survey in [docs/ingestion/open-source-inventory.md](docs/ingestion/open-source-inventory.md).
+>>>>>>> origin/main
 
 ## API highlights
 

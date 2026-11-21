@@ -20,13 +20,13 @@ from urllib.parse import urlparse
 
 import httpx
 import yaml
-from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import __version__
-from .auth import OIDCConfig, OIDCAuthMiddleware
+from .auth import OIDCConfig, OIDCAuthMiddleware, current_acting_service
 from .connectors import CONNECTOR_BY_ID, CONNECTORS, TOOLS, connector_payload, decide_tool, get_connector, get_tool, search_tools, tool_payload
 from .ingest import Acl as IngestAcl
 from .ingest import REGISTRY, chunk_document, normalize_text
@@ -37,6 +37,7 @@ from .ingest.pipeline import PipelineConfig, PermanentError, run_pipeline
 from .feedback import FeedbackStore
 from .gaps import GapStore, PackStore, build_pack, cluster_gaps, verify_pack
 from .mcp import MCPClient, MCPGatewayError
+from .mcp_server import MCPServer, Tool, ToolError, parse_body
 from .open_source import open_source_payload
 from .tacit import QUESTION_TEMPLATES, TacitStore, suggest_questions
 
@@ -215,6 +216,9 @@ class AuditSink:
             "id": str(uuid.uuid4()), "at": now(), "type": event_type, "trace_id": trace_id,
             "organization_id": principal.organization_id, "user_id": principal.user_id, **payload,
         }
+        acting_service = current_acting_service()
+        if acting_service and "acting_service" not in event:
+            event["acting_service"] = acting_service
         self.events.append(event)
         try:
             self.storage_path.parent.mkdir(parents=True, exist_ok=True)
@@ -563,7 +567,16 @@ class VectorIndex:
     def __init__(self) -> None:
         self.url = os.getenv("QDRANT_URL", "").rstrip("/")
         self.collection = os.getenv("QDRANT_COLLECTION", "baryon_documents")
+        # EMBEDDING_PROVIDER=fastembed (local, default) or openai (any OpenAI-compatible /v1/embeddings endpoint)
+        self.provider = os.getenv("EMBEDDING_PROVIDER", "fastembed").strip().lower()
         self.model_name = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+        self.query_model = os.getenv("EMBEDDING_QUERY_MODEL", "").strip() or self.model_name
+        self.base_url = (os.getenv("EMBEDDING_BASE_URL", "").strip() or os.getenv("MODEL_BASE_URL", "")).rstrip("/")
+        self.api_key = os.getenv("EMBEDDING_API_KEY", "").strip()
+        self.batch_size = max(1, int(os.getenv("EMBEDDING_BATCH_SIZE", "64")))
+        # Remote models reject inputs over their context window; wide table chunks can exceed it.
+        # Only the embedded text is truncated — the stored chunk keeps its full content.
+        self.max_chars = max(100, int(os.getenv("EMBEDDING_MAX_CHARS", "6000")))
         self.dimension = int(os.getenv("EMBEDDING_DIMENSION", "384"))
         self.min_score = float(os.getenv("RETRIEVAL_MIN_SCORE", "0.3"))
         self.client = None
@@ -603,6 +616,8 @@ class VectorIndex:
             logger.exception("Qdrant is unavailable; using lexical retrieval")
 
     def _embed(self, texts: list[str], query: bool = False) -> list[list[float]]:
+        if self.provider == "openai":
+            return self._embed_remote(texts, query)
         if self.embedder is None:
             with self._embedder_lock:
                 if self.embedder is None:
@@ -611,6 +626,25 @@ class VectorIndex:
         prefix = "query: " if query else "passage: "
         with self._embed_lock:
             return [vector.tolist() for vector in self.embedder.embed([prefix + text for text in texts])]
+
+    def _embed_remote(self, texts: list[str], query: bool) -> list[list[float]]:
+        """OpenAI-compatible embeddings; EMBEDDING_QUERY_MODEL lets asymmetric models use a separate query encoder."""
+        if not self.base_url:
+            raise RuntimeError("EMBEDDING_PROVIDER=openai needs EMBEDDING_BASE_URL (or MODEL_BASE_URL)")
+        model = self.query_model if query else self.model_name
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        vectors: list[list[float]] = []
+        with httpx.Client(timeout=120) as client:
+            for start in range(0, len(texts), self.batch_size):
+                batch = [(text or " ")[:self.max_chars] for text in texts[start:start + self.batch_size]]
+                response = client.post(f"{self.base_url}/embeddings", json={"model": model, "input": batch}, headers=headers)
+                if response.status_code >= 400:
+                    raise RuntimeError(f"Embedding request failed ({response.status_code}): {response.text[:300]}")
+                data = sorted(response.json()["data"], key=lambda item: item.get("index", 0))
+                vectors.extend(item["embedding"] for item in data)
+        if vectors and len(vectors[0]) != self.dimension:
+            raise RuntimeError(f"Embedding model '{model}' returned {len(vectors[0])}-dim vectors but EMBEDDING_DIMENSION={self.dimension}")
+        return vectors
 
     @staticmethod
     def _point_id(document_id: str, index: int) -> str:
@@ -1401,8 +1435,19 @@ AUTH_CONFIG.validate()
 
 app = FastAPI(title="Baryon AX API", version=__version__, lifespan=lifespan)
 origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3001,http://localhost:5173").split(",") if origin.strip()]
+
+
+def record_auth_failure(event: dict) -> None:
+    """auth.failed audit hook for the middleware. The event never carries the token."""
+    # Rejected delegations know the caller's organization; invalid tokens do not.
+    organization_id = str(event.pop("organization_id", None) or AUTH_CONFIG.default_org)
+    actor = Principal(str(event.get("actor") or "anonymous"), organization_id, set())
+    audit.emit("auth.failed", actor, str(uuid.uuid4()), **event)
+
+
 # Auth runs inside CORS so 401 responses keep the browser-readable CORS headers.
-app.add_middleware(OIDCAuthMiddleware, config=AUTH_CONFIG)
+# The hook resolves `audit` lazily; the middleware stack is built on the first request.
+app.add_middleware(OIDCAuthMiddleware, config=AUTH_CONFIG, on_failure=record_auth_failure)
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 policy = PolicyEngine()
 vector = VectorIndex()
@@ -1734,6 +1779,43 @@ async def health() -> dict:
         "memory_backend": "mem0" if memory_service.enabled else "disabled",
         "time": now(),
     }
+
+
+def auth_identity(principal: Principal, acting_service: str | None) -> dict:
+    return {
+        "user_id": principal.user_id, "organization_id": principal.organization_id,
+        "roles": sorted(principal.roles), "acting_service": acting_service, "auth_mode": AUTH_CONFIG.mode,
+    }
+
+
+@app.get("/v1/auth/me")
+async def auth_me(
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+    x_acting_service: str | None = Header(None),
+) -> dict:
+    """The identity the API sees for this request, after OIDC validation and delegation."""
+    return auth_identity(principal_from_headers(x_user_id, x_organization_id, x_roles), x_acting_service)
+
+
+@app.post("/v1/auth/login")
+async def auth_login(
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+    x_acting_service: str | None = Header(None),
+) -> dict:
+    """Called once by the web client after sign-in; records auth.login."""
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    audit.emit("auth.login", principal, str(uuid.uuid4()), roles=sorted(principal.roles), auth_mode=AUTH_CONFIG.mode)
+    return auth_identity(principal, x_acting_service)
+
+
+@app.post("/v1/auth/logout")
+async def auth_logout(
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    """Called by the web client before it ends the IdP session; records auth.logout."""
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    audit.emit("auth.logout", principal, str(uuid.uuid4()), auth_mode=AUTH_CONFIG.mode)
+    return {"ok": True}
 
 
 @app.get("/v1/open-source")
@@ -2773,3 +2855,170 @@ async def reindex_documents(
     trace_id = str(uuid.uuid4())
     audit.emit("admin.reindexed", principal, trace_id, indexed=indexed)
     return {"indexed": indexed, "backend": "qdrant", "trace_id": trace_id}
+
+
+# --------------------------------------------------------------------------- MCP server
+# Exposes the same capabilities as tools for MCP hosts (agent chat apps, desktop
+# assistants, IDEs).  Each tool calls the REST handler above with the caller's
+# identity headers, so permissions, audit events and gap capture are identical.
+
+mcp_server = MCPServer()
+MCP_ENABLED = os.getenv("MCP_SERVER_ENABLED", "true").lower() == "true"
+
+
+def _identity(identity: dict[str, str | None]) -> dict[str, str | None]:
+    return {"x_user_id": identity.get("user"), "x_organization_id": identity.get("organization"), "x_roles": identity.get("roles")}
+
+
+async def _rest(call):
+    """Run a REST handler; HTTP errors become tool errors the model can read."""
+    try:
+        return await call
+    except HTTPException as error:
+        raise ToolError(f"{error.status_code}: {error.detail}") from error
+
+
+def _int_arg(arguments: dict, name: str, default: int, low: int, high: int) -> int:
+    try:
+        return max(low, min(high, int(arguments.get(name, default))))
+    except (TypeError, ValueError) as error:
+        raise ToolError(f"{name} must be an integer") from error
+
+
+async def _mcp_search(arguments: dict, identity: dict) -> tuple[str, dict]:
+    query = str(arguments["query"]).strip()
+    if len(query) < 2:
+        raise ToolError("query must be at least 2 characters")
+    limit = _int_arg(arguments, "limit", 6, 1, 20)
+    principal = principal_from_headers(identity.get("user"), identity.get("organization"), identity.get("roles"))
+    rows = await asyncio.to_thread(documents.search, principal, query, limit)
+    results = [{key: row.get(key) for key in ("document_id", "title", "chunk", "content", "score") if key in row} for row in rows]
+    if not results:
+        return "No matching passages.", {"results": []}
+    lines = [f"[{index}] {row.get('title')} · chunk {row.get('chunk')}\n{normalize_text(str(row.get('content') or ''))[:800]}"
+             for index, row in enumerate(results, 1)]
+    return "\n\n".join(lines), {"results": results}
+
+
+async def _mcp_ask(arguments: dict, identity: dict) -> tuple[str, dict]:
+    question = str(arguments["question"]).strip()
+    history = arguments.get("history") or []
+    if not isinstance(history, list):
+        raise ToolError("history must be a list of {role, content}")
+    messages = [Message(role=item.get("role"), content=item.get("content")) for item in history
+                if isinstance(item, dict) and item.get("role") in {"user", "assistant"} and item.get("content")]
+    messages.append(Message(role="user", content=question))
+    request = ChatRequest(messages=messages, stream=False, thread_id=arguments.get("thread_id") or None)
+    data = await _rest(chat(request, **_identity(identity)))
+    answer = data["choices"][0]["message"]["content"]
+    citations = data.get("citations") or []
+    seen: list[str] = []
+    for item in citations:
+        label = f"{item.get('title')} · chunk {item.get('chunk')}"
+        if label not in seen:
+            seen.append(label)
+    text = answer + ("\n\nSources:\n" + "\n".join(f"- {label}" for label in seen) if seen else "\n\n(No supporting document found.)")
+    return text, {"answer": answer, "citations": citations, "trace_id": data.get("id")}
+
+
+async def _mcp_gaps(arguments: dict, identity: dict) -> tuple[str, dict]:
+    status = str(arguments.get("status") or "open")
+    limit = _int_arg(arguments, "limit", 20, 1, 100)
+    data = await _rest(list_gaps(status=status, limit=limit, **_identity(identity)))
+    gaps = [{key: gap.get(key) for key in ("id", "question", "occurrences", "reasons", "user_id", "status", "last_seen")}
+            for gap in data["data"]]
+    if not gaps:
+        return f"No {status} knowledge gaps.", {"gaps": [], "summary": data.get("summary")}
+    lines = [f"- {gap['id']} ({gap['occurrences']}x, {', '.join(gap['reasons'] or [])}): {gap['question']}" for gap in gaps]
+    return "\n".join(lines), {"gaps": gaps, "summary": data.get("summary")}
+
+
+async def _mcp_questions(arguments: dict, identity: dict) -> tuple[str, dict]:
+    data = await _rest(tacit_questions(**_identity(identity)))
+    questions = data["data"]
+    lines = [f"- [{item.get('source')}] {item.get('question')}" + (f" (gap_id={item['gap_id']})" if item.get("gap_id") else "")
+             for item in questions]
+    return "\n".join(lines) or "No suggested questions.", {"questions": questions, "open_gaps": data.get("open_gaps")}
+
+
+async def _mcp_record(arguments: dict, identity: dict) -> tuple[str, dict]:
+    payload = TacitEntryCreate(question=str(arguments["question"])[:500], answer=str(arguments["answer"])[:20000],
+                               gap_id=arguments.get("gap_id") or None, source="mcp")
+    entry = await _rest(create_tacit_entry(payload, **_identity(identity)))
+    return (f"Saved draft {entry['id']} (not published yet). Publish with publish_answer after the author confirms.",
+            {"entry": entry})
+
+
+async def _mcp_publish(arguments: dict, identity: dict) -> tuple[str, dict]:
+    entry = await _rest(publish_tacit_entry(str(arguments["entry_id"]), **_identity(identity)))
+    return (f"Published {entry['id']} as document {entry.get('published_document_id')}; it is now searchable.",
+            {"entry": entry})
+
+
+for _tool in (
+    Tool("search_documents", "Search documents",
+         "Search the organization's documents the caller may read. Returns matching passages with document title and chunk.",
+         {"type": "object", "properties": {
+             "query": {"type": "string", "description": "What to look for (any language)."},
+             "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 6}},
+          "required": ["query"]}, _mcp_search),
+    Tool("ask", "Ask with sources",
+         "Answer a question from the organization's documents with citations. Unanswered questions are recorded as knowledge gaps.",
+         {"type": "object", "properties": {
+             "question": {"type": "string"},
+             "history": {"type": "array", "description": "Earlier turns of the same conversation, oldest first.",
+                         "items": {"type": "object", "properties": {"role": {"type": "string", "enum": ["user", "assistant"]},
+                                                                    "content": {"type": "string"}}}},
+             "thread_id": {"type": "string", "description": "Stable id to group a conversation in traces and memory."}},
+          "required": ["question"]}, _mcp_ask),
+    Tool("list_knowledge_gaps", "List knowledge gaps",
+         "Questions people asked that could not be answered from documents (administrators only).",
+         {"type": "object", "properties": {
+             "status": {"type": "string", "enum": ["open", "resolved", "dismissed", "all"], "default": "open"},
+             "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}}}, _mcp_gaps),
+    Tool("suggest_questions", "Suggest questions to ask people",
+         "Questions worth asking colleagues: open knowledge gaps first, then templates for tacit knowledge.",
+         {"type": "object", "properties": {}}, _mcp_questions),
+    Tool("record_answer", "Save an answer as a draft",
+         "Save a person's answer to a question as an unpublished draft, optionally linked to a knowledge gap.",
+         {"type": "object", "properties": {
+             "question": {"type": "string"}, "answer": {"type": "string"},
+             "gap_id": {"type": "string", "description": "Knowledge gap this answers, from list_knowledge_gaps."}},
+          "required": ["question", "answer"]}, _mcp_record, read_only=False),
+    Tool("publish_answer", "Publish a draft answer",
+         "Index a draft answer as a searchable document and resolve its gap. Only the author or an administrator may publish; "
+         "confirm with the author first.",
+         {"type": "object", "properties": {"entry_id": {"type": "string"}}, "required": ["entry_id"]},
+         _mcp_publish, read_only=False),
+):
+    mcp_server.tool(_tool)
+
+
+def _origin_allowed(origin: str | None) -> bool:
+    # Streamable HTTP servers must reject foreign browser origins (DNS rebinding).
+    return not origin or origin in origins
+
+
+@app.post("/mcp")
+async def mcp_endpoint(
+    http_request: Request,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+):
+    if not MCP_ENABLED:
+        raise HTTPException(404, "MCP server is disabled")
+    if not _origin_allowed(http_request.headers.get("origin")):
+        raise HTTPException(403, "Origin not allowed")
+    payload, parse_error = parse_body(await http_request.body())
+    if parse_error:
+        return JSONResponse(parse_error, status_code=400)
+    identity = {"user": x_user_id, "organization": x_organization_id, "roles": x_roles}
+    reply = await mcp_server.handle(payload, identity)
+    if reply is None:
+        return Response(status_code=202)
+    return JSONResponse(reply)
+
+
+@app.get("/mcp")
+async def mcp_stream() -> Response:
+    # No server-initiated messages: the spec allows 405 instead of an SSE stream.
+    return Response(status_code=405, headers={"Allow": "POST"})

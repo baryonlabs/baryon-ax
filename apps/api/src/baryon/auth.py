@@ -8,15 +8,24 @@ middleware validates the bearer token, maps IdP groups to Baryon roles, and
 injects trusted identity headers before the request reaches an endpoint. The
 middleware is deliberately provider-agnostic: Keycloak, Entra ID, or any
 standards-compliant OIDC issuer works as long as the role claim is configured.
+
+Delegated identity: a bot or MCP client authenticates with one service-account
+token that carries ``OIDC_SERVICE_ROLE`` and names the end user with
+``X-On-Behalf-Of``. The middleware then acts as that user, caps the requested
+roles by the service account's own roles, and records the service principal
+as the acting service so audit events show both.
 """
 
 from __future__ import annotations
 
+import logging
 import os
+import re
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from contextvars import ContextVar
+from typing import Any, Callable
 from urllib.parse import urlparse
 
 import httpx
@@ -28,10 +37,33 @@ from starlette.responses import JSONResponse
 
 DEFAULT_PUBLIC_PATHS = "/health,/docs*,/redoc*,/openapi.json,/v1/open-source"
 IDENTITY_HEADERS = (b"x-user-id", b"x-organization-id", b"x-roles")
+DELEGATION_HEADERS = (b"x-on-behalf-of", b"x-on-behalf-of-roles", b"x-acting-service")
+# Allowed characters for delegated user ids such as ``slack:U123`` or ``discord:42``.
+DELEGATED_USER_PATTERN = re.compile(r"[A-Za-z0-9:._@-]{1,128}")
+
+# Set per request by the middleware; read by the audit emitter so events show
+# which service account acted on behalf of the user.
+ACTING_SERVICE: ContextVar[str | None] = ContextVar("baryon_acting_service", default=None)
+
+AuthFailureHook = Callable[[dict[str, Any]], None]
+
+logger = logging.getLogger(__name__)
+
+
+def current_acting_service() -> str | None:
+    return ACTING_SERVICE.get()
 
 
 class AuthError(Exception):
     """Raised when a token is missing or cannot be validated."""
+
+
+class DelegationError(Exception):
+    """Raised when delegation headers are not allowed or malformed."""
+
+    def __init__(self, message: str, status_code: int = 403) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 @dataclass(frozen=True)
@@ -47,6 +79,9 @@ class OIDCConfig:
     org_claim: str = "organization"
     default_org: str = "local-org"
     user_claim: str = "preferred_username"
+    service_role: str = "baryon-service"
+    delegation_prefixes: tuple[str, ...] = ()
+    failure_audit_per_minute: int = 60
     public_paths: tuple[str, ...] = field(default_factory=lambda: tuple(DEFAULT_PUBLIC_PATHS.split(",")))
     leeway_seconds: int = 30
     http_timeout: float = 5.0
@@ -74,6 +109,13 @@ class OIDCConfig:
             org_claim=os.getenv("OIDC_ORG_CLAIM", "organization").strip(),
             default_org=os.getenv("OIDC_DEFAULT_ORG", "local-org").strip(),
             user_claim=os.getenv("OIDC_USER_CLAIM", "preferred_username").strip(),
+            service_role=os.getenv("OIDC_SERVICE_ROLE", "baryon-service").strip(),
+            delegation_prefixes=tuple(
+                value.strip()
+                for value in os.getenv("OIDC_DELEGATION_USER_PREFIXES", "").split(",")
+                if value.strip()
+            ),
+            failure_audit_per_minute=int(os.getenv("AUTH_FAILED_AUDIT_PER_MINUTE", "60")),
             public_paths=public_paths,
             leeway_seconds=int(os.getenv("OIDC_LEEWAY_SECONDS", "30")),
             http_timeout=float(os.getenv("OIDC_HTTP_TIMEOUT_SECONDS", "5")),
@@ -150,6 +192,45 @@ def roles_from_claims(claims: dict[str, Any], config: OIDCConfig) -> set[str]:
     if not roles:
         roles.add("member")
     return roles
+
+
+def has_service_role(claims: dict[str, Any], config: OIDCConfig) -> bool:
+    """True when the token carries the configured delegation (service) role."""
+    if not config.service_role:
+        return False
+    for value in _claim_values(_claim_value(claims, config.role_claim)):
+        role = value.strip().lstrip("/")
+        if role == config.service_role or role.rsplit("/", 1)[-1] == config.service_role:
+            return True
+    return False
+
+
+def validate_delegated_user(user_id: str, config: OIDCConfig) -> str:
+    user_id = user_id.strip()
+    if not DELEGATED_USER_PATTERN.fullmatch(user_id):
+        raise DelegationError("malformed X-On-Behalf-Of user id", status_code=400)
+    if config.delegation_prefixes and not user_id.startswith(config.delegation_prefixes):
+        raise DelegationError("X-On-Behalf-Of user id prefix is not allowed")
+    return user_id
+
+
+def delegated_roles(requested: str | None, service_roles: set[str], config: OIDCConfig) -> set[str]:
+    """Requested roles capped by the service account's own roles (never escalates).
+
+    No requested roles means ``member``. Roles the service account does not hold
+    are dropped; if nothing is left the delegation is rejected.
+    """
+    wanted: set[str] = set()
+    for value in (requested or "").split(","):
+        normalized = _normalize_role(value, config)
+        if normalized:
+            wanted.add(normalized)
+    if not wanted:
+        wanted = {"member"}
+    allowed = wanted & service_roles
+    if not allowed:
+        raise DelegationError("requested roles exceed the service account's roles")
+    return allowed
 
 
 def principal_from_claims(claims: dict[str, Any], config: OIDCConfig) -> PrincipalClaims:
@@ -274,14 +355,23 @@ class OIDCAuthMiddleware:
         app,
         config: OIDCConfig,
         validator: OIDCValidator | None = None,
+        on_failure: AuthFailureHook | None = None,
     ) -> None:
         self.app = app
         self.config = config
         self.validator = validator or OIDCValidator(config)
+        self.on_failure = on_failure
+        # Fixed-window limiter for auth.failed audit events: O(1) memory.
+        self._failure_window = 0
+        self._failure_count = 0
+        self._failure_suppressed = 0
 
     async def __call__(self, scope, receive, send) -> None:
-        if scope["type"] != "http" or self.config.mode != "oidc":
+        if scope["type"] != "http":
             await self.app(scope, receive, send)
+            return
+        if self.config.mode != "oidc":
+            await self._dev(scope, receive, send)
             return
 
         path = scope.get("path", "")
@@ -293,28 +383,92 @@ class OIDCAuthMiddleware:
         authorization = headers.get("authorization", "")
         scheme, _, token = authorization.partition(" ")
         if scheme.lower() != "bearer" or not token:
-            await self._unauthorized(scope, receive, send, "missing bearer token")
+            await self._reject(scope, receive, send, "missing bearer token")
             return
 
         try:
             claims = self.validator.validate(token)
         except AuthError as error:
-            await self._unauthorized(scope, receive, send, str(error))
+            await self._reject(scope, receive, send, str(error))
             return
 
         principal = principal_from_claims(claims, self.config)
-        filtered = [(name, value) for name, value in scope.get("headers", []) if name.lower() not in IDENTITY_HEADERS]
-        filtered.extend(
-            [
-                (b"x-user-id", principal.user_id.encode("utf-8")),
-                (b"x-organization-id", principal.organization_id.encode("utf-8")),
-                (b"x-roles", ",".join(sorted(principal.roles)).encode("utf-8")),
-            ]
+        acting_service: str | None = None
+        on_behalf_of = headers.get("x-on-behalf-of")
+        if on_behalf_of is not None:
+            try:
+                if not has_service_role(claims, self.config):
+                    raise DelegationError("token is not allowed to delegate (missing service role)")
+                user_id = validate_delegated_user(on_behalf_of, self.config)
+                roles = delegated_roles(headers.get("x-on-behalf-of-roles"), principal.roles, self.config)
+            except DelegationError as error:
+                await self._reject(
+                    scope, receive, send, str(error), status_code=error.status_code, actor=principal,
+                )
+                return
+            acting_service = principal.user_id
+            principal = PrincipalClaims(user_id=user_id, organization_id=principal.organization_id, roles=roles)
+        elif headers.get("x-on-behalf-of-roles") is not None:
+            await self._reject(
+                scope, receive, send, "X-On-Behalf-Of-Roles requires X-On-Behalf-Of",
+                status_code=400, actor=principal,
+            )
+            return
+
+        self._set_identity(
+            scope, principal.user_id, principal.organization_id, ",".join(sorted(principal.roles)), acting_service,
         )
-        scope["headers"] = filtered
         state = scope.setdefault("state", {})
         state["principal"] = principal
-        await self.app(scope, receive, send)
+        if acting_service:
+            state["acting_service"] = acting_service
+        await self._call_as(acting_service, scope, receive, send)
+
+    async def _dev(self, scope, receive, send) -> None:
+        """Dev mode trusts headers; ``X-On-Behalf-Of`` is an alias of ``X-User-Id``.
+
+        When a client sends both, the original ``X-User-Id`` (or an explicit
+        ``X-Acting-Service``) is recorded as the acting service, so local bot
+        runs produce the same audit shape as OIDC delegation. Roles are not
+        capped here because dev mode trusts every header anyway.
+        """
+        headers = Headers(scope=scope)
+        on_behalf_of = headers.get("x-on-behalf-of")
+        if on_behalf_of is None:
+            await self._call_as(headers.get("x-acting-service"), scope, receive, send)
+            return
+        try:
+            user_id = validate_delegated_user(on_behalf_of, self.config)
+        except DelegationError as error:
+            await self._error(scope, receive, send, str(error), error.status_code)
+            return
+        acting_service = headers.get("x-acting-service") or headers.get("x-user-id")
+        roles = headers.get("x-on-behalf-of-roles") or headers.get("x-roles") or "member"
+        organization = headers.get("x-organization-id") or self.config.default_org
+        self._set_identity(scope, user_id, organization, roles, acting_service)
+        await self._call_as(acting_service, scope, receive, send)
+
+    async def _call_as(self, acting_service: str | None, scope, receive, send) -> None:
+        token = ACTING_SERVICE.set(acting_service or None)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            ACTING_SERVICE.reset(token)
+
+    @staticmethod
+    def _set_identity(scope, user_id: str, organization_id: str, roles: str, acting_service: str | None) -> None:
+        stripped = IDENTITY_HEADERS + DELEGATION_HEADERS
+        filtered = [(name, value) for name, value in scope.get("headers", []) if name.lower() not in stripped]
+        filtered.extend(
+            [
+                (b"x-user-id", user_id.encode("utf-8")),
+                (b"x-organization-id", organization_id.encode("utf-8")),
+                (b"x-roles", roles.encode("utf-8")),
+            ]
+        )
+        if acting_service:
+            filtered.append((b"x-acting-service", acting_service.encode("utf-8")))
+        scope["headers"] = filtered
 
     def _is_public(self, path: str) -> bool:
         for pattern in self.config.public_paths:
@@ -324,10 +478,50 @@ class OIDCAuthMiddleware:
                 return True
         return False
 
-    async def _unauthorized(self, scope, receive, send, message: str) -> None:
-        response = JSONResponse(
-            {"detail": f"Invalid or missing credentials: {message}"},
-            status_code=401,
-            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
-        )
+    async def _reject(
+        self, scope, receive, send, message: str, status_code: int = 401, actor: PrincipalClaims | None = None,
+    ) -> None:
+        self._record_failure(scope, message, status_code, actor)
+        await self._error(scope, receive, send, message, status_code)
+
+    @staticmethod
+    async def _error(scope, receive, send, message: str, status_code: int) -> None:
+        if status_code == 401:
+            response = JSONResponse(
+                {"detail": f"Invalid or missing credentials: {message}"},
+                status_code=401,
+                headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+            )
+        else:
+            response = JSONResponse({"detail": f"Delegation rejected: {message}"}, status_code=status_code)
         await response(scope, receive, send)
+
+    def _record_failure(self, scope, reason: str, status_code: int, actor: PrincipalClaims | None) -> None:
+        """Emit a rate-limited ``auth.failed`` event. Never includes the token."""
+        if self.on_failure is None:
+            return
+        window = int(time.monotonic() // 60)
+        if window != self._failure_window:
+            self._failure_window = window
+            self._failure_count = 0
+        if self._failure_count >= max(self.config.failure_audit_per_minute, 0):
+            self._failure_suppressed += 1
+            return
+        self._failure_count += 1
+        event: dict[str, Any] = {
+            "reason": reason[:200],
+            "status": status_code,
+            "path": str(scope.get("path", ""))[:200],
+            "method": scope.get("method", ""),
+        }
+        if actor:
+            event["actor"] = actor.user_id[:128]
+            event["organization_id"] = actor.organization_id
+        if self._failure_suppressed:
+            event["suppressed"] = self._failure_suppressed
+            self._failure_suppressed = 0
+        try:
+            self.on_failure(event)
+        except Exception:
+            # Audit persistence must never break the auth path, but do not hide it.
+            logger.exception("Could not record auth.failed audit event")

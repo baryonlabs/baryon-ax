@@ -3,6 +3,11 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+# OIDC login is compiled in at build time; the default keeps the dev role switcher.
+ARG VITE_AUTH_MODE=dev
+ARG VITE_OIDC_ISSUER=
+ARG VITE_OIDC_CLIENT_ID=
+ENV VITE_AUTH_MODE=$VITE_AUTH_MODE VITE_OIDC_ISSUER=$VITE_OIDC_ISSUER VITE_OIDC_CLIENT_ID=$VITE_OIDC_CLIENT_ID
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:1.30-alpine

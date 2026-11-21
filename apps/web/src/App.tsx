@@ -1,8 +1,10 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, BookOpen, Bot, Boxes, Brain, ChevronRight, Copy, Cpu, Download, ExternalLink, FileCode, FileImage, FileSpreadsheet, FileText, FileType, FileUp, Globe2, HardDrive, Menu, MessagesSquare, Network, Paperclip, Plus, RefreshCw, RotateCcw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, UploadCloud, Wrench, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Bot, Boxes, Brain, ChevronRight, Copy, Cpu, Download, ExternalLink, FileCode, FileImage, FileSpreadsheet, FileText, FileType, FileUp, Globe2, HardDrive, LogOut, Menu, MessagesSquare, Network, Paperclip, Plus, RefreshCw, RotateCcw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, UploadCloud, Wrench, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+
+import { apiFetch, logout, OIDC_ENABLED, type AuthSession } from "./auth";
 
 export type Locale = "ko" | "en";
 type Role = "member" | "admin";
@@ -182,6 +184,8 @@ const CURRENT_USER = "local-user";
 const CURRENT_ORG = "local-org";
 
 function identity(role: Role): Record<string, string> {
+  // In OIDC mode the API derives identity from the bearer token (added by apiFetch).
+  if (OIDC_ENABLED) return {};
   return { "X-User-Id": CURRENT_USER, "X-Organization-Id": CURRENT_ORG, "X-Roles": role };
 }
 
@@ -468,10 +472,12 @@ function initialChatMessages(locale: Locale): ChatMessage[] {
   return [{ role: "assistant", content: copy[locale].welcome }];
 }
 
-export default function App() {
+export default function App({ session = null }: { session?: AuthSession | null }) {
   const [locale, setLocale] = useState<Locale>(initialLocale);
   const t = copy[locale];
-  const [role, setRole] = useState<Role>(initialRole);
+  // With OIDC the role comes from the verified token, not the dev switcher.
+  const [role, setRole] = useState<Role>(() => session ? (session.roles.includes("admin") ? "admin" : "member") : initialRole());
+  const currentUser = session?.userId ?? CURRENT_USER;
   const [messages, setMessages] = useState<ChatMessage[]>(() => initialChatMessages(locale));
   const [input, setInput] = useState("");
   const [model, setModel] = useState("demo-local");
@@ -548,9 +554,9 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const ossieFileInput = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { fetch(`${API}/v1/models`).then(response => response.json()).then(result => result.data?.[0] && setModel(result.data[0].id)).catch(() => undefined); }, []);
+  useEffect(() => { apiFetch(`${API}/v1/models`).then(response => response.json()).then(result => result.data?.[0] && setModel(result.data[0].id)).catch(() => undefined); }, []);
   useEffect(() => { document.documentElement.lang = locale; localStorage.setItem("baryon-locale", locale); }, [locale]);
-  useEffect(() => { localStorage.setItem("baryon-role", role); }, [role]);
+  useEffect(() => { if (!session) localStorage.setItem("baryon-role", role); }, [role, session]);
   useEffect(() => {
     try {
       localStorage.setItem("baryon-chat", JSON.stringify(messages));
@@ -589,7 +595,7 @@ export default function App() {
   }
 
   const loadKnowledge = useCallback(async () => {
-    const response = await fetch(`${API}/v1/documents`, { headers: identity(role) });
+    const response = await apiFetch(`${API}/v1/documents`, { headers: identity(role) });
     if (!response.ok) return;
     const all: KnowledgeDocument[] = (await response.json()).data;
     setAllKnowledge(all);
@@ -601,7 +607,7 @@ export default function App() {
 
   const loadMemories = useCallback(async () => {
     try {
-      const response = await fetch(`${API}/v1/memories?limit=50`, { headers: identity(role) });
+      const response = await apiFetch(`${API}/v1/memories?limit=50`, { headers: identity(role) });
       if (response.status === 503) {
         setMemories([]);
         setMemoryError("disabled");
@@ -623,7 +629,7 @@ export default function App() {
       return;
     }
     try {
-      const response = await fetch(`${API}/v1/audit-events?limit=50`, { headers: identity(role) });
+      const response = await apiFetch(`${API}/v1/audit-events?limit=50`, { headers: identity(role) });
       if (!response.ok) {
         setAuditEvents([]);
         setAuditError(response.status === 403 ? "forbidden" : "failed");
@@ -644,7 +650,7 @@ export default function App() {
       return;
     }
     try {
-      const response = await fetch(`${API}/v1/admin/settings`, { headers: identity(role) });
+      const response = await apiFetch(`${API}/v1/admin/settings`, { headers: identity(role) });
       if (!response.ok) {
         setSettings(null);
         setSettingsError(true);
@@ -665,9 +671,9 @@ export default function App() {
     }
     try {
       const [gapResponse, clusterResponse, packResponse] = await Promise.all([
-        fetch(`${API}/v1/admin/gaps?status=open&limit=100`, { headers: identity(role) }),
-        fetch(`${API}/v1/admin/gaps/clusters`, { headers: identity(role) }),
-        fetch(`${API}/v1/admin/ontology-packs`, { headers: identity(role) }),
+        apiFetch(`${API}/v1/admin/gaps?status=open&limit=100`, { headers: identity(role) }),
+        apiFetch(`${API}/v1/admin/gaps/clusters`, { headers: identity(role) }),
+        apiFetch(`${API}/v1/admin/ontology-packs`, { headers: identity(role) }),
       ]);
       if (!gapResponse.ok || !clusterResponse.ok || !packResponse.ok) throw new Error("Gap load failed");
       const gapData = await gapResponse.json();
@@ -681,7 +687,7 @@ export default function App() {
   }, [role]);
 
   const dismissGap = useCallback(async (id: string) => {
-    const response = await fetch(`${API}/v1/admin/gaps/${id}/dismiss`, { method: "POST", headers: identity(role) });
+    const response = await apiFetch(`${API}/v1/admin/gaps/${id}/dismiss`, { method: "POST", headers: identity(role) });
     if (response.ok) await loadGaps();
   }, [role, loadGaps]);
 
@@ -689,7 +695,7 @@ export default function App() {
     if (gapBusy) return;
     setGapBusy(true); setGapMessage("");
     try {
-      const response = await fetch(`${API}/v1/admin/ontology-packs`, {
+      const response = await apiFetch(`${API}/v1/admin/ontology-packs`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...identity(role) },
         body: JSON.stringify({ gap_ids: cluster.gap_ids, name: cluster.suggested_pack_name }),
@@ -709,7 +715,7 @@ export default function App() {
     if (gapBusy) return;
     setGapBusy(true); setGapMessage("");
     try {
-      const response = await fetch(`${API}/v1/admin/ontology-packs/${pack.id}/${action}`, { method: "POST", headers: identity(role) });
+      const response = await apiFetch(`${API}/v1/admin/ontology-packs/${pack.id}/${action}`, { method: "POST", headers: identity(role) });
       if (!response.ok) throw new Error("Pack action failed");
       const updated = await response.json();
       if (action === "verify" && updated.verification) {
@@ -726,8 +732,8 @@ export default function App() {
   const loadTacit = useCallback(async () => {
     try {
       const [questionResponse, entryResponse] = await Promise.all([
-        fetch(`${API}/v1/tacit/questions`, { headers: identity(role) }),
-        fetch(`${API}/v1/tacit/entries?scope=${tacitScope}`, { headers: identity(role) }),
+        apiFetch(`${API}/v1/tacit/questions`, { headers: identity(role) }),
+        apiFetch(`${API}/v1/tacit/entries?scope=${tacitScope}`, { headers: identity(role) }),
       ]);
       if (!questionResponse.ok || !entryResponse.ok) throw new Error("Tacit load failed");
       setTacitQuestions((await questionResponse.json()).data);
@@ -744,7 +750,7 @@ export default function App() {
     try {
       for (const file of Array.from(files)) {
         const data = new FormData(); data.append("file", file);
-        const response = await fetch(`${API}/v1/documents`, { method: "POST", body: data, headers: identity(role) });
+        const response = await apiFetch(`${API}/v1/documents`, { method: "POST", body: data, headers: identity(role) });
         if (!response.ok) throw new Error("Attachment upload failed");
         const uploaded = await response.json();
         setTacitAttachments(previous => [...previous, {
@@ -764,7 +770,7 @@ export default function App() {
     if (!tacitSelected || !tacitAnswer.trim() || tacitBusy) return;
     setTacitBusy(true); setTacitMessage("");
     try {
-      const response = await fetch(`${API}/v1/tacit/entries`, {
+      const response = await apiFetch(`${API}/v1/tacit/entries`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...identity(role) },
         body: JSON.stringify({
@@ -790,7 +796,7 @@ export default function App() {
     if (tacitBusy) return;
     setTacitBusy(true); setTacitMessage("");
     try {
-      const response = await fetch(`${API}/v1/tacit/entries/${entry.id}/publish`, { method: "POST", headers: identity(role) });
+      const response = await apiFetch(`${API}/v1/tacit/entries/${entry.id}/publish`, { method: "POST", headers: identity(role) });
       if (!response.ok) throw new Error("Publish failed");
       const published = await response.json();
       setTacitMessage(t.tacitPublishedMessage(published.published_document_id ?? entry.question));
@@ -813,7 +819,7 @@ export default function App() {
 
   const loadOpenSource = useCallback(async () => {
     try {
-      const response = await fetch(`${API}/v1/open-source`);
+      const response = await apiFetch(`${API}/v1/open-source`);
       if (!response.ok) throw new Error("Open source load failed");
       setOpenSourceData(await response.json());
       setOpenSourceError(false);
@@ -826,9 +832,9 @@ export default function App() {
     setConnectorBusy(true);
     try {
       const [connectorResponse, toolResponse, statusResponse] = await Promise.all([
-        fetch(`${API}/v1/connectors`, { headers: identity(role) }),
-        fetch(`${API}/v1/tools?limit=200`, { headers: identity(role) }),
-        fetch(`${API}/v1/mcp/status`, { headers: identity(role) }),
+        apiFetch(`${API}/v1/connectors`, { headers: identity(role) }),
+        apiFetch(`${API}/v1/tools?limit=200`, { headers: identity(role) }),
+        apiFetch(`${API}/v1/mcp/status`, { headers: identity(role) }),
       ]);
       if (!connectorResponse.ok || !toolResponse.ok) throw new Error("Connector load failed");
       const connectorData = await connectorResponse.json();
@@ -846,7 +852,7 @@ export default function App() {
 
   const loadComposerTools = useCallback(async () => {
     try {
-      const response = await fetch(`${API}/v1/tools?limit=200`, { headers: identity(role) });
+      const response = await apiFetch(`${API}/v1/tools?limit=200`, { headers: identity(role) });
       if (!response.ok) throw new Error("Tool load failed");
       const result = await response.json();
       setConnectorTools(result.items || []);
@@ -893,7 +899,7 @@ export default function App() {
         data.append("file", file);
         if (meta?.category) data.append("category", meta.category);
         if (meta?.tags) data.append("tags", meta.tags);
-        const response = await fetch(`${API}/v1/documents`, { method: "POST", body: data, headers: identity(role) });
+        const response = await apiFetch(`${API}/v1/documents`, { method: "POST", body: data, headers: identity(role) });
         if (!response.ok) continue;
         const result = await response.json();
         last = { title: result.title, chunks: result.chunks };
@@ -925,7 +931,7 @@ export default function App() {
     try {
       const data = new FormData();
       data.append("file", file);
-      const response = await fetch(`${API}/v1/ossie/import`, { method: "POST", body: data, headers: identity(role) });
+      const response = await apiFetch(`${API}/v1/ossie/import`, { method: "POST", body: data, headers: identity(role) });
       if (!response.ok) throw new Error("Ossie import failed");
       const result = await response.json();
       const message = t.ossieImported(result.model);
@@ -941,7 +947,7 @@ export default function App() {
 
   async function downloadOssie() {
     try {
-      const response = await fetch(`${API}/v1/ossie/export`, { headers: identity(role) });
+      const response = await apiFetch(`${API}/v1/ossie/export`, { headers: identity(role) });
       if (!response.ok) throw new Error("Ossie export failed");
       const url = URL.createObjectURL(await response.blob());
       const anchor = document.createElement("a");
@@ -957,13 +963,13 @@ export default function App() {
   async function createGapBundle(gap: KnowledgeGapPrompt) {
     if (role !== "admin") return;
     try {
-      const created = await fetch(`${API}/v1/admin/ontology-packs`, {
+      const created = await apiFetch(`${API}/v1/admin/ontology-packs`, {
         method: "POST", headers: { "Content-Type": "application/json", ...identity(role) },
         body: JSON.stringify({ gap_ids: [gap.id] }),
       });
       if (!created.ok) throw new Error("Pack creation failed");
       const pack = await created.json();
-      const response = await fetch(`${API}/v1/admin/ontology-packs/${pack.id}/ossie`, { headers: identity(role) });
+      const response = await apiFetch(`${API}/v1/admin/ontology-packs/${pack.id}/ossie`, { headers: identity(role) });
       if (!response.ok) throw new Error("Ossie draft download failed");
       const url = URL.createObjectURL(await response.blob());
       const anchor = document.createElement("a");
@@ -981,7 +987,7 @@ export default function App() {
     setSource({ citation, loading: true });
     setSourceBusy(false);
     try {
-      const response = await fetch(`${API}/v1/documents/${citation.document_id}?chunk=${citation.chunk}`, { headers: identity(role) });
+      const response = await apiFetch(`${API}/v1/documents/${citation.document_id}?chunk=${citation.chunk}`, { headers: identity(role) });
       if (!response.ok) throw new Error("Source fetch failed");
       const detail: DocumentDetail = await response.json();
       setSource({ citation, detail, loading: false });
@@ -994,7 +1000,7 @@ export default function App() {
     if (!source?.detail) return;
     setSourceBusy(true);
     try {
-      const response = await fetch(`${API}/v1/documents/${source.detail.id}/file`, { headers: identity(role) });
+      const response = await apiFetch(`${API}/v1/documents/${source.detail.id}/file`, { headers: identity(role) });
       if (!response.ok) throw new Error("Original file unavailable");
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
@@ -1033,7 +1039,7 @@ export default function App() {
   }
 
   async function removeDocument(id: string) {
-    const response = await fetch(`${API}/v1/documents/${id}`, { method: "DELETE", headers: identity(role) });
+    const response = await apiFetch(`${API}/v1/documents/${id}`, { method: "DELETE", headers: identity(role) });
     if (response.ok) {
       if (editingId === id) setEditingId(null);
       await loadKnowledge();
@@ -1045,7 +1051,7 @@ export default function App() {
     if (!text || memoryBusy) return;
     setMemoryBusy(true);
     try {
-      const response = await fetch(`${API}/v1/memories`, {
+      const response = await apiFetch(`${API}/v1/memories`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...identity(role) },
         body: JSON.stringify({ text }),
@@ -1072,7 +1078,7 @@ export default function App() {
       return;
     }
     try {
-      const response = await fetch(`${API}/v1/memories/search?q=${encodeURIComponent(query)}&limit=20`, { headers: identity(role) });
+      const response = await apiFetch(`${API}/v1/memories/search?q=${encodeURIComponent(query)}&limit=20`, { headers: identity(role) });
       if (response.status === 503) {
         setMemoryError("disabled");
         return;
@@ -1086,7 +1092,7 @@ export default function App() {
   }
 
   async function deleteMemory(id: string) {
-    const response = await fetch(`${API}/v1/memories/${id}`, { method: "DELETE", headers: identity(role) });
+    const response = await apiFetch(`${API}/v1/memories/${id}`, { method: "DELETE", headers: identity(role) });
     if (response.ok) setMemories(previous => previous.filter(item => item.id !== id));
   }
 
@@ -1107,7 +1113,7 @@ export default function App() {
       payload.allowed_roles = roleDraft.split(",").map(item => item.trim()).filter(Boolean);
     }
     try {
-      const response = await fetch(`${API}/v1/documents/${id}`, {
+      const response = await apiFetch(`${API}/v1/documents/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...identity(role) },
         body: JSON.stringify(payload),
@@ -1149,7 +1155,7 @@ export default function App() {
     setReindexBusy(true);
     setReindexMessage("");
     try {
-      const response = await fetch(`${API}/v1/admin/reindex`, { method: "POST", headers: identity(role) });
+      const response = await apiFetch(`${API}/v1/admin/reindex`, { method: "POST", headers: identity(role) });
       if (!response.ok) throw new Error("Reindex failed");
       const result = await response.json();
       setReindexMessage(t.reindexed(result.indexed));
@@ -1171,7 +1177,7 @@ export default function App() {
     const next = [...history, { role: "user" as const, content: trimmed }];
     setMessages([...next, { role: "assistant", content: "" }]);
     try {
-      const response = await fetch(`${API}/v1/chat/completions`, {
+      const response = await apiFetch(`${API}/v1/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...identity(role) },
         body: JSON.stringify({ model, messages: next, stream: true, use_retrieval: retrieval, locale, selected_tool_ids: selectedTools.map(tool => tool.id) }),
@@ -1274,7 +1280,7 @@ export default function App() {
     setToast(t.feedbackThanks);
     if (!message.trace?.trace_id) return;
     try {
-      await fetch(`${API}/v1/feedback`, {
+      await apiFetch(`${API}/v1/feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...identity(role) },
         body: JSON.stringify({
@@ -1429,7 +1435,10 @@ export default function App() {
           {view === "chat" && <span className="pill">{model}</span>}
         </div>
         <div className="header-actions">
-          <label className="locale-select role-select"><ShieldCheck size={15}/><span className="sr-only">{t.role}</span><select aria-label={t.role} value={role} onChange={event => setRole(event.target.value as Role)}><option value="member">{t.member}</option><option value="admin">{t.admin}</option></select></label>
+          {session
+            ? <><span className="pill signed-in" title={`${session.userId} · ${session.organizationId}`}><ShieldCheck size={15}/>{session.userId}</span>
+              <button className="icon-button" title={locale === "ko" ? "로그아웃" : "Sign out"} aria-label={locale === "ko" ? "로그아웃" : "Sign out"} onClick={() => { void logout(); }}><LogOut size={16}/></button></>
+            : <label className="locale-select role-select"><ShieldCheck size={15}/><span className="sr-only">{t.role}</span><select aria-label={t.role} value={role} onChange={event => setRole(event.target.value as Role)}><option value="member">{t.member}</option><option value="admin">{t.admin}</option></select></label>}
           <label className="locale-select"><Globe2 size={15}/><span className="sr-only">{t.language}</span><select aria-label={t.language} value={locale} onChange={event => changeLocale(event.target.value as Locale)}><option value="ko">한국어</option><option value="en">English</option></select></label>
           {view === "chat" && <><select aria-label={t.modelLabel} value={model} onChange={event => setModel(event.target.value)}><option value={model}>{model}</option></select><label className="toggle"><input type="checkbox" checked={retrieval} onChange={event => setRetrieval(event.target.checked)}/><span/>RAG</label>
             <button className="icon-button" title={t.clearChat} aria-label={t.clearChat} onClick={clearChat}><Trash2 size={16}/></button></>}
@@ -1578,17 +1587,17 @@ export default function App() {
                 {document.category && <span className="chip category">{document.category}</span>}
                 {document.tags.map(tag => <span className="chip" key={tag}>#{tag}</span>)}
               </div>}
-              {(role === "admin" || document.owner_id === CURRENT_USER) && editingId === document.id && <div className="meta-editor">
+              {(role === "admin" || document.owner_id === currentUser) && editingId === document.id && <div className="meta-editor">
                 <input aria-label={t.category} value={metaCategory} onChange={event => setMetaCategory(event.target.value)} placeholder={t.categoryPlaceholder}/>
                 <input aria-label={t.tags} value={metaTags} onChange={event => setMetaTags(event.target.value)} placeholder={t.tagsPlaceholder}/>
                 {role === "admin" && <input aria-label={t.allowedRoles} value={roleDraft} onChange={event => setRoleDraft(event.target.value)} placeholder="member, admin"/>}
                 <button className="primary small" onClick={() => void saveDocumentMetadata(document.id)}><Save size={14}/>{t.save}</button>
                 <button className="ghost small" onClick={() => setEditingId(null)}><X size={14}/>{t.cancel}</button>
               </div>}
-              {(role === "admin" || document.owner_id === CURRENT_USER) && editingId !== document.id && <button className="acl" onClick={() => startEditingDocument(document)}>{t.editMetadata}</button>}
+              {(role === "admin" || document.owner_id === currentUser) && editingId !== document.id && <button className="acl" onClick={() => startEditingDocument(document)}>{t.editMetadata}</button>}
               {aclMessage?.id === document.id && <small className={aclMessage.ok ? "acl-ok" : "acl-error"}>{aclMessage.ok ? t.metadataUpdated : t.metadataFailed}</small>}
             </div>
-            {(role === "admin" || document.owner_id === CURRENT_USER) && <button className="delete" title={t.deleteDocument} aria-label={t.deleteDocument} onClick={() => removeDocument(document.id)}><Trash2 size={16}/></button>}
+            {(role === "admin" || document.owner_id === currentUser) && <button className="delete" title={t.deleteDocument} aria-label={t.deleteDocument} onClick={() => removeDocument(document.id)}><Trash2 size={16}/></button>}
           </div>)}
         </div>}
       </div>}
