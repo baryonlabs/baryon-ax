@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import __version__
-from .auth import OIDCConfig, OIDCAuthMiddleware
+from .auth import OIDCConfig, OIDCAuthMiddleware, current_acting_service
 from .connectors import CONNECTOR_BY_ID, CONNECTORS, TOOLS, connector_payload, decide_tool, get_connector, get_tool, search_tools, tool_payload
 from .ingest import Acl as IngestAcl
 from .ingest import REGISTRY, chunk_document, normalize_text
@@ -215,6 +215,9 @@ class AuditSink:
             "id": str(uuid.uuid4()), "at": now(), "type": event_type, "trace_id": trace_id,
             "organization_id": principal.organization_id, "user_id": principal.user_id, **payload,
         }
+        acting_service = current_acting_service()
+        if acting_service and "acting_service" not in event:
+            event["acting_service"] = acting_service
         self.events.append(event)
         try:
             self.storage_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1431,8 +1434,19 @@ AUTH_CONFIG.validate()
 
 app = FastAPI(title="Baryon AX API", version=__version__, lifespan=lifespan)
 origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3001,http://localhost:5173").split(",") if origin.strip()]
+
+
+def record_auth_failure(event: dict) -> None:
+    """auth.failed audit hook for the middleware. The event never carries the token."""
+    # Rejected delegations know the caller's organization; invalid tokens do not.
+    organization_id = str(event.pop("organization_id", None) or AUTH_CONFIG.default_org)
+    actor = Principal(str(event.get("actor") or "anonymous"), organization_id, set())
+    audit.emit("auth.failed", actor, str(uuid.uuid4()), **event)
+
+
 # Auth runs inside CORS so 401 responses keep the browser-readable CORS headers.
-app.add_middleware(OIDCAuthMiddleware, config=AUTH_CONFIG)
+# The hook resolves `audit` lazily; the middleware stack is built on the first request.
+app.add_middleware(OIDCAuthMiddleware, config=AUTH_CONFIG, on_failure=record_auth_failure)
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 policy = PolicyEngine()
 vector = VectorIndex()
@@ -1764,6 +1778,43 @@ async def health() -> dict:
         "memory_backend": "mem0" if memory_service.enabled else "disabled",
         "time": now(),
     }
+
+
+def auth_identity(principal: Principal, acting_service: str | None) -> dict:
+    return {
+        "user_id": principal.user_id, "organization_id": principal.organization_id,
+        "roles": sorted(principal.roles), "acting_service": acting_service, "auth_mode": AUTH_CONFIG.mode,
+    }
+
+
+@app.get("/v1/auth/me")
+async def auth_me(
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+    x_acting_service: str | None = Header(None),
+) -> dict:
+    """The identity the API sees for this request, after OIDC validation and delegation."""
+    return auth_identity(principal_from_headers(x_user_id, x_organization_id, x_roles), x_acting_service)
+
+
+@app.post("/v1/auth/login")
+async def auth_login(
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+    x_acting_service: str | None = Header(None),
+) -> dict:
+    """Called once by the web client after sign-in; records auth.login."""
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    audit.emit("auth.login", principal, str(uuid.uuid4()), roles=sorted(principal.roles), auth_mode=AUTH_CONFIG.mode)
+    return auth_identity(principal, x_acting_service)
+
+
+@app.post("/v1/auth/logout")
+async def auth_logout(
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    """Called by the web client before it ends the IdP session; records auth.logout."""
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    audit.emit("auth.logout", principal, str(uuid.uuid4()), auth_mode=AUTH_CONFIG.mode)
+    return {"ok": True}
 
 
 @app.get("/v1/open-source")

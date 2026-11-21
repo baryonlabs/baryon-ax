@@ -2,7 +2,11 @@
 
 Before production use, implement these controls:
 
-- Replace development identity headers with validated OIDC/OAuth2 tokens and enforce RBAC at every API boundary. The API now supports `AUTH_MODE=oidc` bearer-token validation (Keycloak reference profile); the browser PKCE login is still pending. See [auth-oidc.md](auth-oidc.md).
+- Replace development identity headers with validated OIDC/OAuth2 tokens and enforce RBAC at every API boundary. Set `AUTH_MODE=oidc` on the API and build the web image with `VITE_AUTH_MODE=oidc` (Authorization Code + PKCE). See [auth-oidc.md](auth-oidc.md) for the IdP setup.
+  - IdP setup: register a public web client (PKCE S256, redirect URI and web origin of the web UI, post-logout redirect URI), an API audience (`OIDC_AUDIENCE`), and group/role claims mapped to `OIDC_ADMIN_ROLE` / `OIDC_MEMBER_ROLE` / `OIDC_LEGAL_ROLE`. Use an `https` issuer and never set `OIDC_ALLOW_INSECURE_ISSUER` in production.
+  - Bots and MCP clients use one client-credentials service account each. Only tokens carrying `OIDC_SERVICE_ROLE` (default `baryon-service`) may send `X-On-Behalf-Of`; delegated roles are capped by the service account's own roles, the organization always comes from the token, and audit events record both `user_id` and `acting_service`. Restrict delegated ids with `OIDC_DELEGATION_USER_PREFIXES` and give each service account the minimum roles. A leaked service-account secret lets its holder act as any user within that account's roles and organization, so store it in a secret manager and rotate it.
+  - `auth.login`, `auth.logout`, and `auth.failed` audit events are emitted. `auth.failed` stores the reason only (never the token) and is capped at `AUTH_FAILED_AUDIT_PER_MINUTE` per process; alert on spikes.
+  - The browser keeps tokens in `sessionStorage`; keep a strict CSP and dependency hygiene, because any XSS can read them.
 - Store secrets in an approved secret manager; never place live API keys in Compose files, images, or browser code.
 - Encrypt transport, database, object store, and backup paths according to organizational policy.
 - Enforce tenant and document ACL filters in the retrieval query itself, not after results are returned. The Qdrant path applies organization/role/owner filters and rechecks them after retrieval.
