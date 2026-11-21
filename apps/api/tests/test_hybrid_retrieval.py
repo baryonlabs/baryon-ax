@@ -91,3 +91,53 @@ def test_vector_index_rejects_dimension_mismatch(monkeypatch) -> None:
     assert "384-dim" in index.last_error
     monkeypatch.setenv("EMBEDDING_DIMENSION", "384")
     assert VectorIndex().enabled is True
+
+
+def test_openai_compatible_embeddings_use_query_model_and_batches(monkeypatch) -> None:
+    import httpx
+
+    import baryon.main as main_module
+    from baryon.main import VectorIndex
+
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        body = json.loads(request.content)
+        calls.append({"url": str(request.url), "model": body["model"], "size": len(body["input"]), "longest": max(map(len, body["input"])),
+                      "auth": request.headers.get("authorization")})
+        data = [{"index": i, "embedding": [float(i)] * 4} for i in reversed(range(len(body["input"])))]
+        return httpx.Response(200, json={"object": "list", "data": data})
+
+    real_client = httpx.Client
+    monkeypatch.setattr(main_module.httpx, "Client", lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw))
+    monkeypatch.delenv("QDRANT_URL", raising=False)
+    monkeypatch.setenv("EMBEDDING_PROVIDER", "openai")
+    monkeypatch.setenv("EMBEDDING_BASE_URL", "http://embed.test/v1/")
+    monkeypatch.setenv("EMBEDDING_MODEL", "embed-passage")
+    monkeypatch.setenv("EMBEDDING_QUERY_MODEL", "embed-query")
+    monkeypatch.setenv("EMBEDDING_API_KEY", "test-key")
+    monkeypatch.setenv("EMBEDDING_BATCH_SIZE", "2")
+    monkeypatch.setenv("EMBEDDING_DIMENSION", "4")
+    index = VectorIndex()
+
+    vectors = index._embed(["a", "b", "c"])
+    assert vectors == [[0.0] * 4, [1.0] * 4, [0.0] * 4]
+    assert [(c["model"], c["size"]) for c in calls] == [("embed-passage", 2), ("embed-passage", 1)]
+    assert calls[0]["url"] == "http://embed.test/v1/embeddings" and calls[0]["auth"] == "Bearer test-key"
+
+    index._embed(["질문"], query=True)
+    assert calls[-1]["model"] == "embed-query"
+
+    monkeypatch.setenv("EMBEDDING_DIMENSION", "1024")
+    try:
+        VectorIndex()._embed(["a"])
+    except RuntimeError as error:
+        assert "4-dim" in str(error)
+    else:
+        raise AssertionError("dimension mismatch should raise")
+    monkeypatch.setenv("EMBEDDING_DIMENSION", "4")
+    monkeypatch.setenv("EMBEDDING_MAX_CHARS", "100")
+    VectorIndex()._embed(["x" * 500, ""])
+    assert calls[-1]["longest"] == 100
