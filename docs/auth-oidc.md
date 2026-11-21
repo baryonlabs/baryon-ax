@@ -114,11 +114,14 @@ curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/v1/admin/gaps | 
 | Baryon | 기본 소스 | 비고 |
 |---|---|---|
 | 사용자 ID | `preferred_username` → `email` → `sub` | `OIDC_USER_CLAIM` |
-| 조직 | `organization` 클레임 | 없으면 `OIDC_DEFAULT_ORG` |
+| 조직 | `organization` 클레임 (문자열·목록·별칭 맵) | 없으면 `OIDC_DEFAULT_ORG`. `TENANCY_MODE=pooled`에서는 403 |
 | 역할 | `groups` 클레임 | `OIDC_ROLE_CLAIM` |
 | 관리자 | `baryon-admin` 또는 `admin` | `OIDC_ADMIN_ROLE` |
 | 멤버 | `baryon-member` 또는 `member` | `OIDC_MEMBER_ROLE` |
 | 법무 | `baryon-legal` 또는 `legal` | `OIDC_LEGAL_ROLE` |
+| 플랫폼 관리자 | `baryon-platform-admin` (설정한 역할만 인정) | `OIDC_PLATFORM_ADMIN_ROLE`. 테넌트 `admin`과 별개이며 위임되지 않음 |
+
+여러 조직을 가진 토큰은 첫 번째 조직을 쓰고, `X-Organization-Id`로 **토큰에 있는 조직 중 하나**를 고를 수 있습니다. 공유(pooled) 배포의 조직·테넌트 매핑은 [multi-tenancy.md](multi-tenancy.md)를 보세요.
 
 Keycloak 그룹 이름을 바꾸려면 realm의 그룹과 `OIDC_*_ROLE` 값을 함께 바꿉니다.
 

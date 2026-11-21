@@ -180,6 +180,18 @@ class KnowledgeGap:
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:20]
 
 
+def rewrite_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
+    """Replace a JSONL file with ``rows`` without ever exposing a partial file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    with temporary.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
+
+
 class GapStore:
     """Append-only JSONL store with in-memory index (per process)."""
 
@@ -315,6 +327,18 @@ class GapStore:
                 self._persist(gap)
                 count += 1
         return count
+
+    def purge_organization(self, organization_id: str) -> int:
+        """Remove every gap of one organization and compact the JSONL file atomically."""
+        with self._lock:
+            doomed = [gap for gap in self._gaps.values() if gap.organization_id == organization_id]
+            if not doomed:
+                return 0
+            for gap in doomed:
+                self._gaps.pop(gap.id, None)
+                self._by_key.pop(gap.key, None)
+            rewrite_jsonl(self.path, (gap.as_dict() for gap in self._gaps.values()))
+            return len(doomed)
 
     def summary(self, organization_id: str) -> dict[str, Any]:
         gaps = [gap for gap in self._gaps.values() if gap.organization_id == organization_id]
@@ -539,6 +563,9 @@ def verify_pack(pack: dict[str, Any], search, threshold: float = 0.8) -> dict[st
     }
 
 
+_PACK_ID = re.compile(r"[A-Za-z0-9_-]{1,80}")
+
+
 class PackStore:
     def __init__(self, root: str | Path | None = None) -> None:
         default = os.getenv("ONTOLOGY_STORE", "/tmp/baryon-ax-ontology")
@@ -566,7 +593,25 @@ class PackStore:
                 break
         return packs
 
+    def purge_organization(self, organization_id: str) -> int:
+        removed = 0
+        if not self.root.exists():
+            return removed
+        for path in self.root.glob("*.json"):
+            try:
+                pack = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if pack.get("organization_id") == organization_id:
+                path.unlink(missing_ok=True)
+                removed += 1
+        return removed
+
     def get(self, organization_id: str, pack_id: str) -> dict[str, Any] | None:
+        # Pack ids are generated as ``ont_<hex>``; refuse anything that could
+        # leave the store directory.
+        if not _PACK_ID.fullmatch(pack_id or ""):
+            return None
         path = self.root / f"{pack_id}.json"
         if not path.exists():
             return None

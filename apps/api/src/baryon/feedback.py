@@ -91,6 +91,17 @@ class FeedbackStore:
         items = [item for item in self._items if item.organization_id == organization_id]
         return list(reversed(items))[:limit]
 
+    def purge_organization(self, organization_id: str) -> int:
+        from .gaps import rewrite_jsonl
+
+        with self._lock:
+            kept = [item for item in self._items if item.organization_id != organization_id]
+            removed = len(self._items) - len(kept)
+            if removed:
+                self._items = kept
+                rewrite_jsonl(self.path, (item.as_dict() for item in kept))
+            return removed
+
     def summary(self, organization_id: str) -> dict[str, int]:
         items = [item for item in self._items if item.organization_id == organization_id]
         return {

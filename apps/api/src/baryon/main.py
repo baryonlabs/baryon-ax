@@ -24,9 +24,10 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException,
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.datastructures import Headers
 
 from . import __version__
-from .auth import OIDCConfig, OIDCAuthMiddleware, current_acting_service
+from .auth import PLATFORM_ADMIN, OIDCConfig, OIDCAuthMiddleware, current_acting_service
 from .connectors import CONNECTOR_BY_ID, CONNECTORS, TOOLS, connector_payload, decide_tool, get_connector, get_tool, search_tools, tool_payload
 from .ingest import Acl as IngestAcl
 from .ingest import REGISTRY, chunk_document, normalize_text
@@ -40,6 +41,10 @@ from .mcp import MCPClient, MCPGatewayError
 from .mcp_server import MCPServer, Tool, ToolError, parse_body
 from .open_source import open_source_payload
 from .tacit import QUESTION_TEMPLATES, TacitStore, suggest_questions
+from .tenants import (
+    OrgUserIndex, TenancySettings, TenantError, TenantExists, TenantRegistry, UploadReservations,
+    UsageMeter, estimate_tokens, seconds_until_next_day, seconds_until_next_month,
+)
 
 logger = logging.getLogger("baryon.ax")
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
@@ -250,6 +255,29 @@ class AuditSink:
             except Exception:
                 logger.exception("Could not read audit events from PostgreSQL; using memory")
         matching = [event for event in self.events if event.get("organization_id") == principal.organization_id]
+        return matching[-limit:]
+
+    def recent_for_tenant(self, tenant_id: str, limit: int = 100) -> list[dict]:
+        """Platform view: a tenant's own events plus platform actions taken on it.
+
+        Platform actions (``tenant.*``) are recorded under the acting platform
+        administrator's organization and carry ``tenant_id``.
+        """
+        if self.db_ready:
+            try:
+                with self._connect() as connection:
+                    rows = connection.execute(
+                        "SELECT payload FROM audit_events WHERE organization_id = %s OR payload->>'tenant_id' = %s "
+                        "ORDER BY at DESC LIMIT %s",
+                        (tenant_id, tenant_id, limit),
+                    ).fetchall()
+                return [row[0] for row in reversed(rows)]
+            except Exception:
+                logger.exception("Could not read tenant audit events from PostgreSQL; using memory")
+        matching = [
+            event for event in self.events
+            if event.get("organization_id") == tenant_id or event.get("tenant_id") == tenant_id
+        ]
         return matching[-limit:]
 
 
@@ -463,12 +491,52 @@ class DocumentService:
         self._persist(document)
         return document
 
-    def reindex_all(self) -> int:
+    def reindex_all(self, organization_id: str | None = None) -> int:
         if not self.vector:
             return 0
-        for document in self.documents.values():
+        selected = [
+            document for document in list(self.documents.values())
+            if organization_id is None or document.organization_id == organization_id
+        ]
+        for document in selected:
             self.vector.index_document(document)
-        return len(self.documents)
+        return len(selected)
+
+    @staticmethod
+    def stored_bytes(document: Document) -> int:
+        """Bytes a document counts against a storage quota: the original upload, else its text."""
+        raw_size = document.metadata.get("raw_size")
+        if isinstance(raw_size, int) and raw_size >= 0:
+            return raw_size
+        return len(document.content.encode("utf-8"))
+
+    def usage_for(self, organization_id: str) -> tuple[int, int]:
+        """(document count, stored bytes) for one organization."""
+        count = 0
+        size = 0
+        for document in list(self.documents.values()):
+            if document.organization_id == organization_id:
+                count += 1
+                size += self.stored_bytes(document)
+        return count, size
+
+    def purge_organization(self, organization_id: str) -> dict[str, int]:
+        """Delete every document of one organization: JSON, original file, vectors."""
+        doomed = [document for document in list(self.documents.values()) if document.organization_id == organization_id]
+        raw_files = 0
+        for document in doomed:
+            self.documents.pop(document.id, None)
+            (self.storage_root / f"{document.id}.json").unlink(missing_ok=True)
+            raw = self.raw_path(document)
+            if raw:
+                raw.unlink(missing_ok=True)
+                raw_files += 1
+        if self.vector and hasattr(self.vector, "delete_organization"):
+            self.vector.delete_organization(organization_id)
+        elif self.vector:
+            for document in doomed:
+                self.vector.delete_document(document.id)
+        return {"documents": len(doomed), "raw_files": raw_files}
 
     def search(self, principal: Principal, query: str, limit: int = 4) -> list[dict]:
         if self.vector:
@@ -693,6 +761,20 @@ class VectorIndex:
         except Exception:
             logger.exception("Could not delete document %s from Qdrant", document_id)
 
+    def delete_organization(self, organization_id: str) -> None:
+        """Tenant purge: drop every point whose payload carries this organization."""
+        if not self.enabled or not self.client:
+            return
+        try:
+            from qdrant_client.models import FieldCondition, Filter, MatchValue
+            self.client.delete(
+                self.collection,
+                points_selector=Filter(must=[FieldCondition(key="organization_id", match=MatchValue(value=organization_id))]),
+                wait=True,
+            )
+        except Exception:
+            logger.exception("Could not delete organization %s from Qdrant", organization_id)
+
     def update_roles(self, document_id: str, allowed_roles: set[str]) -> None:
         if not self.enabled or not self.client:
             return
@@ -757,7 +839,7 @@ class Tracer:
             return None
         try:
             return self.client.trace(
-                id=trace_id, name="baryon-ax.chat", user_id=principal.user_id, session_id=request.thread_id,
+                id=trace_id, name="baryon-ax.chat", user_id=tenant_user_key(principal), session_id=request.thread_id,
                 metadata={"organization_id": principal.organization_id, "model": request.model, "retrieval": request.use_retrieval},
                 input=[message.model_dump() for message in request.messages], tags=["baryon-ax"],
             )
@@ -1092,27 +1174,52 @@ class ModelAdapter:
             return self.model
         return request.model
 
-    async def complete(self, request: ChatRequest, context: list[dict], principal: Principal | None = None, memories: list[dict] | None = None) -> str:
+    @staticmethod
+    def _capture_usage(payload: dict, usage: dict | None) -> None:
+        """Copy OpenAI-style ``usage`` token counts into the caller's sink, if any."""
+        reported = payload.get("usage") if isinstance(payload, dict) else None
+        if usage is None or not isinstance(reported, dict):
+            return
+        for key in ("prompt_tokens", "completion_tokens"):
+            value = reported.get(key)
+            if isinstance(value, int) and value >= 0:
+                usage[key] = value
+
+    async def complete(
+        self, request: ChatRequest, context: list[dict], principal: Principal | None = None,
+        memories: list[dict] | None = None, usage: dict | None = None,
+    ) -> str:
         if not self.base_url:
             return self.demo_answer(request, context)
         async with httpx.AsyncClient(timeout=MODEL_TIMEOUT_SECONDS) as client:
             response = await client.post(f"{self.base_url}/chat/completions", headers=self.headers(),
                 json=self.payload(request, context, stream=False, principal=principal, memories=memories))
             response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
+            data = response.json()
+            self._capture_usage(data, usage)
+            return data["choices"][0]["message"]["content"]
 
-    async def stream(self, request: ChatRequest, context: list[dict], principal: Principal | None = None, memories: list[dict] | None = None) -> AsyncIterator[str]:
+    async def stream(
+        self, request: ChatRequest, context: list[dict], principal: Principal | None = None,
+        memories: list[dict] | None = None, usage: dict | None = None,
+    ) -> AsyncIterator[str]:
         if not self.base_url:
             for token in re.findall(r"\S+\s*", self.demo_answer(request, context)):
                 yield token
                 await asyncio.sleep(0.01)
             return
+        body = self.payload(request, context, stream=True, principal=principal, memories=memories)
+        if usage is not None and tenancy.pooled:
+            # Ask OpenAI-compatible servers (vLLM, Ollama, OpenAI) for a final
+            # usage chunk so pooled tenants are metered on real token counts.
+            body["stream_options"] = {"include_usage": True}
         async with httpx.AsyncClient(timeout=MODEL_TIMEOUT_SECONDS) as client:
             async with client.stream("POST", f"{self.base_url}/chat/completions", headers=self.headers(),
-                json=self.payload(request, context, stream=True, principal=principal, memories=memories)) as response:
+                json=body) as response:
                 response.raise_for_status()
                 if "text/event-stream" not in response.headers.get("content-type", ""):
                     payload = json.loads(await response.aread())
+                    self._capture_usage(payload, usage)
                     content = payload["choices"][0]["message"]["content"]
                     if content:
                         yield content
@@ -1127,7 +1234,9 @@ class ModelAdapter:
                         payload = json.loads(data)
                     except json.JSONDecodeError:
                         continue
-                    delta = payload.get("choices", [{}])[0].get("delta", {}).get("content")
+                    self._capture_usage(payload, usage)
+                    choices = payload.get("choices") or [{}]
+                    delta = choices[0].get("delta", {}).get("content")
                     if delta:
                         yield delta
 
@@ -1205,17 +1314,30 @@ class MemoryService:
     def _organization_items(principal: Principal, items: list[dict]) -> list[dict]:
         return [item for item in items if (item.get("metadata") or {}).get("organization_id") == principal.organization_id]
 
+    @staticmethod
+    def _filters(principal: Principal) -> dict[str, str]:
+        filters = {"user_id": tenant_user_key(principal)}
+        if tenancy.pooled:
+            filters["organization_id"] = principal.organization_id
+        return filters
+
     def add(self, text: str, principal: Principal, metadata: dict[str, str]) -> dict:
         memory = self._ensure_memory()
         if not memory:
             raise RuntimeError("Mem0 is not enabled")
-        return memory.add(text, user_id=principal.user_id, metadata={"organization_id": principal.organization_id, **metadata})
+        user_key = tenant_user_key(principal)
+        # Caller metadata must not override the organization stamp.
+        stamped = {**metadata, "organization_id": principal.organization_id}
+        result = memory.add(text, user_id=user_key, metadata=stamped)
+        if tenancy.pooled:
+            memory_users.record(principal.organization_id, user_key)
+        return result
 
     def search(self, query: str, principal: Principal, limit: int = 5) -> list[dict]:
         memory = self._ensure_memory()
         if not memory:
             return []
-        result = memory.search(query, filters={"user_id": principal.user_id}, limit=limit)
+        result = memory.search(query, filters=self._filters(principal), limit=limit)
         items = result.get("results", []) if isinstance(result, dict) else result
         return self._organization_items(principal, items)
 
@@ -1223,9 +1345,22 @@ class MemoryService:
         memory = self._ensure_memory()
         if not memory:
             return []
-        result = memory.get_all(filters={"user_id": principal.user_id}, limit=limit)
+        result = memory.get_all(filters=self._filters(principal), limit=limit)
         items = result.get("results", []) if isinstance(result, dict) else result
         return self._organization_items(principal, items)
+
+    def purge_organization(self, organization_id: str) -> int:
+        """Delete every Mem0 user namespace recorded for this organization."""
+        users = memory_users.users(organization_id)
+        if not users:
+            return 0
+        memory = self._ensure_memory()
+        if not memory:
+            raise RuntimeError("Mem0 is not enabled; memories could not be purged")
+        for user_key in users:
+            memory.delete_all(user_id=user_key)
+        memory_users.forget(organization_id)
+        return len(users)
 
     def delete(self, memory_id: str, principal: Principal) -> bool:
         memory = self._ensure_memory()
@@ -1241,6 +1376,7 @@ async def lifespan(_: FastAPI):
         indexed = await asyncio.to_thread(documents.reindex_all)
         logger.info("Reindexed %s documents into Qdrant", indexed)
     yield
+    usage_meter.flush()
 
 
 class SystemMonitor:
@@ -1433,6 +1569,74 @@ register_default_adapters()
 AUTH_CONFIG = OIDCConfig.from_env()
 AUTH_CONFIG.validate()
 
+# Multi-tenancy (docs/multi-tenancy.md). ``single`` is the historical behaviour.
+tenancy = TenancySettings.from_env()
+tenant_registry = TenantRegistry()
+usage_meter = UsageMeter()
+upload_reservations = UploadReservations()
+memory_users = OrgUserIndex()
+if tenancy.pooled and AUTH_CONFIG.mode != "oidc":
+    logger.warning(
+        "TENANCY_MODE=pooled with AUTH_MODE=dev trusts the X-Organization-Id header; "
+        "use AUTH_MODE=oidc for any shared deployment"
+    )
+
+
+def tenant_user_key(principal: Principal) -> str:
+    """User id for stores shared across organizations (Mem0, Langfuse).
+
+    Pooled mode namespaces by organization so the same user id in two tenants
+    never shares memories or traces. Single mode keeps the bare user id so
+    existing memories stay reachable.
+    """
+    if tenancy.pooled:
+        return f"{principal.organization_id}::{principal.user_id}"
+    return principal.user_id
+
+
+def is_public_path(path: str) -> bool:
+    for pattern in AUTH_CONFIG.public_paths:
+        if pattern.endswith("*") and path.startswith(pattern[:-1]):
+            return True
+        if path == pattern:
+            return True
+    return False
+
+
+def tenant_error(code: str, message: str, tenant_id: str, **extra: object) -> dict:
+    return {"code": code, "message": message, "tenant_id": tenant_id, **extra}
+
+
+class TenantGateMiddleware:
+    """Pooled mode: only active registered tenants reach tenant endpoints.
+
+    Runs inside the auth middleware, so ``X-Organization-Id`` is the verified
+    organization in OIDC mode. Public paths and ``/v1/platform/*`` (which does
+    its own platform-admin check) are exempt.
+    """
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http" or not tenancy.pooled or scope.get("method") == "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
+        if path == "/v1/platform" or path.startswith("/v1/platform/") or is_public_path(path):
+            await self.app(scope, receive, send)
+            return
+        organization_id = Headers(scope=scope).get("x-organization-id") or "local-org"
+        tenant = tenant_registry.get(organization_id)
+        if tenant is None:
+            detail = tenant_error("tenant_not_registered", "This organization is not a registered tenant", organization_id)
+        elif tenant.status != "active":
+            detail = tenant_error("tenant_suspended", f"Tenant is {tenant.status}", organization_id, status=tenant.status)
+        else:
+            await self.app(scope, receive, send)
+            return
+        await JSONResponse({"detail": detail}, status_code=403)(scope, receive, send)
+
 app = FastAPI(title="Baryon AX API", version=__version__, lifespan=lifespan)
 origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3001,http://localhost:5173").split(",") if origin.strip()]
 
@@ -1447,6 +1651,8 @@ def record_auth_failure(event: dict) -> None:
 
 # Auth runs inside CORS so 401 responses keep the browser-readable CORS headers.
 # The hook resolves `audit` lazily; the middleware stack is built on the first request.
+# Added first so it sits inside auth and sees the verified organization.
+app.add_middleware(TenantGateMiddleware)
 app.add_middleware(OIDCAuthMiddleware, config=AUTH_CONFIG, on_failure=record_auth_failure)
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 policy = PolicyEngine()
@@ -1492,6 +1698,87 @@ INGEST_PIPELINE_CONFIG = PipelineConfig(
     batch_timeout_s=float(os.getenv("INGEST_BATCH_TIMEOUT_SECONDS", "0.5")),
     max_retries=int(os.getenv("INGEST_MAX_RETRIES", "2")),
 )
+
+
+def quota_exceeded(
+    principal: Principal, quota: str, used: int, limit: int | None, trace_id: str, retry_after: int | None = None,
+) -> HTTPException:
+    """Audit and build the 429 for an exhausted tenant quota."""
+    audit.emit("tenant.quota_exceeded", principal, trace_id, tenant_id=principal.organization_id,
+               quota=quota, used=used, limit=limit)
+    detail = tenant_error("quota_exceeded", f"Tenant quota '{quota}' is exhausted", principal.organization_id,
+                          quota=quota, used=used, limit=limit)
+    headers = {"Retry-After": str(retry_after)} if retry_after else None
+    return HTTPException(429, detail=detail, headers=headers)
+
+
+def tenant_quotas(principal: Principal) -> dict:
+    tenant = tenant_registry.get(principal.organization_id) if tenancy.pooled else None
+    return dict(tenant.quotas) if tenant else {}
+
+
+def reserve_upload(principal: Principal, size: int, trace_id: str) -> bool:
+    """Hold an upload slot against max_documents/max_storage_bytes. Returns True when held."""
+    if not tenancy.pooled:
+        return False
+    quotas = tenant_quotas(principal)
+    current_documents, current_bytes = documents.usage_for(principal.organization_id)
+    exceeded, used, limit = upload_reservations.reserve(
+        principal.organization_id, size,
+        current_documents=current_documents, current_bytes=current_bytes,
+        max_documents=quotas.get("max_documents"), max_storage_bytes=quotas.get("max_storage_bytes"),
+    )
+    if exceeded:
+        raise quota_exceeded(principal, exceeded, used, limit, trace_id)
+    return True
+
+
+def release_upload(principal: Principal, size: int, held: bool) -> None:
+    if held:
+        upload_reservations.release(principal.organization_id, size)
+
+
+def admit_chat(principal: Principal, trace_id: str) -> None:
+    """Pooled mode: enforce tokens_per_month, then count one chat request against chat_requests_per_day."""
+    if not tenancy.pooled:
+        return
+    quotas = tenant_quotas(principal)
+    tokens_limit = quotas.get("tokens_per_month")
+    if tokens_limit is not None:
+        used_tokens = usage_meter.tokens_this_month(principal.organization_id)
+        if used_tokens >= tokens_limit:
+            raise quota_exceeded(principal, "tokens_per_month", used_tokens, tokens_limit, trace_id, seconds_until_next_month())
+    requests_limit = quotas.get("chat_requests_per_day")
+    admitted, used = usage_meter.admit_chat(principal.organization_id, requests_limit)
+    if not admitted:
+        raise quota_exceeded(principal, "chat_requests_per_day", used, requests_limit, trace_id, seconds_until_next_day())
+
+
+def meter_chat_tokens(
+    principal: Principal, request: ChatRequest, context: list[dict], memories: list[dict], answer: str, usage: dict,
+) -> dict | None:
+    """Record prompt/completion tokens: upstream ``usage`` when present, else an estimate."""
+    if not tenancy.pooled:
+        return None
+    prompt_tokens = usage.get("prompt_tokens")
+    completion_tokens = usage.get("completion_tokens")
+    estimated = prompt_tokens is None or completion_tokens is None
+    if prompt_tokens is None:
+        prompt_text = "\n".join(
+            [message.content for message in request.messages]
+            + [str(item.get("content") or "") for item in context]
+            + [str(item.get("memory") or "") for item in memories]
+        )
+        prompt_tokens = estimate_tokens(prompt_text)
+    if completion_tokens is None:
+        completion_tokens = estimate_tokens(answer)
+    usage_meter.add(principal.organization_id, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
+    return {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "estimated": estimated}
+
+
+def model_usage_kwargs(usage: dict) -> dict:
+    # Single mode calls the adapter exactly as before.
+    return {"usage": usage} if tenancy.pooled else {}
 
 
 async def ingest_upload(
@@ -1564,6 +1851,8 @@ async def ingest_upload(
         tags,
     )
     await asyncio.to_thread(documents.save_raw, document, payload, filename, ingested.mime or detected)
+    if tenancy.pooled:
+        usage_meter.add(principal.organization_id, uploads=1, upload_bytes=len(payload))
     audit.emit(
         "document.ingested", principal, trace_id,
         document_id=document.id, title=document.title,
@@ -1727,7 +2016,16 @@ def auto_verify_packs(principal: Principal, document: Document, trace_id: str) -
     return verified_count
 
 
-async def run_ingest_job(job: IngestJob, principal: Principal, payload: bytes, roles: set[str]) -> None:
+async def run_ingest_job(
+    job: IngestJob, principal: Principal, payload: bytes, roles: set[str], reserved: bool = False,
+) -> None:
+    try:
+        await _run_ingest_job(job, principal, payload, roles)
+    finally:
+        release_upload(principal, len(payload), reserved)
+
+
+async def _run_ingest_job(job: IngestJob, principal: Principal, payload: bytes, roles: set[str]) -> None:
     async def handler(batch: list[IngestJob]) -> None:
         for item in batch:
             try:
@@ -1944,6 +2242,14 @@ async def call_connector_tool(
         raise HTTPException(403, decision.reason)
     if decision.requires_approval:
         raise HTTPException(403, "Write tool requires administrator approval")
+    if tenancy.pooled and not shared_gateway_allowed():
+        # One gateway token serves every tenant, so connector calls would reach
+        # the same SaaS accounts for all organizations.
+        raise HTTPException(403, detail=tenant_error(
+            "tool_execution_not_isolated",
+            "Connector execution uses one shared gateway credential and is disabled in pooled mode",
+            principal.organization_id,
+        ))
 
     gateway_url = os.getenv("MCP_GATEWAY_URL", "").strip()
     gateway_token = os.getenv("MCP_GATEWAY_TOKEN", "").strip()
@@ -1965,12 +2271,20 @@ async def call_connector_tool(
     return {"tool": tool.id, "gateway_tool": gateway_tool, "result": result, "trace_id": trace_id}
 
 
+def shared_gateway_allowed() -> bool:
+    return os.getenv("TENANT_SHARED_GATEWAY_ALLOWED", "false").strip().lower() == "true"
+
+
 @app.get("/v1/mcp/status")
 async def mcp_status(
     x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
 ) -> dict:
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
     gateway_ready = bool(os.getenv("MCP_GATEWAY_URL", "").strip() and os.getenv("MCP_GATEWAY_TOKEN", "").strip())
+    if tenancy.pooled and not shared_gateway_allowed():
+        execution = "disabled_pooled"
+    else:
+        execution = "ready" if gateway_ready else "not_configured"
     return {
         "organization_id": principal.organization_id,
         "gateway_url_configured": bool(os.getenv("MCP_GATEWAY_URL", "").strip()),
@@ -1978,7 +2292,7 @@ async def mcp_status(
         "tools": len(TOOLS),
         "read_tools": sum(1 for tool in TOOLS if tool.risk == "read"),
         "write_tools": sum(1 for tool in TOOLS if tool.risk == "write"),
-        "execution": "ready" if gateway_ready else "not_configured",
+        "execution": execution,
     }
 
 
@@ -2004,6 +2318,7 @@ async def upload_document(
     mime = sniff_mime(file.filename, payload)
     roles = roles_from_header(allowed_roles)
     trace_id = str(uuid.uuid4())
+    reserved = reserve_upload(principal, len(payload), trace_id)
 
     if background:
         job = IngestJob(
@@ -2015,13 +2330,16 @@ async def upload_document(
             JOBS[job.id] = job
         # Starlette runs this after the response is sent. In-process only: a
         # restart loses queued jobs, so a durable queue is required for P1.
-        background_tasks.add_task(run_ingest_job, job, principal, payload, roles)
+        background_tasks.add_task(run_ingest_job, job, principal, payload, roles, reserved)
         return JSONResponse({"job_id": job.id, "state": job.state, "trace_id": trace_id}, status_code=202)
 
-    document = await ingest_upload(
-        principal, file.filename, payload, roles, trace_id,
-        mime=mime, category=category, tags=parse_tags(tags),
-    )
+    try:
+        document = await ingest_upload(
+            principal, file.filename, payload, roles, trace_id,
+            mime=mime, category=category, tags=parse_tags(tags),
+        )
+    finally:
+        release_upload(principal, len(payload), reserved)
     return {
         "id": document.id,
         "title": document.title,
@@ -2070,10 +2388,15 @@ async def import_ossie_model(
         raise HTTPException(413, f"Document exceeds the {MAX_DOCUMENT_BYTES} byte limit")
     model = parse_ossie_model(payload, filename)
     trace_id = str(uuid.uuid4())
-    document = await ingest_upload(
-        principal, f"ossie-{model['name']}.md", render_ossie_model(model).encode("utf-8"),
-        roles_from_header(allowed_roles), trace_id, mime="text/markdown", category="ossie", tags=["apache-ossie", "semantic-model"],
-    )
+    rendered = render_ossie_model(model).encode("utf-8")
+    reserved = reserve_upload(principal, len(rendered), trace_id)
+    try:
+        document = await ingest_upload(
+            principal, f"ossie-{model['name']}.md", rendered,
+            roles_from_header(allowed_roles), trace_id, mime="text/markdown", category="ossie", tags=["apache-ossie", "semantic-model"],
+        )
+    finally:
+        release_upload(principal, len(rendered), reserved)
     audit.emit("ossie.imported", principal, trace_id, document_id=document.id, model=model["name"], datasets=len(model["datasets"]))
     return {"id": document.id, "title": document.title, "model": model["name"], "datasets": len(model["datasets"]), "trace_id": trace_id}
 
@@ -2387,10 +2710,11 @@ async def stream_chat(
 ) -> AsyncIterator[str]:
     buffer = ""
     answer_parts: list[str] = []
+    usage: dict = {}
     yield sse({"type": "trace", "data": trace_payload})
     try:
         model_started = time.perf_counter()
-        async for chunk in model_adapter.stream(request, citations, principal, memories=memories):
+        async for chunk in model_adapter.stream(request, citations, principal, memories=memories, **model_usage_kwargs(usage)):
             safe, buffer = policy.mask_stream(buffer + chunk)
             if safe:
                 answer_parts.append(safe)
@@ -2401,10 +2725,12 @@ async def stream_chat(
             yield sse({"type": "token", "content": tail})
         model_ms = round((time.perf_counter() - model_started) * 1000, 2)
         tracer.finish(generation, "".join(answer_parts))
+        metered = meter_chat_tokens(principal, request, citations, memories, "".join(answer_parts), usage)
         audit_started = time.perf_counter()
         audit.emit("chat.completed", principal, trace_id, thread_id=request.thread_id, model=request.model,
                    latency_ms=round((time.perf_counter() - started) * 1000),
-                   citations=[item["document_id"] for item in citations], streamed=True)
+                   citations=[item["document_id"] for item in citations], streamed=True,
+                   **({"usage": metered} if metered else {}))
         audit_ms = round((time.perf_counter() - audit_started) * 1000, 2)
         gap = record_knowledge_gap(principal, request, "".join(answer_parts), citations, trace_id)
         yield sse({"type": "trace", "data": _finish_trace(trace_payload, model_ms, audit_ms, started, trace_id)})
@@ -2434,6 +2760,7 @@ async def chat(
     trace_id, started = str(uuid.uuid4()), time.perf_counter()
     rate_started = time.perf_counter()
     rate_limiter.check(f"{principal.organization_id}:{principal.user_id}")
+    admit_chat(principal, trace_id)
     steps = [_step("rate_limit", round((time.perf_counter() - rate_started) * 1000, 2), "ok" if rate_limiter.enabled else "skipped",
                    f"{rate_limiter.limit}/min" if rate_limiter.enabled else "비활성")]
     citations, memories, pipeline_steps = await pipeline.prepare(request, principal)
@@ -2454,7 +2781,8 @@ async def chat(
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Trace-Id": trace_id})
     try:
         model_started = time.perf_counter()
-        answer = policy.mask_output(await model_adapter.complete(request, citations, principal, memories=memories))
+        usage: dict = {}
+        answer = policy.mask_output(await model_adapter.complete(request, citations, principal, memories=memories, **model_usage_kwargs(usage)))
         model_ms = round((time.perf_counter() - model_started) * 1000, 2)
     except httpx.HTTPError as error:
         tracer.finish(generation, "", type(error).__name__)
@@ -2465,10 +2793,12 @@ async def chat(
         audit.emit("chat.failed", principal, trace_id, thread_id=request.thread_id, model=request.model, reason=type(error).__name__, streamed=False)
         raise
     tracer.finish(generation, answer)
+    metered = meter_chat_tokens(principal, request, citations, memories, answer, usage)
     audit_started = time.perf_counter()
     audit.emit("chat.completed", principal, trace_id, thread_id=request.thread_id, model=request.model,
                latency_ms=round((time.perf_counter() - started) * 1000),
-               citations=[item["document_id"] for item in citations], streamed=False)
+               citations=[item["document_id"] for item in citations], streamed=False,
+               **({"usage": metered} if metered else {}))
     audit_ms = round((time.perf_counter() - audit_started) * 1000, 2)
     record_knowledge_gap(principal, request, answer, citations, trace_id)
     return {"id": trace_id, "object": "chat.completion", "model": request.model,
@@ -2568,10 +2898,14 @@ async def publish_tacit_entry(
 
     trace_id = str(uuid.uuid4())
     filename = f"tacit-{entry.id}.md"
-    document = await ingest_upload(
-        principal, filename, render_tacit_answer(entry).encode("utf-8"),
-        {"member", "admin"}, trace_id, mime="text/markdown",
-    )
+    rendered = render_tacit_answer(entry).encode("utf-8")
+    reserved = reserve_upload(principal, len(rendered), trace_id)
+    try:
+        document = await ingest_upload(
+            principal, filename, rendered, {"member", "admin"}, trace_id, mime="text/markdown",
+        )
+    finally:
+        release_upload(principal, len(rendered), reserved)
     published = tacit_store.mark_published(principal.organization_id, entry.id, document.id)
     if entry.gap_id:
         gap = gap_store.get(principal.organization_id, entry.gap_id)
@@ -2837,9 +3171,45 @@ async def admin_settings(
             "memory": "mem0" if memory_service.enabled else "disabled",
         },
         "counts": {"documents": len(organization_documents), "audit_events": len(organization_events)},
-        "system": monitor.snapshot(documents, audit, vector, rate_limiter),
-        "links": dashboard_links(),
+        # Host metrics, shared-service counters and operator dashboards describe
+        # every tenant at once; pooled tenants only see their own figures.
+        "system": tenant_system_snapshot(principal) if tenancy.pooled else monitor.snapshot(documents, audit, vector, rate_limiter),
+        "links": {} if tenancy.pooled else dashboard_links(),
+        **({"tenant": tenant_settings_payload(principal)} if tenancy.pooled else {}),
     }
+
+
+def tenant_system_snapshot(principal: Principal) -> dict:
+    """Same shape as SystemMonitor.snapshot, filled only with this tenant's numbers."""
+    count, stored = documents.usage_for(principal.organization_id)
+    limit = tenant_quotas(principal).get("max_storage_bytes")
+    total = limit or 0
+    return {
+        "scope": "tenant",
+        "host": {"hostname": "shared", "platform": "", "python": "", "uptime_seconds": 0},
+        "storage": {
+            "total_bytes": total, "used_bytes": stored, "free_bytes": max(0, total - stored) if total else 0,
+            "percent": round(stored / total * 100, 1) if total else 0,
+            "documents_bytes": stored, "audit_bytes": 0, "mem0_bytes": 0, "fastembed_bytes": 0,
+            "documents_count": count,
+        },
+        "memory": {"total_bytes": 0, "used_bytes": 0, "available_bytes": 0, "percent": 0},
+        "process": {"total": 0, "api_pid": 0, "api_threads": 0, "api_rss_bytes": 0, "api_cpu_percent": 0},
+        "cpu": {"cores": 0, "load_1": 0, "load_5": 0, "load_15": 0},
+        "containers": {"available": False, "project": "", "total": 0, "running": 0,
+                       "platform_total": 0, "platform_running": 0, "items": []},
+        "services": {"database": {"available": False, "backend": "shared"},
+                     "vector": {"available": False, "backend": "shared"},
+                     "cache": {"available": False}},
+    }
+
+
+def tenant_settings_payload(principal: Principal) -> dict | None:
+    tenant = tenant_registry.get(principal.organization_id)
+    if not tenant:
+        return None
+    return {"id": tenant.id, "name": tenant.name, "plan": tenant.plan, "status": tenant.status,
+            "quotas": tenant.quotas, "usage": tenant_usage(tenant.id)}
 
 
 @app.post("/v1/admin/reindex")
@@ -2851,10 +3221,240 @@ async def reindex_documents(
         raise HTTPException(403, "Administrator role required")
     if not vector.enabled:
         raise HTTPException(409, "Qdrant vector backend is not enabled")
-    indexed = await asyncio.to_thread(documents.reindex_all)
+    # Pooled tenants reindex only their own documents.
+    scope = principal.organization_id if tenancy.pooled else None
+    indexed = await asyncio.to_thread(documents.reindex_all, scope)
     trace_id = str(uuid.uuid4())
     audit.emit("admin.reindexed", principal, trace_id, indexed=indexed)
     return {"indexed": indexed, "backend": "qdrant", "trace_id": trace_id}
+
+
+# --------------------------------------------------------------------------- platform: tenants
+# Operator endpoints for a pooled deployment. They require the platform-admin
+# role (OIDC_PLATFORM_ADMIN_ROLE), which is distinct from a tenant ``admin``,
+# and they are exempt from the tenant gate. Every action is audited under the
+# acting platform administrator with ``tenant_id`` in the payload.
+
+TENANT_PATH_PATTERN = r"^[a-z0-9-]{2,40}$"
+
+
+class TenantQuotas(BaseModel):
+    max_documents: int | None = Field(default=None, ge=0)
+    max_storage_bytes: int | None = Field(default=None, ge=0)
+    chat_requests_per_day: int | None = Field(default=None, ge=0)
+    tokens_per_month: int | None = Field(default=None, ge=0)
+
+
+class TenantCreate(BaseModel):
+    id: str = Field(pattern=TENANT_PATH_PATTERN)
+    name: str = Field(min_length=1, max_length=120)
+    plan: str = Field(default="standard", max_length=40)
+    quotas: TenantQuotas = Field(default_factory=TenantQuotas)
+    notes: str = Field(default="", max_length=2000)
+
+
+class TenantUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    plan: str | None = Field(default=None, max_length=40)
+    # Only the keys sent are changed; send null to make a quota unlimited.
+    quotas: dict[Literal["max_documents", "max_storage_bytes", "chat_requests_per_day", "tokens_per_month"],
+                 Annotated[int, Field(ge=0)] | None] | None = None
+    status: Literal["active", "suspended"] | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+def platform_principal(user_id: str | None, organization_id: str | None, roles: str | None) -> Principal:
+    principal = principal_from_headers(user_id, organization_id, roles)
+    if PLATFORM_ADMIN not in principal.roles:
+        raise HTTPException(403, "Platform administrator role required")
+    return principal
+
+
+def _tenant_or_404(tenant_id: str):
+    tenant = tenant_registry.get(tenant_id)
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    return tenant
+
+
+def tenant_usage(tenant_id: str) -> dict:
+    document_count, stored_bytes = documents.usage_for(tenant_id)
+    return {
+        "tenant_id": tenant_id,
+        "documents": document_count,
+        "storage_bytes": stored_bytes,
+        **usage_meter.usage(tenant_id),
+    }
+
+
+def purge_tenant_data(tenant_id: str) -> tuple[dict[str, int], list[str]]:
+    """Remove one organization's data from every store. Audit events are kept.
+
+    Idempotent: a second run after a partial failure removes what is left.
+    """
+    summary: dict[str, int] = {}
+    errors: list[str] = []
+    summary.update(documents.purge_organization(tenant_id))
+    summary["vector_purged"] = int(bool(vector.enabled))
+    summary["gaps"] = gap_store.purge_organization(tenant_id)
+    summary["tacit_entries"] = tacit_store.purge_organization(tenant_id)
+    summary["ontology_packs"] = pack_store.purge_organization(tenant_id)
+    summary["feedback"] = feedback_store.purge_organization(tenant_id)
+    try:
+        summary["memory_users"] = memory_service.purge_organization(tenant_id)
+    except Exception as error:
+        logger.exception("Could not purge Mem0 memories for tenant %s", tenant_id)
+        summary["memory_users"] = 0
+        errors.append(f"memories: {type(error).__name__}")
+    with JOBS_LOCK:
+        doomed = [job_id for job_id, job in JOBS.items() if job.organization_id == tenant_id]
+        for job_id in doomed:
+            del JOBS[job_id]
+    summary["jobs"] = len(doomed)
+    return summary, errors
+
+
+@app.post("/v1/platform/tenants", status_code=201)
+async def create_tenant(
+    payload: TenantCreate,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = platform_principal(x_user_id, x_organization_id, x_roles)
+    try:
+        tenant = tenant_registry.create(
+            payload.id, payload.name, plan=payload.plan, quotas=payload.quotas.model_dump(), notes=payload.notes,
+        )
+    except TenantExists as error:
+        raise HTTPException(409, str(error)) from error
+    except TenantError as error:
+        raise HTTPException(422, str(error)) from error
+    audit.emit("tenant.created", principal, str(uuid.uuid4()), tenant_id=tenant.id, name=tenant.name,
+               plan=tenant.plan, quotas=tenant.quotas)
+    return tenant.as_dict()
+
+
+@app.get("/v1/platform/tenants")
+async def list_tenants(
+    status: Literal["active", "suspended", "deleting"] | None = Query(None),
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    platform_principal(x_user_id, x_organization_id, x_roles)
+    tenants = tenant_registry.list(status)
+    return {"data": [tenant.as_dict() for tenant in tenants], "total": len(tenants), "mode": tenancy.mode}
+
+
+@app.get("/v1/platform/tenants/{tenant_id}")
+async def get_tenant(
+    tenant_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    platform_principal(x_user_id, x_organization_id, x_roles)
+    return _tenant_or_404(tenant_id).as_dict()
+
+
+@app.patch("/v1/platform/tenants/{tenant_id}")
+async def update_tenant(
+    tenant_id: str, payload: TenantUpdate,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = platform_principal(x_user_id, x_organization_id, x_roles)
+    before = _tenant_or_404(tenant_id)
+    previous_status = before.status
+    changes = payload.model_dump(exclude_unset=True)
+    try:
+        tenant = tenant_registry.update(tenant_id, **changes)
+    except TenantError as error:
+        raise HTTPException(409, str(error)) from error
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    trace_id = str(uuid.uuid4())
+    audit.emit("tenant.updated", principal, trace_id, tenant_id=tenant_id, changes=sorted(changes),
+               quotas=tenant.quotas, plan=tenant.plan, status=tenant.status)
+    if tenant.status != previous_status:
+        event = "tenant.suspended" if tenant.status == "suspended" else "tenant.resumed"
+        audit.emit(event, principal, trace_id, tenant_id=tenant_id, previous_status=previous_status)
+    return tenant.as_dict()
+
+
+async def _set_tenant_status(tenant_id: str, status: str, event: str, principal: Principal) -> dict:
+    before = _tenant_or_404(tenant_id)
+    previous_status = before.status
+    try:
+        tenant = tenant_registry.update(tenant_id, status=status)
+    except TenantError as error:
+        raise HTTPException(409, str(error)) from error
+    if tenant.status != previous_status:
+        audit.emit(event, principal, str(uuid.uuid4()), tenant_id=tenant_id, previous_status=previous_status)
+    return tenant.as_dict()
+
+
+@app.post("/v1/platform/tenants/{tenant_id}/suspend")
+async def suspend_tenant(
+    tenant_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = platform_principal(x_user_id, x_organization_id, x_roles)
+    return await _set_tenant_status(tenant_id, "suspended", "tenant.suspended", principal)
+
+
+@app.post("/v1/platform/tenants/{tenant_id}/resume")
+async def resume_tenant(
+    tenant_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = platform_principal(x_user_id, x_organization_id, x_roles)
+    return await _set_tenant_status(tenant_id, "active", "tenant.resumed", principal)
+
+
+@app.delete("/v1/platform/tenants/{tenant_id}")
+async def delete_tenant(
+    tenant_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    """Offboard a tenant: block it (``deleting``), then purge its data from every store.
+
+    The registry record stays (status ``deleting``) so the organization id cannot
+    be reused by accident and its audit trail stays addressable. Calling DELETE
+    again re-runs the purge, which is idempotent.
+    """
+    principal = platform_principal(x_user_id, x_organization_id, x_roles)
+    before = _tenant_or_404(tenant_id)
+    trace_id = str(uuid.uuid4())
+    if before.status != "deleting":
+        tenant_registry.update(tenant_id, status="deleting")
+        audit.emit("tenant.deleted", principal, trace_id, tenant_id=tenant_id, previous_status=before.status)
+    summary, errors = await asyncio.to_thread(purge_tenant_data, tenant_id)
+    tenant = tenant_registry.mark_purged(tenant_id, summary)
+    usage_meter.flush()
+    audit.emit("tenant.purged", principal, trace_id, tenant_id=tenant_id, summary=summary, errors=errors,
+               complete=not errors)
+    return {"tenant": tenant.as_dict() if tenant else None, "purge": summary, "errors": errors,
+            "complete": not errors, "trace_id": trace_id}
+
+
+@app.get("/v1/platform/tenants/{tenant_id}/usage")
+async def get_tenant_usage(
+    tenant_id: str, days: int = Query(31, ge=1, le=62),
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    platform_principal(x_user_id, x_organization_id, x_roles)
+    tenant = _tenant_or_404(tenant_id)
+    usage = tenant_usage(tenant_id)
+    usage["daily"] = usage["daily"][:days]
+    return {**usage, "quotas": tenant.quotas, "status": tenant.status}
+
+
+@app.get("/v1/platform/tenants/{tenant_id}/audit-events")
+async def get_tenant_audit_events(
+    tenant_id: str, limit: int = Query(100, ge=1, le=500),
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    """A tenant's audit trail for platform operators (the tenant's own view stays /v1/audit-events)."""
+    principal = platform_principal(x_user_id, x_organization_id, x_roles)
+    _tenant_or_404(tenant_id)
+    events = audit.recent_for_tenant(tenant_id, limit)
+    audit.emit("tenant.audit_viewed", principal, str(uuid.uuid4()), tenant_id=tenant_id, returned=len(events))
+    return {"data": events}
 
 
 # --------------------------------------------------------------------------- MCP server

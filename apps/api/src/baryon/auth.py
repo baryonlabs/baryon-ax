@@ -35,6 +35,7 @@ from jwt.algorithms import RSAAlgorithm
 from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 
+PLATFORM_ADMIN = "platform-admin"
 DEFAULT_PUBLIC_PATHS = "/health,/docs*,/redoc*,/openapi.json,/v1/open-source"
 IDENTITY_HEADERS = (b"x-user-id", b"x-organization-id", b"x-roles")
 DELEGATION_HEADERS = (b"x-on-behalf-of", b"x-on-behalf-of-roles", b"x-acting-service")
@@ -76,6 +77,8 @@ class OIDCConfig:
     admin_role: str = "baryon-admin"
     member_role: str = "baryon-member"
     legal_role: str = "baryon-legal"
+    # Operator of a pooled deployment. Distinct from a tenant ``admin``.
+    platform_admin_role: str = "baryon-platform-admin"
     org_claim: str = "organization"
     default_org: str = "local-org"
     user_claim: str = "preferred_username"
@@ -86,6 +89,9 @@ class OIDCConfig:
     leeway_seconds: int = 30
     http_timeout: float = 5.0
     jwks_cache_seconds: int = 300
+    # Pooled multi-tenancy: a token without an organization claim must not fall
+    # back to ``default_org`` (that would merge unrelated users into one tenant).
+    require_org_claim: bool = False
 
     @classmethod
     def from_env(cls) -> "OIDCConfig":
@@ -106,6 +112,7 @@ class OIDCConfig:
             admin_role=os.getenv("OIDC_ADMIN_ROLE", "baryon-admin").strip(),
             member_role=os.getenv("OIDC_MEMBER_ROLE", "baryon-member").strip(),
             legal_role=os.getenv("OIDC_LEGAL_ROLE", "baryon-legal").strip(),
+            platform_admin_role=os.getenv("OIDC_PLATFORM_ADMIN_ROLE", "baryon-platform-admin").strip(),
             org_claim=os.getenv("OIDC_ORG_CLAIM", "organization").strip(),
             default_org=os.getenv("OIDC_DEFAULT_ORG", "local-org").strip(),
             user_claim=os.getenv("OIDC_USER_CLAIM", "preferred_username").strip(),
@@ -120,6 +127,7 @@ class OIDCConfig:
             leeway_seconds=int(os.getenv("OIDC_LEEWAY_SECONDS", "30")),
             http_timeout=float(os.getenv("OIDC_HTTP_TIMEOUT_SECONDS", "5")),
             jwks_cache_seconds=int(os.getenv("OIDC_JWKS_CACHE_SECONDS", "300")),
+            require_org_claim=os.getenv("TENANCY_MODE", "single").strip().lower() == "pooled",
         )
 
     def validate(self) -> None:
@@ -176,6 +184,10 @@ def _normalize_role(value: str, config: OIDCConfig) -> str | None:
         "member": "member",
         "legal": "legal",
     }
+    # Only the configured IdP role grants platform administration (no bare
+    # "platform-admin" alias), so tenant-managed group names cannot collide.
+    if config.platform_admin_role:
+        candidates[config.platform_admin_role] = PLATFORM_ADMIN
     if role in candidates:
         return candidates[role]
     # Keycloak configured with full.path=true sends /baryon-admin.
@@ -227,22 +239,43 @@ def delegated_roles(requested: str | None, service_roles: set[str], config: OIDC
             wanted.add(normalized)
     if not wanted:
         wanted = {"member"}
-    allowed = wanted & service_roles
+    # Platform administration is never delegated: a bot acting for a chat user
+    # must not be able to manage tenants.
+    allowed = (wanted & service_roles) - {PLATFORM_ADMIN}
     if not allowed:
         raise DelegationError("requested roles exceed the service account's roles")
     return allowed
 
 
-def principal_from_claims(claims: dict[str, Any], config: OIDCConfig) -> PrincipalClaims:
+def organizations_from_claims(claims: dict[str, Any], config: OIDCConfig) -> list[str]:
+    """Organization ids in the token, in claim order.
+
+    Accepts a string, a list (Keycloak Organizations: ``["acme"]``) or a map
+    keyed by organization alias (Keycloak with "add organization attributes":
+    ``{"acme": {...}}``).
+    """
+    value = _claim_value(claims, config.org_claim)
+    if isinstance(value, dict):
+        value = list(value.keys())
+    return [item.strip() for item in _claim_values(value) if item and item.strip()]
+
+
+def principal_from_claims(
+    claims: dict[str, Any], config: OIDCConfig, requested_org: str | None = None,
+) -> PrincipalClaims:
     user_id = (
         _claim_value(claims, config.user_claim)
         or claims.get("email")
         or claims.get("sub")
         or "unknown"
     )
-    organization = _claim_value(claims, config.org_claim) or config.default_org
-    if isinstance(organization, (list, tuple)):
-        organization = organization[0] if organization else config.default_org
+    organizations = organizations_from_claims(claims, config)
+    if requested_org and requested_org in organizations:
+        # A member of several organizations picks one with X-Organization-Id;
+        # only organizations present in the signed token can be selected.
+        organization = requested_org
+    else:
+        organization = organizations[0] if organizations else config.default_org
     return PrincipalClaims(
         user_id=str(user_id),
         organization_id=str(organization),
@@ -392,7 +425,13 @@ class OIDCAuthMiddleware:
             await self._reject(scope, receive, send, str(error))
             return
 
-        principal = principal_from_claims(claims, self.config)
+        if self.config.require_org_claim and not organizations_from_claims(claims, self.config):
+            await self._reject(
+                scope, receive, send, "token has no organization claim", status_code=403,
+                code="organization_claim_missing",
+            )
+            return
+        principal = principal_from_claims(claims, self.config, headers.get("x-organization-id"))
         acting_service: str | None = None
         on_behalf_of = headers.get("x-on-behalf-of")
         if on_behalf_of is not None:
@@ -480,13 +519,16 @@ class OIDCAuthMiddleware:
 
     async def _reject(
         self, scope, receive, send, message: str, status_code: int = 401, actor: PrincipalClaims | None = None,
+        code: str | None = None,
     ) -> None:
         self._record_failure(scope, message, status_code, actor)
-        await self._error(scope, receive, send, message, status_code)
+        await self._error(scope, receive, send, message, status_code, code=code)
 
     @staticmethod
-    async def _error(scope, receive, send, message: str, status_code: int) -> None:
-        if status_code == 401:
+    async def _error(scope, receive, send, message: str, status_code: int, code: str | None = None) -> None:
+        if code:
+            response = JSONResponse({"detail": {"code": code, "message": message}}, status_code=status_code)
+        elif status_code == 401:
             response = JSONResponse(
                 {"detail": f"Invalid or missing credentials: {message}"},
                 status_code=401,
