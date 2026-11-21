@@ -21,3 +21,10 @@ graphify-out/
 local/
 .env.*
 !.env*.example
+
+# Terraform (state, local variables and backend config stay out of the repo)
+deploy/aws/terraform/**/.terraform/
+deploy/aws/terraform/**/*.tfstate*
+deploy/aws/terraform/**/terraform.tfvars
+deploy/aws/terraform/**/backend.hcl
+deploy/aws/terraform/**/.terraform.lock.hcl

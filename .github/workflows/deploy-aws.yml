@@ -1,0 +1,91 @@
+name: deploy to AWS
+
+# Manual deploys only. Each environment is a GitHub environment named aws-<env>
+# (aws-demo, aws-acme, ...) with these variables:
+#   AWS_DEPLOY_ROLE_ARN   bootstrap output deploy_role_arn
+#   AWS_IMAGE_REGISTRY    bootstrap output image_registry
+#   AWS_DOMAIN            public hostname of the environment
+# Add required reviewers to customer environments so a deploy needs approval.
+# Infrastructure changes stay in `terraform apply`; this workflow only ships images
+# and rolls the ECS services that already exist.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment name (demo or a customer id)"
+        required: true
+        default: demo
+      tag:
+        description: "Image tag (empty = commit SHA). Terraform's image_tag must match."
+        required: false
+        default: ""
+      services:
+        description: "Space-separated subset (empty = all)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-aws-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: aws-${{ inputs.environment }}
+    env:
+      AWS_REGION: ap-northeast-2
+      IMAGE_REGISTRY: ${{ vars.AWS_IMAGE_REGISTRY }}
+      DOMAIN: ${{ vars.AWS_DOMAIN }}
+      # Inputs go through the environment, never straight into scripts (no injection).
+      ENV_NAME: ${{ inputs.environment }}
+      INPUT_TAG: ${{ inputs.tag }}
+      SERVICES: ${{ inputs.services }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Check environment variables
+        run: |
+          for name in AWS_DEPLOY_ROLE_ARN AWS_IMAGE_REGISTRY AWS_DOMAIN; do
+            value=$(printenv "VAR_$name" || true)
+            [ -n "$value" ] || { echo "::error::GitHub environment variable $name is not set"; exit 1; }
+          done
+        env:
+          VAR_AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          VAR_AWS_IMAGE_REGISTRY: ${{ vars.AWS_IMAGE_REGISTRY }}
+          VAR_AWS_DOMAIN: ${{ vars.AWS_DOMAIN }}
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-northeast-2
+
+      - name: Validate inputs
+        run: |
+          [[ "$ENV_NAME" =~ ^[a-z][a-z0-9-]{1,20}$ ]] || { echo "::error::invalid environment name"; exit 1; }
+          [[ -z "$INPUT_TAG" || "$INPUT_TAG" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || { echo "::error::invalid tag"; exit 1; }
+          [[ -z "$SERVICES" || "$SERVICES" =~ ^[a-z -]+$ ]] || { echo "::error::invalid services list"; exit 1; }
+
+      - name: Build and push images
+        run: |
+          tag="$INPUT_TAG"
+          [ -n "$tag" ] || tag=$(git rev-parse --short HEAD)
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          [ -n "$SERVICES" ] || unset SERVICES
+          deploy/aws/scripts/build_and_push.sh "$ENV_NAME" "$DOMAIN" "$tag"
+
+      - name: Roll ECS services
+        run: |
+          cluster="baryon-ax-$ENV_NAME"
+          for service in web api llm-gateway keycloak kordoc tika docling; do
+            if aws ecs update-service --cluster "$cluster" --service "$service" --force-new-deployment >/dev/null 2>&1; then
+              echo "rolled $service"
+            else
+              echo "skipped $service (not deployed in $cluster)"
+            fi
+          done
+          echo "Images tagged $TAG. If Terraform's image_tag is different, run terraform apply -var image_tag=$TAG." >> "$GITHUB_STEP_SUMMARY"

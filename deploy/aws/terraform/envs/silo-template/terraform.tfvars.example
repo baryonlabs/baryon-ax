@@ -1,0 +1,7 @@
+customer       = "acme"
+domain_name    = "acme.baryon-ax.baryon.ai"
+image_registry = "<ACCOUNT_ID>.dkr.ecr.ap-northeast-2.amazonaws.com/baryon-ax"
+image_tag      = "v0.7.0"
+alert_email    = "ops@example.com"
+admin_users    = ["acme-admin"]
+# allowed_cidrs = ["198.51.100.0/24"]
