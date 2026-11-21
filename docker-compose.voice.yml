@@ -1,0 +1,32 @@
+name: baryon-ax
+
+# Optional voice dictation profile: an on-prem speech-to-text sidecar (sherpa-onnx).
+# Audio goes only from the browser to the API to this container. Nothing leaves the
+# network and recordings are not stored.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.voice.yml up -d --build
+#
+# Models are installed from Settings → Voice models (operators only) or ahead of time
+# into the stt-models volume. See docs/voice.md.
+services:
+  stt:
+    build: ./deploy/stt
+    environment:
+      STT_API_KEY: ${STT_API_KEY:?set STT_API_KEY in .env (any long random string)}
+      STT_DEFAULT_MODEL: ${STT_DEFAULT_MODEL:-sensevoice-ko}
+      STT_THREADS: ${STT_THREADS:-4}
+      STT_MAX_SECONDS: ${STT_MAX_SECONDS:-120}
+    volumes:
+      - stt-models:/models
+    restart: unless-stopped
+
+  api:
+    environment:
+      STT_BASE_URL: http://stt:8000
+      STT_API_KEY: ${STT_API_KEY}
+      STT_DEFAULT_MODEL: ${STT_DEFAULT_MODEL:-sensevoice-ko}
+    depends_on:
+      - stt
+
+volumes:
+  stt-models:
