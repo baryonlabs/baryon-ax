@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel, Field
 from starlette.datastructures import Headers
 
-from . import __version__, gateway_status
+from . import __version__, gateway_status, voice
 from .auth import PLATFORM_ADMIN, OIDCConfig, OIDCAuthMiddleware, current_acting_service
 from .connectors import CONNECTOR_BY_ID, CONNECTORS, TOOLS, connector_payload, decide_tool, get_connector, get_tool, search_tools, tool_payload
 from .ingest import Acl as IngestAcl
@@ -3240,6 +3240,102 @@ async def reindex_documents(
     trace_id = str(uuid.uuid4())
     audit.emit("admin.reindexed", principal, trace_id, indexed=indexed)
     return {"indexed": indexed, "backend": "qdrant", "trace_id": trace_id}
+
+
+# --------------------------------------------------------------------------- voice
+# Dictation and voice commands. Audio goes to the on-prem STT sidecar
+# (deploy/stt) and is never stored; only metadata is audited.
+
+stt_config = voice.SttConfig.from_env()
+_MODEL_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
+_MODEL_FIELDS = ("id", "name", "size_mb", "languages", "badges", "license", "notes", "status", "progress", "error")
+
+
+def voice_operator(principal: Principal) -> bool:
+    """Installing models changes shared infrastructure: operators only."""
+    return "platform-admin" in principal.roles if tenancy.pooled else "admin" in principal.roles
+
+
+def stt_http_error(error: Exception) -> HTTPException:
+    if isinstance(error, voice.SttRejected):
+        status = error.status if error.status in (400, 404, 409, 413, 415, 429) else 502
+        return HTTPException(status, f"speech-to-text: {error.detail}")
+    return HTTPException(503, str(error))
+
+
+@app.get("/v1/audio/models")
+async def audio_models(
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    base = {"enabled": stt_config.enabled, "can_manage": voice_operator(principal), "default": None, "models": []}
+    if not stt_config.enabled:
+        return {**base, "reachable": False, "error": "STT_BASE_URL is not configured"}
+    try:
+        data = await voice.stt_request(stt_config, "GET", "/v1/models")
+    except (voice.SttUnavailable, voice.SttRejected) as error:
+        return {**base, "reachable": False, "error": str(error)}
+    models = [{key: item.get(key) for key in _MODEL_FIELDS} for item in data.get("data", []) if isinstance(item, dict)]
+    return {**base, "reachable": True, "default": stt_config.default_model or data.get("default"), "models": models}
+
+
+@app.post("/v1/admin/audio/models/{model_id}/download")
+async def download_audio_model(
+    model_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if not voice_operator(principal):
+        raise HTTPException(403, "Operator role required to install speech models")
+    if not _MODEL_ID.fullmatch(model_id):
+        raise HTTPException(400, "invalid model id")
+    try:
+        result = await voice.stt_request(stt_config, "POST", f"/v1/models/{model_id}/download")
+    except (voice.SttUnavailable, voice.SttRejected) as error:
+        raise stt_http_error(error) from error
+    audit.emit("audio.model_download_requested", principal, str(uuid.uuid4()), model=model_id, status=result.get("status"))
+    return {"id": model_id, "status": result.get("status"), "progress": result.get("progress")}
+
+
+@app.post("/v1/audio/transcriptions")
+async def transcribe_audio(
+    file: UploadFile = File(...), model: str = Form(""), language: str = Form(""),
+    locale: str = Form("ko"), commands: bool = Form(True),
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    rate_limiter.check(f"voice:{principal.organization_id}:{principal.user_id}")
+    if not stt_config.enabled:
+        raise HTTPException(503, "speech-to-text is not configured (STT_BASE_URL)")
+    if model and not _MODEL_ID.fullmatch(model):
+        raise HTTPException(400, "invalid model id")
+    payload = await file.read(stt_config.max_bytes + 1)
+    if len(payload) > stt_config.max_bytes:
+        raise HTTPException(413, "recording too large")
+    if not payload:
+        raise HTTPException(400, "empty recording")
+    # Whisper misdetects short Korean clips; the UI language is a better default.
+    spoken = language or {"ko": "ko", "en": "en"}.get(locale, "")
+    trace_id = str(uuid.uuid4())
+    try:
+        result = await voice.stt_request(
+            stt_config, "POST", "/v1/audio/transcriptions", timeout=120.0,
+            files={"file": ("recording.wav", payload, "audio/wav")},
+            data={"model": model or stt_config.default_model, "language": spoken},
+        )
+    except (voice.SttUnavailable, voice.SttRejected) as error:
+        audit.emit("audio.transcription_failed", principal, trace_id, reason=str(error)[:200])
+        raise stt_http_error(error) from error
+    text = str(result.get("text") or "").strip()
+    command = voice.parse_command(text) if commands else None
+    # The transcript is not audited (it may contain anything the user said); its size is.
+    audit.emit("audio.transcribed", principal, trace_id, model=result.get("model"), duration_ms=result.get("duration_ms"),
+               characters=len(text), command=command.action if command else None)
+    return {
+        "text": text, "language": result.get("language"), "model": result.get("model"),
+        "duration_ms": result.get("duration_ms"), "processing_ms": result.get("processing_ms"),
+        "command": command.as_dict(text) if command else None, "trace_id": trace_id,
+    }
 
 
 # --------------------------------------------------------------------------- platform: tenants

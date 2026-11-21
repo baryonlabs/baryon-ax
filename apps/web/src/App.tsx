@@ -1,5 +1,6 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import GatewayCard, { type GatewayInfo } from "./GatewayCard";
+import VoiceInput, { type VoiceCommand } from "./VoiceInput";
 import { AlertTriangle, BookOpen, Bot, Boxes, Brain, ChevronRight, Copy, Cpu, Download, ExternalLink, FileCode, FileImage, FileSpreadsheet, FileText, FileType, FileUp, Globe2, HardDrive, LogOut, Menu, MessagesSquare, Network, Paperclip, Plus, RefreshCw, RotateCcw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, UploadCloud, Wrench, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -1244,6 +1245,33 @@ export default function App({ session = null }: { session?: AuthSession | null }
     controllerRef.current?.abort();
   }
 
+  // Voice results arrive asynchronously; read the latest state through a ref.
+  const voiceRef = useRef({ input, busy, role });
+  voiceRef.current = { input, busy, role };
+  const voiceRequest = useCallback((path: string, init: RequestInit = {}) =>
+    apiFetch(`${API}${path}`, { ...init, headers: { ...identity(voiceRef.current.role), ...(init.headers || {}) } }), []);
+  const voiceTranscript = useCallback((text: string) => {
+    setInput(previous => previous && !/\s$/.test(previous) ? `${previous} ${text}` : `${previous}${text}`);
+    window.setTimeout(() => composerRef.current?.focus(), 0);
+  }, []);
+  function voiceCommand(command: VoiceCommand) {
+    const current = voiceRef.current;
+    if (command.action === "new_chat") startNewChat();
+    else if (command.action === "stop") stopGenerating();
+    else if (command.action === "clear") setInput("");
+    else if (command.action === "send") {
+      const question = current.input.trim();
+      if (question && !current.busy) { setInput(""); void submitQuestion(question); }
+    } else if (command.action === "open_view" && command.view) {
+      const target = command.view as View;
+      if ((target === "settings" || target === "gaps") && current.role !== "admin") return;
+      setView(target);
+    }
+  }
+  const voiceCommandRef = useRef(voiceCommand);
+  voiceCommandRef.current = voiceCommand;
+  const onVoiceCommand = useCallback((command: VoiceCommand) => voiceCommandRef.current(command), []);
+
   function regenerate(index: number) {
     const user = messages[index - 1];
     if (!user || user.role !== "user" || busy) return;
@@ -1515,6 +1543,7 @@ export default function App({ session = null }: { session?: AuthSession | null }
                 ? <button type="button" className="stop" onClick={stopGenerating} aria-label={t.stop} title={t.stop}><Square size={15}/></button>
                 : <button type="submit" aria-label={t.chat} aria-keyshortcuts="Shift+Enter" disabled={!input.trim()}><Send size={17}/></button>}
             </form>
+            <VoiceInput locale={locale} request={voiceRequest} onTranscript={voiceTranscript} onCommand={onVoiceCommand}/>
           </div>
           <div className="composer-meta" id="composer-hint">
             <span>{t.scope}</span>

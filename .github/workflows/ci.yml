@@ -55,6 +55,20 @@ jobs:
           python3 deploy/aws/keycloak/make_realm.py
           git diff --exit-code -- deploy/aws/keycloak/realm-baryon-ax.aws.json
 
+  stt:
+    name: stt sidecar
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/stt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install "uv==${UV_VERSION}"
+      - name: STT sidecar tests (fake recognizer, no model download)
+        run: uv run --no-project --with-requirements requirements.txt --with pytest --with httpx python -m pytest -q test_server.py
+
   locks:
     name: lockfile check
     runs-on: ubuntu-latest
@@ -88,6 +102,14 @@ jobs:
             -o "$RUNNER_TEMP/gateway-requirements.txt"
           diff -u requirements.txt "$RUNNER_TEMP/gateway-requirements.txt"
         working-directory: deploy/aws/gateway
+      - name: stt requirements.txt matches requirements.in
+        run: |
+          cp requirements.txt "$RUNNER_TEMP/stt-requirements.txt"
+          uv pip compile requirements.in \
+            --python-version 3.12 --python-platform x86_64-manylinux_2_28 --no-header --generate-hashes \
+            -o "$RUNNER_TEMP/stt-requirements.txt"
+          diff -u requirements.txt "$RUNNER_TEMP/stt-requirements.txt"
+        working-directory: deploy/stt
       - name: kordoc package-lock.json is current
         run: npm ci --dry-run --omit=dev --no-audit --no-fund
         working-directory: deploy/parsers/kordoc

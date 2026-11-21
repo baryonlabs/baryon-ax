@@ -545,3 +545,36 @@ details.trace[open] summary::before { transform: rotate(90deg); }
 .gateway-example { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; }
 .gateway-example pre { flex: 1; margin: 0; padding: 10px; background: #0b1424; border: 1px solid #22344f; border-radius: 6px; overflow-x: auto; font-size: 11px; }
 @media (max-width: 720px) { .gateway-example { flex-direction: column; } }
+
+/* Voice dictation (VoiceInput.tsx) */
+.voice-input { position: relative; flex: 0 0 auto; display: flex; align-items: flex-end; gap: 2px; }
+.voice-mic { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 10px; background: transparent; color: var(--text-soft); cursor: pointer; touch-action: none; }
+.voice-mic:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.voice-mic:disabled { opacity: .45; cursor: not-allowed; }
+.voice-mic.recording { background: #3a2430; color: #ffb3b3; box-shadow: 0 0 0 3px rgba(255, 120, 120, .18); }
+.voice-mic .spin { animation: spin .8s linear infinite; }
+.voice-settings-toggle { width: 22px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+.voice-settings-toggle:hover { color: var(--text); }
+.voice-status { position: absolute; right: 0; bottom: calc(100% + 6px); white-space: nowrap; color: var(--muted); font-size: 11px; pointer-events: none; }
+.voice-panel { position: absolute; right: 0; bottom: calc(100% + 26px); z-index: 60; width: min(380px, calc(100vw - 32px)); max-height: 70vh; overflow: auto; padding: 14px; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface-2); color: var(--text); box-shadow: var(--shadow); font-size: 13px; }
+.voice-panel h4 { margin: 0 0 10px; font-size: 14px; }
+.voice-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+.voice-row.column { flex-direction: column; align-items: stretch; }
+.voice-row > span { display: flex; flex-direction: column; gap: 3px; }
+.voice-row small, .voice-models small { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.voice-row input[type="checkbox"] { width: 34px; height: 18px; accent-color: var(--accent); }
+.voice-segment { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 3px; border-radius: 9px; background: var(--bg-elevated); }
+.voice-segment button { padding: 6px 0; border: 0; border-radius: 7px; background: transparent; color: var(--text-soft); cursor: pointer; }
+.voice-segment button.active { background: var(--surface); color: var(--text); font-weight: 600; }
+.voice-models { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.voice-models li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.voice-models label { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; min-width: 0; }
+.voice-models label input { margin-top: 3px; }
+.voice-model-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.voice-models li > small, .voice-models li > button { flex: 0 0 auto; white-space: nowrap; }
+.voice-model-name { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-weight: 600; }
+.voice-badge { padding: 1px 6px; border-radius: 999px; font-size: 10px; background: rgba(127, 176, 255, .16); color: var(--accent); }
+.voice-badge.fast { background: rgba(120, 220, 170, .16); color: #8fe0b6; }
+.voice-badge.english { background: rgba(255, 200, 120, .16); color: #f0c27a; }
+.voice-models .ghost.small { display: inline-flex; align-items: center; gap: 4px; }
+.voice-privacy { margin: 10px 0 0; color: var(--muted); font-size: 11px; }

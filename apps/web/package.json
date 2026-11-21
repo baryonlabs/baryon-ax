@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test:e2e": "node e2e/smoke.mjs",
     "test:buttons": "node e2e/buttons.mjs",
-    "test:connectors": "node e2e/connectors.mjs"
+    "test:connectors": "node e2e/connectors.mjs",
+    "test:voice": "node e2e/voice.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^6.3.0",
