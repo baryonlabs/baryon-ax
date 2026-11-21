@@ -69,6 +69,7 @@ Eight captured screens cover grounded chat, the source viewer, knowledge upload,
 - Docker Compose Basic Core profile and a **full-stack override** (`docker-compose.full.yml`)
 - **B300 host deployment**: platform, Langfuse, Mem0, Qdrant, PostgreSQL, and Redis on the B300 server, using GPU 7 vLLM
 - Kubernetes starter manifests and deployment profiles
+- **Messenger bots** (examples): a Slack `@mention` bot that answers with sources — see [Messenger bots](#messenger-bots)
 
 ## 암묵지 지식화 사이클 (Tacit → Explicit)
 
@@ -254,6 +255,17 @@ See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/b300-v
 
 For local development, callers can send `X-User-Id`, `X-Organization-Id`, and `X-Roles` headers. Replace this development identity adapter with OIDC/SSO before production use.
 
+## Messenger bots
+
+Practical integrations that run next to the platform and only use its public API:
+
+| Example | What it does |
+|---|---|
+| [`examples/slack-bot`](examples/slack-bot) | Slack `@mention` bot (Socket Mode): answers from your documents with the **answer + sources** (document, chunk, quoted passage), follows up in mentioned threads without another mention, and keeps per-user audit trails. Modeled on the OpenTag mention-gateway pattern. Its README includes a copy-paste setup prompt for coding agents. |
+
+<p align="center"><img src="examples/slack-bot/docs/slack-thread-example.svg" width="720" alt="Illustrative Slack thread: an @baryon question answered with sources, then a follow-up answered without a mention"></p>
+<p align="center"><sub>Illustration with sample data, not a screenshot.</sub></p>
+
 ## Repository layout
 
 ```text
@@ -263,6 +275,7 @@ deploy/         Compose and Kubernetes deployment assets
 docs/           Architecture, operations, security, full-stack, B300 deployment, research, inventory
 site/           Introduction, help, and GitHub Pages site
 scripts/        Ollama proxy, B300 vLLM serve/tunnel, full-stack smoke
+examples/       Extension examples built on the public API (Slack @mention bot)
 ```
 
 ## Development

@@ -1,0 +1,28 @@
+# Slack app manifest: api.slack.com/apps → Create New App → From a manifest → paste this.
+display_information:
+  name: baryon-ax
+  description: 사내 문서를 근거로 @멘션 질문에 답하는 baryon-ax 봇
+  background_color: "#1e293b"
+features:
+  bot_user:
+    display_name: baryon
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read   # @baryon 멘션 수신
+      - chat:write          # 스레드 답변 · 진행 메시지 수정
+      - reactions:write     # 👀 / ✅ 반응 (선택)
+      - channels:history    # 스레드 맥락 · 구독 스레드 후속 질문 (공개 채널)
+      - groups:history      # 같은 기능, 비공개 채널
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
