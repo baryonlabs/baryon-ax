@@ -1,3 +1,7 @@
 slack-bolt>=1.20
 httpx>=0.27
 python-dotenv>=1.0
+# Floors for transitive httpx dependencies with fixed advisories
+# (anyio PYSEC-2026-4025, certifi PYSEC-2026-4320).
+anyio>=4.14.2
+certifi>=2026.10.18
