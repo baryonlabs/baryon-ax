@@ -1,5 +1,6 @@
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import GatewayCard, { type GatewayInfo } from "./GatewayCard";
+import LiveVoice from "./LiveVoice";
 import VoiceInput, { type VoiceCommand } from "./VoiceInput";
 import { AlertTriangle, BookOpen, Bot, Boxes, Brain, ChevronRight, Copy, Cpu, Download, ExternalLink, FileCode, FileImage, FileSpreadsheet, FileText, FileType, FileUp, Globe2, HardDrive, LogOut, Menu, MessagesSquare, Network, Paperclip, Plus, RefreshCw, RotateCcw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, UploadCloud, Wrench, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -10,6 +11,7 @@ import { apiFetch, logout, OIDC_ENABLED, type AuthSession } from "./auth";
 
 export type Locale = "ko" | "en";
 type Role = "member" | "admin";
+type AskOptions = { style?: "text" | "voice"; onToken?: (token: string) => void; onDone?: () => void };
 type View = "chat" | "knowledge" | "memory" | "governance" | "gaps" | "tacit" | "settings" | "connectors";
 type TraceStep = { step: string; status: string; ms: number; detail?: string };
 type ChatTrace = { trace_id?: string; steps: TraceStep[]; total_ms?: number | null; memory_count?: number; retrieval_count?: number };
@@ -495,6 +497,7 @@ export default function App({ session = null }: { session?: AuthSession | null }
   const [openSourceLicense, setOpenSourceLicense] = useState("");
   const [feedbackByIndex, setFeedbackByIndex] = useState<Record<number, 1 | -1>>({});
   const controllerRef = useRef<AbortController | null>(null);
+  const busyRef = useRef(false);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [view, setView] = useState<View>("chat");
   const [knowledge, setKnowledge] = useState<KnowledgeDocument[]>([]);
@@ -1170,9 +1173,11 @@ export default function App({ session = null }: { session?: AuthSession | null }
     }
   }
 
-  async function submitQuestion(question: string, baseMessages?: ChatMessage[]) {
+  async function submitQuestion(question: string, baseMessages?: ChatMessage[], options: AskOptions = {}) {
     const trimmed = question.trim();
-    if (!trimmed || busy) return;
+    // A ref, not the `busy` state: live conversation asks again right after an interrupted answer ends.
+    if (!trimmed || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -1183,7 +1188,7 @@ export default function App({ session = null }: { session?: AuthSession | null }
       const response = await apiFetch(`${API}/v1/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...identity(role) },
-        body: JSON.stringify({ model, messages: next, stream: true, use_retrieval: retrieval, locale, selected_tool_ids: selectedTools.map(tool => tool.id) }),
+        body: JSON.stringify({ model, messages: next, stream: true, use_retrieval: retrieval, locale, selected_tool_ids: selectedTools.map(tool => tool.id), response_style: options.style ?? "text" }),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) throw new Error("Chat request failed");
@@ -1200,6 +1205,7 @@ export default function App({ session = null }: { session?: AuthSession | null }
           if (raw === "[DONE]") continue;
           const item = JSON.parse(raw);
           if (item.type === "error") throw new Error(item.message);
+          if (item.type === "token") options.onToken?.(item.content);
           setMessages(previous => {
             const copied = [...previous];
             const last = copied.length - 1;
@@ -1228,8 +1234,10 @@ export default function App({ session = null }: { session?: AuthSession | null }
         });
       }
     } finally {
+      busyRef.current = false;
       setBusy(false);
       controllerRef.current = null;
+      options.onDone?.();
     }
   }
 
@@ -1271,6 +1279,10 @@ export default function App({ session = null }: { session?: AuthSession | null }
   const voiceCommandRef = useRef(voiceCommand);
   voiceCommandRef.current = voiceCommand;
   const onVoiceCommand = useCallback((command: VoiceCommand) => voiceCommandRef.current(command), []);
+  const askRef = useRef(submitQuestion);
+  askRef.current = submitQuestion;
+  const liveAsk = useCallback((question: string, options: AskOptions) => askRef.current(question, undefined, options), []);
+  const [liveOpen, setLiveOpen] = useState(false);
 
   function regenerate(index: number) {
     const user = messages[index - 1];
@@ -1529,6 +1541,7 @@ export default function App({ session = null }: { session?: AuthSession | null }
           {selectedTools.length > 0 && <div className="tool-chips" aria-label={MCP_COMPOSER_COPY[locale].selected}>
             {selectedTools.map(tool => <span className="tool-chip" key={tool.id}><Wrench size={12}/>{tool.connector_name} · {tool.name}<button type="button" onClick={() => setSelectedTools(previous => previous.filter(item => item.id !== tool.id))} aria-label={`${MCP_COMPOSER_COPY[locale].remove} ${tool.connector_name} ${tool.name}`} title={MCP_COMPOSER_COPY[locale].remove}><X size={12}/></button></span>)}
           </div>}
+          {liveOpen && <LiveVoice locale={locale} request={voiceRequest} ask={liveAsk} stop={stopGenerating} onCommand={onVoiceCommand} onClose={() => setLiveOpen(false)}/>}
           <div className="composer-box">
             <button className="upload" title={t.upload} aria-label={t.upload} onClick={() => openFilePicker()}><FileUp size={18}/></button>
             <form onSubmit={send}>
@@ -1543,7 +1556,7 @@ export default function App({ session = null }: { session?: AuthSession | null }
                 ? <button type="button" className="stop" onClick={stopGenerating} aria-label={t.stop} title={t.stop}><Square size={15}/></button>
                 : <button type="submit" aria-label={t.chat} aria-keyshortcuts="Shift+Enter" disabled={!input.trim()}><Send size={17}/></button>}
             </form>
-            <VoiceInput locale={locale} request={voiceRequest} onTranscript={voiceTranscript} onCommand={onVoiceCommand}/>
+            <VoiceInput locale={locale} request={voiceRequest} onTranscript={voiceTranscript} onCommand={onVoiceCommand} onLive={() => setLiveOpen(true)} liveActive={liveOpen}/>
           </div>
           <div className="composer-meta" id="composer-hint">
             <span>{t.scope}</span>

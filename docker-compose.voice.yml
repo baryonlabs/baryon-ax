@@ -1,6 +1,7 @@
 name: baryon-ax
 
-# Optional voice dictation profile: an on-prem speech-to-text sidecar (sherpa-onnx).
+# Optional voice profile: dictation, voice commands and live spoken conversation, served by
+# an on-prem speech sidecar (sherpa-onnx speech-to-text + Supertonic text-to-speech).
 # Audio goes only from the browser to the API to this container. Nothing leaves the
 # network and recordings are not stored.
 #
@@ -14,6 +15,7 @@ services:
     environment:
       STT_API_KEY: ${STT_API_KEY:?set STT_API_KEY in .env (any long random string)}
       STT_DEFAULT_MODEL: ${STT_DEFAULT_MODEL:-sensevoice-ko}
+      TTS_DEFAULT_MODEL: ${TTS_DEFAULT_MODEL:-supertonic-3}
       STT_THREADS: ${STT_THREADS:-4}
       STT_MAX_SECONDS: ${STT_MAX_SECONDS:-120}
     volumes:

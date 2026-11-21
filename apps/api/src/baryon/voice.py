@@ -105,7 +105,7 @@ class SttConfig:
         return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
 
 
-async def stt_request(config: SttConfig, method: str, path: str, *, timeout: float = 10.0, **kwargs) -> dict:
+async def stt_send(config: SttConfig, method: str, path: str, *, timeout: float = 10.0, **kwargs) -> httpx.Response:
     if not config.enabled:
         raise SttUnavailable("speech-to-text is not configured (STT_BASE_URL)")
     try:
@@ -119,7 +119,38 @@ async def stt_request(config: SttConfig, method: str, path: str, *, timeout: flo
         except ValueError:
             detail = response.text
         raise SttRejected(response.status_code, str(detail)[:300])
-    return response.json()
+    return response
+
+
+async def stt_request(config: SttConfig, method: str, path: str, *, timeout: float = 10.0, **kwargs) -> dict:
+    return (await stt_send(config, method, path, timeout=timeout, **kwargs)).json()
+
+
+# --- text to speech ------------------------------------------------------------------------
+
+_CODE_BLOCK = re.compile(r"```.*?(?:```|$)", re.S)
+_MD_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
+_CITATION = re.compile(r"\[(?:\d+(?:\s*[,-]\s*\d+)*)\]")
+_URL = re.compile(r"https?://\S+")
+_MD_BLOCK = re.compile(r"^\s*(?:#{1,6}|[-+*>]|\|)\s*", re.M)
+_MD_INLINE = re.compile(r"[*`~|]+|(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])")  # keeps snake_case
+
+
+def speakable(text: str) -> str:
+    """Turn a chat answer (Markdown with citations) into text a speech model can read aloud."""
+    text = _CODE_BLOCK.sub(" ", text)
+    text = _MD_LINK.sub(r"\1", text)
+    text = _CITATION.sub("", text)
+    text = _URL.sub("", text)
+    text = _MD_BLOCK.sub("", text)
+    text = _MD_INLINE.sub("", text)
+    # A line break ends a spoken phrase (headings, list items, table rows).
+    text = re.sub(r"[ \t]+\n", "\n", text.strip())
+    text = re.sub(r"(?<![.!?。:,\n])\n+\s*", ". ", text)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"\s+([.,!?])", r"\1", text)
+    text = re.sub(r"([.!?])\.+", r"\1", text)
+    return text.strip()
 
 
 class SttRejected(Exception):

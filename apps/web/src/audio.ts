@@ -22,6 +22,20 @@ export async function recordingToWav(blob: Blob): Promise<Blob> {
   }
 }
 
+/** Resample raw microphone samples (any rate) to a 16 kHz mono WAV. */
+export async function samplesToWav(samples: Float32Array, rate: number): Promise<Blob> {
+  if (rate === TARGET_RATE) return encodeWav(samples, rate);
+  const frames = Math.max(1, Math.ceil(samples.length * TARGET_RATE / rate));
+  const offline = new OfflineAudioContext(1, frames, TARGET_RATE);
+  const buffer = offline.createBuffer(1, samples.length, rate);
+  buffer.getChannelData(0).set(samples);
+  const source = offline.createBufferSource();
+  source.buffer = buffer;
+  source.connect(offline.destination);
+  source.start();
+  return encodeWav((await offline.startRendering()).getChannelData(0), TARGET_RATE);
+}
+
 export function encodeWav(samples: Float32Array, rate: number): Blob {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);

@@ -1,4 +1,4 @@
-"""Speech-to-text model catalog for the Baryon AX STT sidecar.
+"""Speech model catalog (speech-to-text and text-to-speech) for the Baryon AX voice sidecar.
 
 Every model runs locally with sherpa-onnx (Apache-2.0): audio never leaves the
 server. Models are downloaded on demand from the sherpa-onnx model release and
@@ -14,21 +14,27 @@ Korean sample, Apple M-series CPU, int8):
 
 The 2025-09-09 SenseVoice export decoded Korean as Cantonese with sherpa-onnx
 2.0.2, so the catalog pins the 2024-07-17 export.
+
+Text-to-speech (live voice conversation):
+
+  supertonic-3   Supertone Supertonic 3, 31 languages incl. Korean, 10 voices,
+                 ~0.4-0.8 s per sentence on CPU (8 steps). Whisper turbo read
+                 its Korean output back verbatim.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-RELEASE = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models"
+RELEASES = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
 
 
 @dataclass(frozen=True)
 class ModelSpec:
     id: str
     name: str
-    kind: str                       # sense_voice | whisper | nemo_transducer
-    archive: str                    # file name in the sherpa-onnx asr-models release
+    kind: str                       # sense_voice | whisper | nemo_transducer | supertonic
+    archive: str                    # file name in the sherpa-onnx model release
     directory: str                  # directory inside the archive
     files: dict[str, str]           # role -> file name inside the directory
     size_mb: int                    # download size
@@ -37,10 +43,12 @@ class ModelSpec:
     badges: tuple[str, ...] = ()    # "recommended", "fast", "english"
     notes: str = ""
     options: dict[str, str] = field(default_factory=dict)
+    task: str = "stt"               # stt | tts
+    release: str = "asr-models"     # sherpa-onnx release tag holding the archive
 
     @property
     def url(self) -> str:
-        return f"{RELEASE}/{self.archive}"
+        return f"{RELEASES}/{self.release}/{self.archive}"
 
 
 CATALOG: dict[str, ModelSpec] = {spec.id: spec for spec in [
@@ -97,6 +105,25 @@ CATALOG: dict[str, ModelSpec] = {spec.id: spec for spec in [
         badges=("english",),
         notes="25 European languages, no Korean. Use for English/European teams.",
     ),
+    ModelSpec(
+        id="supertonic-3",
+        name="Supertonic 3 (음성 합성)",
+        kind="supertonic",
+        task="tts",
+        release="tts-models",
+        archive="sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
+        directory="sherpa-onnx-supertonic-3-tts-int8-2026-05-11",
+        files={"duration_predictor": "duration_predictor.int8.onnx", "text_encoder": "text_encoder.int8.onnx",
+               "vector_estimator": "vector_estimator.int8.onnx", "vocoder": "vocoder.int8.onnx",
+               "tts_json": "tts.json", "unicode_indexer": "unicode_indexer.bin", "voice_style": "voice.bin"},
+        size_mb=145,
+        languages=("ko", "en", "ja", "de", "es", "fr", "multi"),
+        license="OpenRAIL-M (Supertone; use restrictions apply)",
+        badges=("recommended",),
+        notes="Speaks the answers in live conversation. 10 voices, about 0.5 s per sentence on CPU.",
+        options={"num_steps": "8"},
+    ),
 ]}
 
 DEFAULT_MODEL = "sensevoice-ko"
+DEFAULT_TTS_MODEL = "supertonic-3"

@@ -181,7 +181,7 @@ curl -s http://localhost:8000/health             # 버전과 연결 상태 확�
 | 운영 구성 | + Qdrant, PostgreSQL, Redis, Langfuse, Mem0 | 8 vCPU · 16 GB | `-f docker-compose.full.yml --profile deps` |
 | + 인증 | Keycloak (OIDC) | — | `-f docker-compose.auth.yml` · [auth-oidc.md](docs/auth-oidc.md) |
 | + MCP 도구 | ContextForge 게이트웨이 | — | `-f docker-compose.mcp.yml` · [mcp-connectors.md](docs/mcp-connectors.md) |
-| + 음성 받아쓰기 | sherpa-onnx STT (CPU) | — | `-f docker-compose.voice.yml` · [voice.md](docs/voice.md) |
+| + 음성 (받아쓰기 · 라이브 대화) | sherpa-onnx STT + Supertonic TTS (CPU) | — | `-f docker-compose.voice.yml` · [voice.md](docs/voice.md) |
 | GPU 추론 | vLLM 등 사내 GPU 모델 | 7B: RTX 4090 24 GB 1장부터 | [b300-host-deploy.md](docs/b300-host-deploy.md) |
 | AWS | ECS Fargate · RDS · Bedrock, 데모 · 멀티테넌트 · 고객 전용 | 데모 약 $130/월(업무시간) | [aws-deploy.md](docs/aws-deploy.md) |
 | Kubernetes | API 스타터 매니페스트 | — | `deploy/kubernetes` |

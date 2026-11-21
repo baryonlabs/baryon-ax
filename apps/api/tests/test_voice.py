@@ -33,6 +33,8 @@ def stt(monkeypatch):
                 {"id": "whisper-turbo", "name": "Whisper", "size_mb": 537, "languages": ["ko"], "badges": ["recommended"],
                  "status": "available", "progress": None, "error": None},
             ]})
+        if request.url.path == "/v1/audio/speech":
+            return httpx.Response(200, content=b"RIFFfake-wav", headers={"content-type": "audio/wav", "x-audio-duration-ms": "900"})
         if request.url.path.endswith("/download"):
             return httpx.Response(200, json={"id": "whisper-turbo", "status": "downloading", "progress": 0.0})
         if state["status"] != 200:
@@ -147,3 +149,40 @@ def test_command_phrases(utterance: str, expected: tuple[str, str | None]) -> No
 ])
 def test_dictation_phrases_are_not_commands(utterance: str) -> None:
     assert voice.parse_command(utterance) is None
+
+
+def test_speech_cleans_markdown_and_proxies_wav(stt) -> None:
+    seen, _ = stt
+    response = client.post("/v1/audio/speech", headers=MEMBER,
+                           json={"input": "## 연차\n- **3월 말**까지 이월됩니다 [1].", "voice": 2, "locale": "ko"})
+    assert response.status_code == 200 and response.content == b"RIFFfake-wav"
+    assert response.headers["content-type"] == "audio/wav" and response.headers["x-audio-duration-ms"] == "900"
+    sent = json.loads(seen[-1].content)
+    assert sent == {"input": "연차. 3월 말까지 이월됩니다.", "voice": 2, "speed": 1.0, "language": "ko", "model": ""}
+    assert seen[-1].headers["authorization"] == "Bearer stt-key"
+
+
+def test_speech_validation(stt, monkeypatch) -> None:
+    assert client.post("/v1/audio/speech", headers=MEMBER, json={"input": "```x```"}).status_code == 400
+    assert client.post("/v1/audio/speech", headers=MEMBER, json={"input": "hi", "voice": 12}).status_code == 422
+    assert client.post("/v1/audio/speech", headers=MEMBER, json={"input": "hi", "model": "../x"}).status_code == 400
+    monkeypatch.setattr(main, "stt_config", voice.SttConfig(base_url="", api_key="", default_model="", max_bytes=1024))
+    assert client.post("/v1/audio/speech", headers=MEMBER, json={"input": "hi"}).status_code == 503
+
+
+@pytest.mark.parametrize("raw,spoken", [
+    ("네, 맞아요!", "네, 맞아요!"),
+    ("자세한 건 [인사규정](https://intra/a) 참고 [2, 3]", "자세한 건 인사규정 참고"),
+    ("코드:\n```py\nx = 1\n```\n끝", "코드: 끝"),
+    ("*강조*와 `snake_case`", "강조와 snake_case"),
+])
+def test_speakable(raw: str, spoken: str) -> None:
+    assert voice.speakable(raw) == spoken
+
+
+def test_voice_style_adds_spoken_answer_hint() -> None:
+    text_request = main.ChatRequest(messages=[{"role": "user", "content": "연차?"}])
+    voice_request = main.ChatRequest(messages=[{"role": "user", "content": "연차?"}], response_style="voice")
+    adapter = main.model_adapter
+    assert "[음성 대화]" not in adapter.system_prompt(text_request, None, [])
+    assert "[음성 대화]" in adapter.system_prompt(voice_request, None, [])
