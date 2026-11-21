@@ -1,5 +1,5 @@
 // Unit tests for the live-conversation building blocks (Node's built-in runner with type stripping).
-//   node --test tests/
+//   npm test   (node --test "tests/*.test.ts")
 import assert from "node:assert/strict";
 import { test } from "node:test";
 

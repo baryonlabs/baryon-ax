@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "node --test tests/",
+    "test": "node --test \"tests/*.test.ts\"",
     "preview": "vite preview",
     "test:e2e": "node e2e/smoke.mjs",
     "test:buttons": "node e2e/buttons.mjs",
