@@ -106,6 +106,7 @@ cp .env.example .env
 | `EMBEDDING_QUERY_MODEL` | `EMBEDDING_MODEL` | 질문 전용 모델. 문서용·질문용 모델이 나뉜 비대칭 임베딩에 사용 (`EMBEDDING_MODEL`은 문서용) |
 | `EMBEDDING_BATCH_SIZE` | `64` | 요청당 입력 수 |
 | `EMBEDDING_MAX_CHARS` | `6000` | 임베딩 입력 최대 글자 수. 넓은 표 청크가 모델 컨텍스트를 넘지 않게 자르며, 저장되는 청크 원문은 그대로 |
+| `MCP_SERVER_ENABLED` | `true` | `POST /mcp`에 검색·근거 답변·지식 공백 도구를 MCP 서버로 노출 ([mcp-server.md](mcp-server.md)) |
 | `MEM0_ENABLED` | `true` | Mem0 메모리 활성화 |
 | `MEM0_LLM_MODEL` | `qwen2.5:7b` | 메모리 추출 모델 |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Mem0용 Ollama URL |
