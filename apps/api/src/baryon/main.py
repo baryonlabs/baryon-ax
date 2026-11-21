@@ -468,14 +468,33 @@ class DocumentService:
 
     def search(self, principal: Principal, query: str, limit: int = 4) -> list[dict]:
         if self.vector:
-            vector_results = self.vector.search(principal, query, limit)
+            hybrid = os.getenv("RETRIEVAL_MODE", "vector").strip().lower() == "hybrid"
+            vector_results = self.vector.search(principal, query, limit * 2 if hybrid else limit)
             if vector_results is not None:
                 visible = []
                 for item in vector_results:
                     document = self.documents.get(item["document_id"])
                     if document and self.can_view(principal, document):
                         visible.append(item)
-                return visible
+                if not hybrid:
+                    return visible
+                return self._fuse(visible, self._lexical_search(principal, query, limit * 2), limit)
+        return self._lexical_search(principal, query, limit)
+
+    @staticmethod
+    def _fuse(vector_hits: list[dict], lexical_hits: list[dict], limit: int, k: int = 60) -> list[dict]:
+        """Reciprocal rank fusion of vector and lexical hits, keyed by (document, chunk)."""
+        scores: dict[tuple, float] = {}
+        items: dict[tuple, dict] = {}
+        for ranking in (vector_hits, lexical_hits):
+            for rank, item in enumerate(ranking):
+                key = (item["document_id"], item.get("chunk"))
+                scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank + 1)
+                items.setdefault(key, item)
+        ordered = sorted(scores, key=scores.get, reverse=True)[:limit]
+        return [{**items[key], "score": round(scores[key], 6)} for key in ordered]
+
+    def _lexical_search(self, principal: Principal, query: str, limit: int = 4) -> list[dict]:
         terms = search_terms(query)
         normalized_query = normalize_text(query).lower().strip()
         matches = []
@@ -564,6 +583,14 @@ class VectorIndex:
             client.get_collections()
             if not client.collection_exists(self.collection):
                 client.create_collection(self.collection, vectors_config=VectorParams(size=self.dimension, distance=Distance.COSINE))
+            else:
+                vectors = client.get_collection(self.collection).config.params.vectors
+                size = getattr(vectors, "size", None)
+                if size is not None and size != self.dimension:
+                    raise RuntimeError(
+                        f"Qdrant collection '{self.collection}' stores {size}-dim vectors but EMBEDDING_DIMENSION={self.dimension}; "
+                        "use a new QDRANT_COLLECTION (with QDRANT_REINDEX_ON_START=true) after changing EMBEDDING_MODEL"
+                    )
             for field in ("organization_id", "owner_id", "document_id", "allowed_roles"):
                 try:
                     client.create_payload_index(self.collection, field_name=field, field_schema=PayloadSchemaType.KEYWORD)

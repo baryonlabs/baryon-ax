@@ -98,7 +98,8 @@ cp .env.example .env
 | `REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis |
 | `QDRANT_URL` | `http://127.0.0.1:6333` | Qdrant |
 | `QDRANT_COLLECTION` | `baryon_documents` | 문서 벡터 컬렉션 |
-| `EMBEDDING_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | FastEmbed 모델 (384차원) |
+| `EMBEDDING_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | FastEmbed 모델 (384차원). 한국어 검색 품질을 높이려면 `intfloat/multilingual-e5-large` + `EMBEDDING_DIMENSION=1024` |
+| `EMBEDDING_DIMENSION` | `384` | 임베딩 차원. 바꾸면 새 `QDRANT_COLLECTION`으로 재색인 필요 (기존 컬렉션과 차원이 다르면 벡터 검색을 끄고 단어 검색으로 대체) |
 | `MEM0_ENABLED` | `true` | Mem0 메모리 활성화 |
 | `MEM0_LLM_MODEL` | `qwen2.5:7b` | 메모리 추출 모델 |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Mem0용 Ollama URL |
