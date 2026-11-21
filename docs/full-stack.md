@@ -1,6 +1,6 @@
 # 전체 스택 실행 가이드
 
-> 기준 버전: **0.6.0** · macOS(Apple Silicon) + Docker Desktop 환경에서 검증
+> 기준 버전: **0.7.0** · macOS(Apple Silicon) + Docker Desktop 환경에서 검증
 
 이 문서는 Basic Core에 **Qdrant, PostgreSQL, Redis, Langfuse, LangGraph, LlamaIndex, Mem0, Ollama**를 실제로 연결해 실행하는 방법을 설명합니다.
 
@@ -240,7 +240,7 @@ E2E_BASE_URL=http://127.0.0.1:3001 npm run test:e2e
 ```json
 {
   "status": "ok",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "model_adapter": "openai-compatible",
   "vector_backend": "qdrant",
   "audit_backend": "postgresql",

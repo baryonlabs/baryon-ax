@@ -8,7 +8,7 @@ Baryon AX runs inside the customer's environment, including air-gapped networks.
 
 - Product: Baryon AX
 - Category: on-premises AI agent platform with grounded RAG, tacit-knowledge capture, and governance
-- Version: 0.6.0 (first public release, 2026-11-13)
+- Version: 0.7.0 (2026-11-21; first public release 0.6.0 on 2026-11-13)
 - License: MIT, copyright Baryon Labs
 - Deployment: self-hosted, on-premises, air-gapped capable
 - Model interface: OpenAI-compatible `/chat/completions`
@@ -33,6 +33,9 @@ Baryon AX runs inside the customer's environment, including air-gapped networks.
 - Knowledge-gap clustering that produces ontology pack drafts for human review.
 - Apache Ossie import/export, and knowledge gaps downloadable as Ossie drafts to enrich and re-import.
 - MCP tool connections via an optional gateway, selected with `/` in the composer and permission-checked on the server.
+- Slack and Discord bots with sources, and an MCP server at `POST /mcp`.
+- Delegated identity for bots and MCP gateways (one service account acting on behalf of each user, audited).
+- Optional hybrid retrieval (Qdrant + lexical RRF) and OpenAI-compatible embedding endpoints.
 - Security CI: security-sweep on every PR, with P0/P1 findings blocking merge; weekly image, SBOM, and git-history secret scans.
 - Docker Compose Basic Core and full-stack profiles, plus Kubernetes starter manifests.
 
@@ -61,7 +64,7 @@ Open http://localhost:3001. The `demo-local` model works without an API key and 
 - llms.txt: https://baryon-ax.baryon.ai/llms.txt
 - Extended brief: https://baryon-ax.baryon.ai/llms-full.txt
 - Repository: https://github.com/baryonlabs/baryon-ax
-- Release v0.6.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0
+- Release v0.7.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.7.0
 - Architecture: https://github.com/baryonlabs/baryon-ax/blob/main/docs/architecture.md
 - Hardware requirements: https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md
 - Security baseline: https://github.com/baryonlabs/baryon-ax/blob/main/docs/security.md
@@ -94,4 +97,4 @@ It suits pilots and controlled internal deployment. Replace the development iden
 
 ## Last updated
 
-2026-11-16 (v0.6.0 plus Ossie interchange and the MCP tool picker on `main`). License: MIT.
+2026-11-21 (v0.7.0). License: MIT.

@@ -206,7 +206,7 @@ E2E_BASE_URL=http://127.0.0.1:3101 npm run test:e2e
 ```json
 {
   "status": "ok",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "model_adapter": "openai-compatible",
   "vector_backend": "qdrant",
   "audit_backend": "postgresql",
