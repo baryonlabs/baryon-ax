@@ -22,7 +22,7 @@ settings:
       - message.channels
       - message.groups
   interactivity:
-    is_enabled: false
+    is_enabled: true    # 버튼(문서로 등록·해당 없음). Socket Mode라 Request URL 불필요
   org_deploy_enabled: false
   socket_mode_enabled: true
   token_rotation_enabled: false

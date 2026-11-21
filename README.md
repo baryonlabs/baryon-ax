@@ -69,7 +69,7 @@ Eight captured screens cover grounded chat, the source viewer, knowledge upload,
 - Docker Compose Basic Core profile and a **full-stack override** (`docker-compose.full.yml`)
 - **B300 host deployment**: platform, Langfuse, Mem0, Qdrant, PostgreSQL, and Redis on the B300 server, using GPU 7 vLLM
 - Kubernetes starter manifests and deployment profiles
-- **Messenger bots** (examples): a Slack `@mention` bot that answers with sources — see [Messenger bots](#messenger-bots)
+- **Messenger bots** (examples): a Slack `@mention` bot that answers with sources and can ask people about knowledge gaps — see [Messenger bots](#messenger-bots)
 
 ## 암묵지 지식화 사이클 (Tacit → Explicit)
 
@@ -261,7 +261,7 @@ Practical integrations that run next to the platform and only use its public API
 
 | Example | What it does |
 |---|---|
-| [`examples/slack-bot`](examples/slack-bot) | Slack `@mention` bot (Socket Mode): answers from your documents with the **answer + sources** (document, chunk, quoted passage), follows up in mentioned threads without another mention, and keeps per-user audit trails. Modeled on the OpenTag mention-gateway pattern. Its README includes a copy-paste setup prompt for coding agents. |
+| [`examples/slack-bot`](examples/slack-bot) | Slack `@mention` bot (Socket Mode): answers from your documents with the **answer + sources** (document, chunk, quoted passage), follows up in mentioned threads without another mention, and keeps per-user audit trails. Modeled on the OpenTag mention-gateway pattern. Optional **proactive mode** asks people first: questions it could not answer are posted to a desk channel, a thread reply becomes a draft the author approves, and the published answer goes back to the original thread. Its README includes a copy-paste setup prompt for coding agents. |
 
 <p align="center"><img src="examples/slack-bot/docs/slack-thread-example.svg" width="720" alt="Illustrative Slack thread: an @baryon question answered with sources, then a follow-up answered without a mention"></p>
 <p align="center"><sub>Illustration with sample data, not a screenshot.</sub></p>

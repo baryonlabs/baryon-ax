@@ -109,6 +109,36 @@ python baryon_slack_bot.py
 | `SLACK_MAX_SOURCES` | `4` | 표시할 근거 수 |
 | `SLACK_SHOW_SNIPPETS` | `true` | 근거 아래 인용문 표시 |
 
+## 먼저 묻기 모드 (proactive)
+
+봇이 답하지 못한 질문을 그냥 두지 않고, **사람에게 먼저 물어봐서** 문서로 만드는 모드입니다.
+[OpenDots](https://github.com/CopilotKit/OpenDots)의 "예약 실행 + 실행 전 승인" 개념을 baryon-ax의
+지식 공백(knowledge gap)·암묵지(tacit) API 위에 얹었습니다. `PROACTIVE_CHANNEL`을 넣으면 켜집니다.
+
+```
+질문 → 근거 없음/답 못함 → baryon-ax가 지식 공백으로 기록
+   → (정해진 시간마다) 봇이 데스크 채널에 "제가 답하지 못한 질문이 있어요" + [해당 없음]
+   → 누군가 스레드에 답 → 그 사람 이름으로 초안 저장 + "문서로 등록할까요?" [문서로 등록] [취소]
+   → 작성자가 등록 → 문서로 색인, 공백 해결 → 원래 질문 스레드로 돌아가 질문자를 불러 근거와 함께 다시 답변
+```
+
+- 등록은 답을 쓴 사람만 할 수 있습니다(baryon-ax 암묵지 API가 작성자를 확인).
+- 이미 물어본 공백은 `PROACTIVE_STATE_PATH` JSON에 남아 재시작해도 다시 묻지 않습니다.
+- 버튼을 쓰려면 앱의 **Interactivity**를 켜야 합니다(`manifest.yml`에 반영, Socket Mode라 Request URL 불필요).
+- 공백 목록 조회·닫기는 관리자 API라 봇은 이때만 `PROACTIVE_SERVICE_ROLES`(기본 `admin`)로 호출합니다.
+
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `PROACTIVE_CHANNEL` | — | 질문을 올릴 데스크 채널 ID. 비우면 꺼짐 |
+| `PROACTIVE_INTERVAL_MINUTES` | `30` | 확인 주기 |
+| `PROACTIVE_HOURS` / `PROACTIVE_WEEKDAYS_ONLY` | — / `false` | 예: `9-18`, `true` → 평일 근무 시간에만 묻기 |
+| `PROACTIVE_MAX_PER_RUN` | `3` | 한 번에 올릴 최대 질문 수 (자주 나온 질문부터) |
+| `PROACTIVE_MIN_OCCURRENCES` | `1` | 이 횟수 이상 나온 질문만 |
+| `PROACTIVE_SLACK_ONLY` | `false` | Slack에서 나온 질문만 (웹 UI·스크립트에서 생긴 공백 제외) |
+| `PROACTIVE_MENTION` | — | 질문 앞에 붙일 멘션. 예: `<!here>`, `<@U123> <@U456>` |
+| `PROACTIVE_REANSWER` | `true` | 등록 후 원래 스레드에 다시 답하기 |
+| `PROACTIVE_STATE_PATH` | `.data/proactive_state.json` | 물어본 기록 |
+
 ## 4. 테스트
 
 ```bash
@@ -120,7 +150,8 @@ Slack·API 없이 가짜 WebClient와 `httpx.MockTransport`로 멘션 → 준비
 
 ## 확장 아이디어
 
-- 답변 아래 👍/👎 버튼 → baryon-ax 피드백·지식 공백 API로 연결
+- 답변 아래 👍/👎 버튼 → baryon-ax 피드백 API로 연결
+- 먼저 묻기 모드에서 질문 주제별로 담당자(채널·사람)를 다르게 지정
 - 채널별로 `BARYON_ROLES`/조직을 다르게 매핑(예: 경영지원 채널만 인사 문서 열람)
 - 파일 공유 이벤트(`file_shared`)를 받아 `/v1/documents`로 바로 색인
 
