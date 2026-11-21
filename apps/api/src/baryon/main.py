@@ -471,14 +471,33 @@ class DocumentService:
 
     def search(self, principal: Principal, query: str, limit: int = 4) -> list[dict]:
         if self.vector:
-            vector_results = self.vector.search(principal, query, limit)
+            hybrid = os.getenv("RETRIEVAL_MODE", "vector").strip().lower() == "hybrid"
+            vector_results = self.vector.search(principal, query, limit * 2 if hybrid else limit)
             if vector_results is not None:
                 visible = []
                 for item in vector_results:
                     document = self.documents.get(item["document_id"])
                     if document and self.can_view(principal, document):
                         visible.append(item)
-                return visible
+                if not hybrid:
+                    return visible
+                return self._fuse(visible, self._lexical_search(principal, query, limit * 2), limit)
+        return self._lexical_search(principal, query, limit)
+
+    @staticmethod
+    def _fuse(vector_hits: list[dict], lexical_hits: list[dict], limit: int, k: int = 60) -> list[dict]:
+        """Reciprocal rank fusion of vector and lexical hits, keyed by (document, chunk)."""
+        scores: dict[tuple, float] = {}
+        items: dict[tuple, dict] = {}
+        for ranking in (vector_hits, lexical_hits):
+            for rank, item in enumerate(ranking):
+                key = (item["document_id"], item.get("chunk"))
+                scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank + 1)
+                items.setdefault(key, item)
+        ordered = sorted(scores, key=scores.get, reverse=True)[:limit]
+        return [{**items[key], "score": round(scores[key], 6)} for key in ordered]
+
+    def _lexical_search(self, principal: Principal, query: str, limit: int = 4) -> list[dict]:
         terms = search_terms(query)
         normalized_query = normalize_text(query).lower().strip()
         matches = []
@@ -547,7 +566,16 @@ class VectorIndex:
     def __init__(self) -> None:
         self.url = os.getenv("QDRANT_URL", "").rstrip("/")
         self.collection = os.getenv("QDRANT_COLLECTION", "baryon_documents")
+        # EMBEDDING_PROVIDER=fastembed (local, default) or openai (any OpenAI-compatible /v1/embeddings endpoint)
+        self.provider = os.getenv("EMBEDDING_PROVIDER", "fastembed").strip().lower()
         self.model_name = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+        self.query_model = os.getenv("EMBEDDING_QUERY_MODEL", "").strip() or self.model_name
+        self.base_url = (os.getenv("EMBEDDING_BASE_URL", "").strip() or os.getenv("MODEL_BASE_URL", "")).rstrip("/")
+        self.api_key = os.getenv("EMBEDDING_API_KEY", "").strip()
+        self.batch_size = max(1, int(os.getenv("EMBEDDING_BATCH_SIZE", "64")))
+        # Remote models reject inputs over their context window; wide table chunks can exceed it.
+        # Only the embedded text is truncated — the stored chunk keeps its full content.
+        self.max_chars = max(100, int(os.getenv("EMBEDDING_MAX_CHARS", "6000")))
         self.dimension = int(os.getenv("EMBEDDING_DIMENSION", "384"))
         self.min_score = float(os.getenv("RETRIEVAL_MIN_SCORE", "0.3"))
         self.client = None
@@ -567,6 +595,14 @@ class VectorIndex:
             client.get_collections()
             if not client.collection_exists(self.collection):
                 client.create_collection(self.collection, vectors_config=VectorParams(size=self.dimension, distance=Distance.COSINE))
+            else:
+                vectors = client.get_collection(self.collection).config.params.vectors
+                size = getattr(vectors, "size", None)
+                if size is not None and size != self.dimension:
+                    raise RuntimeError(
+                        f"Qdrant collection '{self.collection}' stores {size}-dim vectors but EMBEDDING_DIMENSION={self.dimension}; "
+                        "use a new QDRANT_COLLECTION (with QDRANT_REINDEX_ON_START=true) after changing EMBEDDING_MODEL"
+                    )
             for field in ("organization_id", "owner_id", "document_id", "allowed_roles"):
                 try:
                     client.create_payload_index(self.collection, field_name=field, field_schema=PayloadSchemaType.KEYWORD)
@@ -579,6 +615,8 @@ class VectorIndex:
             logger.exception("Qdrant is unavailable; using lexical retrieval")
 
     def _embed(self, texts: list[str], query: bool = False) -> list[list[float]]:
+        if self.provider == "openai":
+            return self._embed_remote(texts, query)
         if self.embedder is None:
             with self._embedder_lock:
                 if self.embedder is None:
@@ -587,6 +625,25 @@ class VectorIndex:
         prefix = "query: " if query else "passage: "
         with self._embed_lock:
             return [vector.tolist() for vector in self.embedder.embed([prefix + text for text in texts])]
+
+    def _embed_remote(self, texts: list[str], query: bool) -> list[list[float]]:
+        """OpenAI-compatible embeddings; EMBEDDING_QUERY_MODEL lets asymmetric models use a separate query encoder."""
+        if not self.base_url:
+            raise RuntimeError("EMBEDDING_PROVIDER=openai needs EMBEDDING_BASE_URL (or MODEL_BASE_URL)")
+        model = self.query_model if query else self.model_name
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        vectors: list[list[float]] = []
+        with httpx.Client(timeout=120) as client:
+            for start in range(0, len(texts), self.batch_size):
+                batch = [(text or " ")[:self.max_chars] for text in texts[start:start + self.batch_size]]
+                response = client.post(f"{self.base_url}/embeddings", json={"model": model, "input": batch}, headers=headers)
+                if response.status_code >= 400:
+                    raise RuntimeError(f"Embedding request failed ({response.status_code}): {response.text[:300]}")
+                data = sorted(response.json()["data"], key=lambda item: item.get("index", 0))
+                vectors.extend(item["embedding"] for item in data)
+        if vectors and len(vectors[0]) != self.dimension:
+            raise RuntimeError(f"Embedding model '{model}' returned {len(vectors[0])}-dim vectors but EMBEDDING_DIMENSION={self.dimension}")
+        return vectors
 
     @staticmethod
     def _point_id(document_id: str, index: int) -> str:
@@ -1316,7 +1373,7 @@ class SystemMonitor:
         process = psutil.Process()
         try:
             load1, load5, load15 = os.getloadavg()
-        except OSError:
+        except (OSError, AttributeError):  # os.getloadavg is unavailable on Windows
             load1 = load5 = load15 = 0.0
         mem0_path = Path(os.getenv("MEM0_HISTORY_DB", "/tmp/baryon-ax-mem0/history.db"))
         fastembed_path = Path(os.getenv("FASTEMBED_CACHE_PATH", "/tmp/fastembed_cache"))

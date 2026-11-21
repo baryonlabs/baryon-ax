@@ -98,7 +98,14 @@ cp .env.example .env
 | `REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis |
 | `QDRANT_URL` | `http://127.0.0.1:6333` | Qdrant |
 | `QDRANT_COLLECTION` | `baryon_documents` | 문서 벡터 컬렉션 |
-| `EMBEDDING_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | FastEmbed 모델 (384차원) |
+| `EMBEDDING_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | FastEmbed 모델 (384차원). 한국어 검색 품질을 높이려면 `intfloat/multilingual-e5-large` + `EMBEDDING_DIMENSION=1024` |
+| `EMBEDDING_DIMENSION` | `384` | 임베딩 차원. 바꾸면 새 `QDRANT_COLLECTION`으로 재색인 필요 (기존 컬렉션과 차원이 다르면 벡터 검색을 끄고 단어 검색으로 대체) |
+| `EMBEDDING_PROVIDER` | `fastembed` | `fastembed`(로컬) 또는 `openai`(OpenAI 호환 `/v1/embeddings` 엔드포인트). 원격이면 CPU·메모리 부담 없이 빠르게 색인 |
+| `EMBEDDING_BASE_URL` | `MODEL_BASE_URL` | `openai` 공급자의 엔드포인트 (`…/v1`) |
+| `EMBEDDING_API_KEY` | — | `openai` 공급자용 Bearer 키 (없으면 헤더 생략) |
+| `EMBEDDING_QUERY_MODEL` | `EMBEDDING_MODEL` | 질문 전용 모델. 문서용·질문용 모델이 나뉜 비대칭 임베딩에 사용 (`EMBEDDING_MODEL`은 문서용) |
+| `EMBEDDING_BATCH_SIZE` | `64` | 요청당 입력 수 |
+| `EMBEDDING_MAX_CHARS` | `6000` | 임베딩 입력 최대 글자 수. 넓은 표 청크가 모델 컨텍스트를 넘지 않게 자르며, 저장되는 청크 원문은 그대로 |
 | `MEM0_ENABLED` | `true` | Mem0 메모리 활성화 |
 | `MEM0_LLM_MODEL` | `qwen2.5:7b` | 메모리 추출 모델 |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Mem0용 Ollama URL |
