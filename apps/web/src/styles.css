@@ -609,3 +609,8 @@ details.trace[open] summary::before { transform: rotate(90deg); }
 .live-actions .live-end { background: #3a2430; border-color: transparent; color: #ffb3b3; }
 .live-actions button[aria-pressed="true"] { color: #ffb3b3; }
 @media (max-width: 640px) { .live-voice { flex-wrap: wrap; } .live-main { order: 3; flex-basis: 100%; } .live-actions { margin-left: auto; } }
+.live-mode { display: inline-grid; grid-template-columns: repeat(2, auto); gap: 2px; padding: 2px; border-radius: 8px; background: var(--bg-elevated); }
+.live-mode button { padding: 3px 9px; border: 0; border-radius: 6px; background: transparent; color: var(--text-soft); font-size: 12px; cursor: pointer; }
+.live-mode button.active { background: var(--surface); color: var(--text); font-weight: 600; }
+.live-question { margin: 0; font-size: 13px; color: #f0c27a; }
+.live-question span { margin-right: 6px; padding: 1px 6px; border-radius: 999px; background: rgba(240, 194, 122, .16); font-size: 11px; }

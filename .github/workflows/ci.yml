@@ -70,6 +70,20 @@ jobs:
       - name: STT sidecar tests (fake recognizer, no model download)
         run: uv run --no-project --with-requirements requirements.txt --with pytest --with httpx python -m pytest -q test_server.py
 
+  secretary:
+    name: voice secretary
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/secretary
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install "uv==${UV_VERSION}"
+      - name: Secretary tests (fake agent, no Claude CLI or network)
+        run: uv run --no-project --with-requirements requirements.txt --with pytest --with httpx python -m pytest -q
+
   locks:
     name: lockfile check
     runs-on: ubuntu-latest
@@ -111,6 +125,14 @@ jobs:
             -o "$RUNNER_TEMP/stt-requirements.txt"
           diff -u requirements.txt "$RUNNER_TEMP/stt-requirements.txt"
         working-directory: deploy/stt
+      - name: secretary requirements.txt matches requirements.in
+        run: |
+          cp requirements.txt "$RUNNER_TEMP/secretary-requirements.txt"
+          uv pip compile requirements.in \
+            --python-version 3.12 --python-platform x86_64-manylinux_2_28 --no-header --generate-hashes \
+            -o "$RUNNER_TEMP/secretary-requirements.txt"
+          diff -u requirements.txt "$RUNNER_TEMP/secretary-requirements.txt"
+        working-directory: apps/secretary
       - name: kordoc package-lock.json is current
         run: npm ci --dry-run --omit=dev --no-audit --no-fund
         working-directory: deploy/parsers/kordoc

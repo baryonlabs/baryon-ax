@@ -1,0 +1,10 @@
+[project]
+name = "baryon-secretary"
+version = "0.1.0"
+description = "Baryon AX voice secretary: a spoken front end for a Claude Agent SDK session"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
