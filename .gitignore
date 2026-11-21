@@ -11,3 +11,7 @@ dist/
 coverage/
 data/
 graphify-out/
+
+# Local agent worktrees and settings
+.claude/worktrees/
+.claude/settings.local.json
