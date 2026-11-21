@@ -1340,7 +1340,7 @@ class SystemMonitor:
         process = psutil.Process()
         try:
             load1, load5, load15 = os.getloadavg()
-        except OSError:
+        except (OSError, AttributeError):  # os.getloadavg is unavailable on Windows
             load1 = load5 = load15 = 0.0
         mem0_path = Path(os.getenv("MEM0_HISTORY_DB", "/tmp/baryon-ax-mem0/history.db"))
         fastembed_path = Path(os.getenv("FASTEMBED_CACHE_PATH", "/tmp/fastembed_cache"))
