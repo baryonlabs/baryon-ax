@@ -392,3 +392,23 @@ def test_pii_masking_spans_stream_chunks() -> None:
     emitted += safe
     assert buffer == ""
     assert emitted == "call [REDACTED-PHONE] now"
+
+
+def test_auth_login_logout_emit_audit_events() -> None:
+    org = "auth-events-org"
+    me = client.get("/v1/auth/me", headers=headers(user="u1", organization=org)).json()
+    assert me["user_id"] == "u1" and me["organization_id"] == org and me["auth_mode"] == "dev"
+    assert client.post("/v1/auth/login", headers=headers(user="u1", organization=org)).json()["roles"] == ["member"]
+    assert client.post("/v1/auth/logout", headers=headers(user="u1", organization=org)).json() == {"ok": True}
+    events = client.get("/v1/audit-events?limit=20", headers=headers(user="admin", organization=org, roles="admin")).json()["data"]
+    types = [event["type"] for event in events]
+    assert "auth.login" in types and "auth.logout" in types
+
+
+def test_dev_on_behalf_of_records_acting_service_in_audit() -> None:
+    org = "delegation-dev-org"
+    delegated = {**headers(user="slack-bot", organization=org), "X-On-Behalf-Of": "slack:U42"}
+    assert client.post("/v1/auth/login", headers=delegated).json()["user_id"] == "slack:U42"
+    events = client.get("/v1/audit-events?limit=20", headers=headers(user="admin", organization=org, roles="admin")).json()["data"]
+    login = [event for event in events if event["type"] == "auth.login"][-1]
+    assert login["user_id"] == "slack:U42" and login["acting_service"] == "slack-bot"

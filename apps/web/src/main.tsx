@@ -1,6 +1,15 @@
 import { createRoot } from "react-dom/client";
 
 import App from "./App";
+import { initAuth } from "./auth";
 import "./styles.css";
 
-createRoot(document.getElementById("root")!).render(<App />);
+const root = createRoot(document.getElementById("root")!);
+
+// In dev mode initAuth resolves to null immediately; in OIDC mode it completes
+// the login callback (or redirects to the IdP) before the workspace renders.
+initAuth()
+  .then(session => root.render(<App session={session} />))
+  .catch((error: unknown) => {
+    root.render(<main className="auth-error" role="alert"><h1>Sign-in failed</h1><p>{error instanceof Error ? error.message : String(error)}</p><button onClick={() => window.location.assign("/")}>Retry</button></main>);
+  });

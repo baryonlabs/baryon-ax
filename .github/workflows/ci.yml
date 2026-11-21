@@ -47,8 +47,13 @@ jobs:
       - name: apps/api uv.lock is current
         run: uv lock --check
         working-directory: apps/api
-      - name: docling requirements.txt is current
+      # Consistency, not freshness: the existing pins are kept as preferences, so this
+      # fails only when requirements.in and requirements.txt disagree. New upstream
+      # releases no longer break every PR; the weekly "dependency pins" workflow
+      # reports them instead.
+      - name: docling requirements.txt matches requirements.in
         run: |
+          cp requirements.txt "$RUNNER_TEMP/docling-requirements.txt"
           uv pip compile requirements.in \
             --python-version 3.12 --python-platform x86_64-manylinux_2_28 --no-header \
             -o "$RUNNER_TEMP/docling-requirements.txt"

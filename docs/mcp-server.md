@@ -36,6 +36,11 @@ audit events and gap capture are identical.
 - **Development auth** (`AUTH_MODE` unset): send `X-User-Id`, `X-Organization-Id`, `X-Roles` headers.
 - **OIDC** (`AUTH_MODE=oidc`, see [auth-oidc.md](auth-oidc.md)): send `Authorization: Bearer <token>`;
   the middleware replaces any identity headers with the token's claims.
+- **Gateways that serve many people** (a team-chat agent, a shared MCP proxy): authenticate with one
+  service-account token that has the `baryon-service` role and name the person in each request with
+  `X-On-Behalf-Of: mcp:<user>` (optionally `X-On-Behalf-Of-Roles`). Roles are capped by the service
+  account's roles, and audit events record both the user and `acting_service`. See
+  [auth-oidc.md](auth-oidc.md) → 서비스 계정 위임.
 
 Browser `Origin` headers must be in `ALLOWED_ORIGINS` (DNS-rebinding protection); server-to-server
 clients send none. Set `MCP_SERVER_ENABLED=false` to turn the endpoint off.
@@ -74,7 +79,7 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 
 **Team chat with built-in agents** (for example Mattermost Agents, or agent-native chat apps): add an MCP
 server with the URL above in the agent settings and give each agent the identity it should search as
-(a service account with member roles, or per-user tokens behind OIDC).
+(per-user tokens behind OIDC, or a delegating service account that sends `X-On-Behalf-Of` per person).
 
 **Python, with the official SDK**
 

@@ -16,14 +16,14 @@
 | 호스팅 | ✅ | GitHub Pages, `main` push 시 `.github/workflows/pages.yml` 배포 |
 | HTTPS | ✅ | `https_enforced: true`, 인증서 approved (2027-02-11 만료, 자동 갱신) |
 | 커스텀 도메인 | ✅ | `https://baryon-ax.baryon.ai/` 라이브, `baryonlabs.github.io/baryon-ax/` → 301 |
-| Google Search Console | 🟡 | `sc-domain:baryon.ai` sitemap 제출 완료(4개 발견), 핵심 URL 색인 요청 완료 — 2026-11-13 기준 **아직 미색인** |
+| Google Search Console | ✅ | `sc-domain:baryon.ai` sitemap 4개 발견, 4개 페이지 모두 색인. 2026-11-16 홈페이지 개편 후 `/`, `/en/` 색인 재요청 |
 | Naver Search Advisor | ✅ | 소유확인 완료, `sitemap.xml` 제출 완료(2026-11-13 03:22) |
-| Bing Webmaster Tools | 🟡 | IndexNow 200/200 완료. BWT 대시보드는 Microsoft 세션 미인식으로 보류 |
+| Bing Webmaster Tools | ✅ | 2026-11-16 `msvalidate.01` 메타로 소유 확인, `sitemap.xml` 제출 |
 | IndexNow | ✅ | 2026-11-13 새 도메인 4개 URL 제출, `api.indexnow.org`·`bing.com` 모두 200 |
 | Daum 검색등록 | 🟡 | 등록 신청 완료(2026-11-13), 검토 결과 이메일 대기 |
 | SEO/AEO/GEO 자산 | ✅ | title/description, canonical, hreflang, JSON-LD 8종, FAQ, `llms.txt` 3종, OG 2종 |
 | 자동 검증 | ✅ | `check_site_seo.py` 0/0, `check_site_live.py` 새 도메인 0 failures |
-| 분석 | ✅ | Cloudflare Web Analytics `baryon-ax.baryon.ai` 설치, sitemap 4페이지 전체 비콘 (2026-11-13) |
+| 분석 | ✅ | Cloudflare Web Analytics(11/13), Microsoft Clarity·GA4(11/16). 모두 `site/assets/analytics.js` 한 곳에서 로드. 클릭 이벤트 4종은 [10. 핵심 지표](#10-핵심-지표) 참고 |
 
 ### 자동화 자산
 
@@ -167,8 +167,20 @@ python3 scripts/submit_indexnow.py
 | README | `https://baryon-ax.baryon.ai/?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=website_link` |
 | 이메일 서명 | `https://baryon-ax.baryon.ai/?utm_source=email&utm_medium=signature&utm_campaign=always_on&utm_content=default` |
 
+추가 채널 링크(2026-11 채널 다변화):
+
+| 채널 | 링크 |
+|---|---|
+| Threads | `https://baryon-ax.baryon.ai/?utm_source=threads&utm_medium=social&utm_campaign=<캠페인>&utm_content=<게시물>` |
+| GeekNews | `https://baryon-ax.baryon.ai/?utm_source=geeknews&utm_medium=community&utm_campaign=<캠페인>` |
+| Discord·Slack 커뮤니티 | `https://baryon-ax.baryon.ai/?utm_source=<커뮤니티명>&utm_medium=community&utm_campaign=<캠페인>` |
+| 기술 블로그(자체) | `https://baryon-ax.baryon.ai/?utm_source=blog&utm_medium=owned&utm_campaign=<글_주제>` |
+| 발표·밋업 슬라이드 | `https://baryon-ax.baryon.ai/?utm_source=talk&utm_medium=event&utm_campaign=<행사명>` |
+
 규칙:
 
+- `utm_source`는 아래 고정 목록에서만 고릅니다: `threads`, `linkedin`, `x`, `facebook`, `geeknews`, `naver_blog`, `blog`, `github`, `email`, `talk`, 커뮤니티 이름(소문자). 같은 채널을 다른 이름으로 적으면 GA4에서 둘로 갈라집니다.
+- `utm_medium`은 `social`, `community`, `owned`, `referral`, `email`, `event` 중 하나입니다.
 - `utm_campaign`은 `런칭시기_주제` 형식(소문자·밑줄)으로 통일합니다.
 - 문서·README에는 **UTM 없는 canonical URL**만 넣습니다. UTM은 홍보 링크에만 붙입니다.
 - 커스텀 도메인으로 이전하면 위 링크의 호스트만 교체합니다.
@@ -211,9 +223,21 @@ Baryon AX
 
 ## 8. 채널 운영
 
+첫 주(11/09~11/16) 방문의 약 55%가 Threads 한 곳에서 왔습니다. 게시물 하나에 유입이 몰리면 다음 주에 급감하므로, 아래 우선순위로 채널을 넓힙니다.
+
+| 우선순위 | 채널 | 왜 | 첫 액션 |
+|---|---|---|---|
+| 1 | GeekNews | 한국 개발자·기술 리더가 오픈소스 신작을 찾는 곳. HWP·온프레미스 주제와 맞음 | v0.7.0 릴리스에 맞춰 "Show GN" 1건 |
+| 2 | LinkedIn | DX·AX 담당자와 보안 검토자에게 직접 닿음 | 아키텍처 도식 + 보안 CI 글 주 1회 |
+| 3 | 자체 기술 블로그·Naver 블로그 | 검색 유입이 오래 남음 (HWP RAG, 폐쇄망 설치) | 설치·HWP 파싱 실무 글 월 2회 |
+| 4 | Slack·Discord 커뮤니티 | 봇 예제(Slack·Discord)를 직접 써 볼 사람들 | 봇 예제 공개 후 사용기 1건 |
+| 유지 | Threads | 현재 최대 유입. 단, 링크에 UTM을 반드시 붙임 | 릴리스마다 1건 |
+
 | 채널 | 내용 | 빈도 | 상태 |
 |---|---|---|---|
 | 웹사이트 | 기능·문서·FAQ 갱신 | 릴리스 시 | ✅ |
+| Threads | 출시·기능 소식 | 릴리스 시 | ✅ (첫 주 최대 유입) |
+| GeekNews | Show GN | 릴리스 시 | ❌ |
 | GitHub | README, 릴리스 노트, topics | 릴리스 시 | ✅ (topics 9개) |
 | LinkedIn | 제품 소개, 아키텍처·보안 CI | 주 1회 | ❌ |
 | Naver 블로그 | HWP/RAG/에어갭 실무 글 | 주 1회 | ❌ |
@@ -254,7 +278,35 @@ Baryon AX
 
 ---
 
-## 10. 커스텀 도메인 이전 시
+## 10. 핵심 지표
+
+홈페이지의 목표는 **방문자가 첫 화면에서 다음 행동으로 넘어가는 것**입니다. 그래서 방문 수보다 "행동한 방문의 비율"을 먼저 봅니다.
+
+| 구분 | 지표 | 정의 | 출처 |
+|---|---|---|---|
+| 핵심 | 행동 전환율 | `github_click` 또는 `copy_command`가 1회 이상 있는 세션 ÷ 전체 세션 | GA4 |
+| 보조 | 시작 의향 | `copy_command` 중 `block`이 "Terminal · macOS"(1줄 시작)인 비율 | GA4 이벤트 매개변수 |
+| 보조 | 문의 의향 | `support_click` 수 | GA4 |
+| 보조 | 깊이 | 첫 화면 아래까지 스크롤한 세션 비율 | Clarity |
+| 진단 | 유입 분산 | 상위 1개 유입원이 차지하는 방문 비율 (목표: 50% 미만) | Cloudflare WA · GA4 |
+| 진단 | 검색 노출 | `*baryon-ax.baryon.ai` 필터 노출·클릭 | Search Console |
+
+이벤트는 `site/assets/analytics.js`가 Clarity와 GA4에 같은 이름으로 보냅니다.
+
+| 이벤트 | 언제 |
+|---|---|
+| `copy_command` | 코드 블록의 복사 버튼 (`block`: 블록 제목, `lang`) |
+| `start_cta_click` | 헤더·히어로의 "1줄로 시작" (`place`: header/hero) |
+| `github_click` | 저장소로 가는 링크 |
+| `support_click` | GitHub Issues(기술지원)로 가는 링크 |
+
+GA4에서는 `copy_command`, `github_click`, `support_click`을 **주요 이벤트**로 표시해 두면 획득 보고서에서 유입원별 전환을 바로 볼 수 있습니다(이벤트가 한 번 수집된 뒤 관리 → 이벤트에서 설정).
+
+주간 리포트는 위 표 순서대로 작성하고, 숫자는 대시보드에서 읽은 값만 씁니다. 트래픽 수치는 이 공개 저장소에 커밋하지 않습니다.
+
+---
+
+## 11. 커스텀 도메인 이전 시
 
 `baryon-ax.baryon.ai`로 이전하는 전체 절차는 [docs/domain-migration.md](domain-migration.md)에 있습니다.
 
@@ -272,7 +324,7 @@ python3 scripts/apply_site_domain.py --domain baryon-ax.baryon.ai --write
 
 ---
 
-## 11. 트러블슈팅
+## 12. 트러블슈팅
 
 | 증상 | 원인 | 해결 |
 |---|---|---|
@@ -286,7 +338,7 @@ python3 scripts/apply_site_domain.py --domain baryon-ax.baryon.ai --write
 
 ---
 
-## 12. 계정·자산
+## 13. 계정·자산
 
 | 자산 | 위치 | 비고 |
 |---|---|---|
@@ -302,7 +354,7 @@ python3 scripts/apply_site_domain.py --domain baryon-ax.baryon.ai --write
 
 ---
 
-## 13. 다음 액션
+## 14. 다음 액션
 
 1. ~~커스텀 도메인 이전 + HTTPS 강제~~ (2026-11-13 완료, 인증서 approved)
 2. ~~`python3 scripts/check_site_live.py`~~ (2026-11-13 완료, 새 도메인 failures 0)
@@ -316,7 +368,7 @@ python3 scripts/apply_site_domain.py --domain baryon-ax.baryon.ai --write
 
 ---
 
-## 14. 개시 준비 상태 (2026-11-13)
+## 15. 개시 준비 상태 (2026-11-13)
 
 ### 완료된 항목
 
