@@ -1,215 +1,191 @@
+<div align="center">
+
+<img src="apps/web/public/mascots/tacit.svg" width="72" alt="">
+
 # Baryon AX
 
+**문서에 없는 지식은, AI가 먼저 물어봅니다.**
+
+사내 문서로 근거를 들어 답하고, 답하지 못한 질문은 전문가에게 먼저 물어 조직의 지식으로 쌓는<br>
+**온프레미스 · 모델 비종속 · MIT 오픈소스** 엔터프라이즈 AI 플랫폼
+
+[![Release](https://img.shields.io/github/v/release/baryonlabs/baryon-ax?label=release&color=1f6f5c)](https://github.com/baryonlabs/baryon-ax/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-1f6f5c)](LICENSE)
 [![CI](https://github.com/baryonlabs/baryon-ax/actions/workflows/ci.yml/badge.svg)](https://github.com/baryonlabs/baryon-ax/actions/workflows/ci.yml)
 [![security-sweep](https://github.com/baryonlabs/baryon-ax/actions/workflows/security-sweep.yml/badge.svg)](https://github.com/baryonlabs/baryon-ax/actions/workflows/security-sweep.yml)
 
-[Website](https://baryon-ax.baryon.ai/) · [도움말](https://baryon-ax.baryon.ai/#help) · [지원 형식](https://baryon-ax.baryon.ai/#formats) · [오픈소스·라이선스](https://baryon-ax.baryon.ai/open-source/) · [빠른 시작](#quick-start) · [릴리스](https://github.com/baryonlabs/baryon-ax/releases/tag/v0.7.0)
+[홈페이지](https://baryon-ax.baryon.ai/) · [빠른 시작](#quick-start) · [아키텍처](#architecture) · [연동](#integrations) · [문서](#docs) · [로드맵](docs/roadmap.md) · [English](#english)
 
-**Baryon AX** is an on-premises, model-agnostic foundation for enterprise AI agents that answer from your documents and ask experts for the tacit knowledge they never wrote down.
+</div>
 
-> Connect models. Ask first. Ground knowledge. Observe everything.
+<p align="center"><a href="docs/screenshots.md"><img src="docs/images/gallery/01-chat.png" width="820" alt="Baryon AX 근거 기반 채팅: 답변 아래 출처·청크 인용과 처리 과정 trace"></a></p>
 
-This repository is an executable Basic Core v0.7 reference implementation. It offers a complete vertical slice: role-aware chat, OpenAI-compatible model routing, document ingestion and vector retrieval with citations, policy checks, audit events, memory, and a browser UI. The Basic Core runs with a local demo model and file storage; the **full-stack profile** connects Ollama, Qdrant, PostgreSQL, Redis, Langfuse, LangGraph, LlamaIndex, and Mem0. See [docs/full-stack.md](docs/full-stack.md) for the applied stack.
+---
 
+## 목차
+
+- [왜 Baryon AX인가](#why) · [무엇을 할 수 있나](#features) · [What's new](#whats-new)
+- [빠른 시작](#quick-start) · [기존 설치 업데이트](#updating-an-existing-install) · [실행 구성](#profiles)
+- [아키텍처](#architecture) · [암묵지 지식화 사이클](#tacit--explicit-cycle)
+- [연동: API · 메신저 봇 · MCP](#integrations) · [설정](#configuration) · [API](#api)
+- [보안](#security) · [로드맵](#roadmap) · [문서 지도](#docs) · [개발·기여](#development) · [English](#english)
+
+---
+
+<a id="why"></a>
+## 왜 Baryon AX인가
+
+기업 AI 도입이 막히는 이유는 기술보다 **신뢰**입니다. Baryon AX는 그 세 가지 질문에 구조로 답합니다.
+
+| 도입 현장의 걱정 | Baryon AX의 답 |
+| --- | --- |
+| **"사내 문서를 외부 AI에 넣을 수 없다."** | 전부 고객 환경 안에서 실행합니다. 모델은 Ollama·vLLM 등 사내 서버를 OpenAI 호환 방식으로 연결하고, 폐쇄망 구성도 지원합니다. |
+| **"AI가 지어낸 답을 믿을 수 없다."** | 답변마다 출처 문서·청크·인용 구절을 보여 주고, 근거가 없으면 지어내지 않고 경고합니다. 검색은 **모델에 넣기 전에** 조직·역할 권한으로 거릅니다. |
+| **"정작 중요한 판단 기준은 문서에 없다."** | 답하지 못한 질문을 지식 공백으로 모아 **전문가에게 먼저 묻고**, 답변을 게시하면 다음 대화의 근거가 됩니다. |
+| **"보안 심사를 통과해야 한다."** | 조직·역할 ACL, 모든 요청의 감사 로그, OIDC 인증, PR마다 자동 보안 점검(P0/P1이면 병합 차단)을 갖췄습니다. |
+| **"HWP 문서가 대부분이다."** | 파일 내용(MIME)으로 판별해 HWP·HWPX는 kordoc, PDF·Office·이미지는 docling, 그 밖은 Tika로 보냅니다. |
+| **"PoC에 GPU 견적부터 필요하다."** | 맥미니와 Docker만 있으면 **한 줄**로 시작합니다. GPU는 필요할 때 연결합니다. |
+
+<a id="features"></a>
+## 무엇을 할 수 있나
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**💬 대화**
+- 근거 인용 스트리밍 답변, 출처 뷰어(인용 구절 · 원문 · 원본 파일)
+- 처리 과정 trace(요청 제한 → 정책 → 메모리 → 검색 → 모델 → 감사)
+- 근거 없음 경고, 중지 · 다시 생성 · 복사, 👍/👎 피드백
+- 사용자별 장기 기억(Mem0)을 다음 답변에 주입
+- 입력창에서 `/`로 MCP 도구 선택
+
+</td>
+<td width="50%" valign="top">
+
+**📚 지식**
+- HWP · HWPX · PDF · Office · 이미지 · 텍스트 업로드(MIME 라우팅)
+- 구조 인식 청킹(제목 경로 · 표 머리글)
+- Qdrant 벡터 검색, 하이브리드 검색(벡터 + 어휘 RRF)
+- FastEmbed 또는 OpenAI 호환 임베딩
+- Apache Ossie 의미 모델 가져오기 · 내보내기
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**🦦 암묵지 루프**
+- 근거 없는 질문을 지식 공백으로 기록 · 클러스터링
+- 유휴 시간에 전문가 질문 큐 생성, 답변 → 게시 → 검증
+- 온톨로지 팩 초안, Ossie 초안 내려받기
+- Slack에서 담당자에게 먼저 묻는 proactive 모드
+
+</td>
+<td valign="top">
+
+**🛡️ 거버넌스 · 연동**
+- 조직 · 역할 · 문서 ACL, 관리자 설정 · 시스템 상태
+- PostgreSQL 감사 로그 + JSONL, Langfuse 트레이스
+- OIDC 인증, 웹 PKCE 로그인, 봇 · MCP용 서비스 계정 위임
+- OpenAI 호환 `/v1/chat/completions`, MCP 서버 `POST /mcp`
+- Slack · Discord 봇 예제
+
+</td>
+</tr>
+</table>
+
+한국어·영어 UI, 키보드 중심 입력창, 모바일 화면, `aria-live` 상태 안내 등 접근성도 기본으로 갖췄습니다. 화면 8종은 [docs/screenshots.md](docs/screenshots.md), 기능 전체 목록은 [docs/features.md](docs/features.md)에 있습니다.
+
+<table>
+<tr>
+<td><a href="docs/screenshots.md"><img src="docs/images/gallery/02-source-viewer.png" alt="출처 뷰어"></a><br><sub>출처 뷰어: 인용 구절과 원문</sub></td>
+<td><a href="docs/screenshots.md"><img src="docs/images/gallery/08-tacit-knowledge.png" alt="암묵지 질문 큐"></a><br><sub>암묵지: 생성 근거와 게시 상태</sub></td>
+<td><a href="docs/screenshots.md"><img src="docs/images/gallery/05-governance.png" alt="거버넌스"></a><br><sub>거버넌스: 감사 이벤트와 trace ID</sub></td>
+</tr>
+</table>
+
+<a id="whats-new"></a>
 ## What's new
 
-**v0.7.0: 사내 메신저 안에서 먼저 묻는 AI** ([릴리스 노트](https://github.com/baryonlabs/baryon-ax/releases/tag/v0.7.0))
+**v0.7.0 — 사내 메신저 안에서 먼저 묻는 AI** · [릴리스 노트](https://github.com/baryonlabs/baryon-ax/releases/tag/v0.7.0)
 
-- **Slack·Discord 봇** — 멘션하면 출처와 함께 답하고, 지식 공백이 생기면 담당자에게 먼저 묻습니다. 예제는 `examples/`에 있습니다.
-- **MCP 서버** — `POST /mcp`로 검색·근거 답변·지식 공백 도구를 Claude, IDE, 에이전트 채팅 앱에 그대로 엽니다. [docs/mcp-server.md](docs/mcp-server.md)
-- **서비스 계정 위임 인증** — 봇과 MCP 게이트웨이가 OIDC 서비스 계정 하나로 사람마다 대신 요청합니다. 역할은 서비스 계정 권한을 넘지 못하고, 감사 로그에 사용자와 대행 서비스가 함께 남습니다. 웹 OIDC 로그인(PKCE)과 `auth.login`·`auth.logout`·`auth.failed` 감사 이벤트도 추가했습니다. [docs/auth-oidc.md](docs/auth-oidc.md)
-- **하이브리드 검색·외부 임베딩** — `RETRIEVAL_MODE=hybrid`로 벡터와 어휘 검색을 RRF로 합치고, `EMBEDDING_PROVIDER=openai`로 OpenAI 호환 임베딩 엔드포인트를 씁니다.
-- **Apache Ossie 지식 교환·MCP 도구 선택** — Ossie 의미 모델 가져오기/내보내기, 지식 공백을 Ossie 초안으로 내려받기, 입력창에서 `/`로 MCP 도구 선택.
-- **운영** — 아키텍처 도식([Architecture](#architecture)), [로드맵·오픈소스 범위](docs/roadmap.md), CI 안정화(의존성 고정 검사, 철회된 보안 권고 제외).
+- **Slack · Discord 봇**: 멘션하면 출처와 함께 답하고, 지식 공백은 담당자에게 먼저 묻습니다.
+- **MCP 서버** `POST /mcp`: 검색 · 근거 답변 · 지식 공백 도구를 Claude, IDE, 에이전트 채팅 앱에 엽니다.
+- **서비스 계정 위임 인증**: 봇과 MCP 게이트웨이가 사람마다 대신 요청해도 권한과 감사 기록은 사람 단위로 남습니다. 웹 OIDC 로그인(PKCE)도 추가했습니다.
+- **하이브리드 검색 · OpenAI 호환 임베딩**, **Apache Ossie 지식 교환**, **MCP 도구 선택**
 
-기존 설치를 업데이트하려면 [Updating an existing install](#updating-an-existing-install)을 참고하세요.
+<a id="quick-start"></a>
+## 빠른 시작
 
-## Platform at a glance
+> 필요한 것: Docker Desktop(또는 Docker Engine + Compose). **GPU와 API 키는 필요 없습니다.** 구성별 최소 사양은 [하드웨어 요구사항](docs/hardware-requirements.md)을 보세요.
 
-![Baryon AX platform overview: user flow, layered architecture, and core engines](docs/images/baryon-ax-platform-overview.png)
-
-<p align="center">
-  <img src="apps/web/public/mascots/chat.svg" width="52" alt="Chat cat">
-  <img src="apps/web/public/mascots/knowledge.svg" width="52" alt="Knowledge owl">
-  <img src="apps/web/public/mascots/tacit.svg" width="52" alt="Tacit otter">
-  <img src="apps/web/public/mascots/memory.svg" width="52" alt="Memory elephant">
-  <img src="apps/web/public/mascots/governance.svg" width="52" alt="Governance shiba">
-  <img src="apps/web/public/mascots/gaps.svg" width="52" alt="Gap mole">
-  <img src="apps/web/public/mascots/settings.svg" width="52" alt="Settings beaver">
-</p>
-
-The platform brings a chat workspace, agent execution, grounded knowledge search, and on-premises infrastructure into one operating model. The image summarizes the user flow—ask, run an agent, evaluate, and review evidence—and the responsibilities of each layer. It is the **target production architecture**; the Basic Core maps most of it to in-process adapters, and the full-stack profile connects the stateful services. See [docs/architecture.md](docs/architecture.md#compose-vs-target-architecture) for the component-by-component mapping.
-
-## Screenshots
-
-<a href="docs/screenshots.md"><img src="docs/images/gallery/01-chat.png" alt="Baryon AX grounded chat with sources and pipeline trace" width="760"></a>
-
-Eight captured screens cover grounded chat, the source viewer, knowledge upload, memory, tacit-knowledge provenance, governance, knowledge gaps, and admin system metrics. See [docs/screenshots.md](docs/screenshots.md).
-
-## What works today
-
-- Chat UI with model selection, token streaming, and Markdown rendering (GFM)
-- **Accessible, responsive workspace**: prompt suggestions, stop/regenerate, copy, 👍/👎 feedback, no-grounding warning, mobile drawer, keyboard focus and `aria-live` status
-- Keyboard-first composer: `Shift+Enter` sends, `Enter` starts a new line
-- Korean-first bilingual UI (한국어 / English), with browser-language detection and persisted preference
-- OpenAI-compatible model adapter, verified with **Ollama `qwen2.5:7b`** and **vLLM `Qwen3.5-27B` on B300 GPU 7**, with a safe local demo fallback
-- Input/output policy checks and basic PII masking, including chunk-boundary-safe streaming masks
-- Knowledge screen with a drag-and-drop upload zone and per-format badges (PDF, HWP, HWPX, Office, images, text)
-- Durable document upload with **MIME-based parser routing** (HWP/HWPX/PDF/Office/images via kordoc/docling/Tika sidecars), **structure-aware chunking** (heading paths, table headers), **Qdrant vector retrieval** with lexical fallback, and source citations
-- **LangGraph** policy/retrieval orchestration, **FastEmbed** multilingual embeddings
-- Role-aware document ACLs, inline administrator editing, and organization isolation
-- **Tacit knowledge capture**: question-and-answer sessions (from open gaps or curated prompts) with file attachments; publishing an answer indexes it as searchable knowledge
-- **Proactive tacit-knowledge loop**: idle-time gap analysis builds an expert question queue, and published answers become cited, ACL-scoped documents
-- **Apache Ossie interchange**: import Ossie semantic models (JSON/YAML) as searchable knowledge, export permitted documents as Ossie, and turn a chat knowledge gap into a downloadable Ossie draft (admin)
-- **MCP server** at `POST /mcp`: search, grounded answers with sources and the knowledge-gap loop as tools for any MCP host (agent chat apps, desktop assistants, IDEs) — see [docs/mcp-server.md](docs/mcp-server.md)
-- **MCP tool picker in the composer**: type `/` to select MCP tools; the server re-checks each tool against the caller's roles before exposing it to the model
-- **PostgreSQL audit events** with JSONL mirroring, **Redis rate limiting**, and **Langfuse tracing**
-- **Mem0 user memory** with Qdrant + Ollama, managed from a dedicated UI tab and **injected into chat answers**
-- **Pipeline trace** under each answer: rate limit, policy, memory search, document search, model, and audit steps with timings
-- **Citation viewer**: click a source to see the cited passage, the full text, and the original uploaded file
-- Administrator settings with runtime, policy, storage, integration, and activity overview
-- Live system cards for storage, memory, CPU load, process count, Compose containers, and backend health
-- One-click admin links for Qdrant, Langfuse, the model server, pgAdmin, and Redis Insight, plus per-integration docs
-- Docker Compose Basic Core profile and a **full-stack override** (`docker-compose.full.yml`)
-- **B300 host deployment**: platform, Langfuse, Mem0, Qdrant, PostgreSQL, and Redis on the B300 server, using GPU 7 vLLM
-- Kubernetes starter manifests and deployment profiles
-- **Messenger bots** (examples): Slack and Discord `@mention` bots that answer with sources and can ask people about knowledge gaps — see [Messenger bots](#messenger-bots)
-
-## 암묵지 지식화 사이클 (Tacit → Explicit)
-
-문서에 없는 판단 기준, 예외 처리, 사내 용어, 장애 대응 노하우를 **질문 → 답변 → 게시 → 검증 → 활용** 루프로 문서화합니다. 핵심은 "사람이 아는 것을 문서로 옮기는 일"을 일회성 인터뷰가 아니라 **운영되는 사이클**로 만드는 것입니다.
-
-```text
-[1] 감지                 [2] 질문                 [3] 답변
-채팅이 근거를 찾지 못함 ──> 지식 공백 기록 ──> 공백 우선 질문 + 템플릿
-모호하거나 자신 없는 답변      (질문·이유·발생횟수)      전문가가 경험과 이유를 작성
-        │                        │                        │
-        │                        └── 기존 문서 첨부 ◀──────┘
-        ▼                                                 ▼
-[6] 환류                 [5] 검증                 [4] 지식화
-다음 질문 큐로 재투입 ◀── 공백 해소 여부 확인 ◀── 게시: Markdown 문서 생성
-새 공백이 쌓이면 반복          팩 커버리지 재검증          파싱·청킹·임베딩·Qdrant 색인
-                                                          │
-                                                          ▼
-                                                   채팅 검색 근거 + 출처로 사용
-```
-
-### 단계별 동작
-
-| 단계 | 하는 일 | 구현 |
-| --- | --- | --- |
-| **1. 감지** | 인용이 없거나 모호한 답변을 지식 공백으로 기록하고, 질문·이유·발생 횟수를 누적합니다. | `record_knowledge_gap`, `GapStore`, `/v1/admin/gaps` |
-| **2. 질문** | 열린 공백을 최우선으로 질문 큐에 올리고, 부족하면 5개 템플릿(판단 기준·온보딩·권한/예외·용어·문제 해결)으로 보완합니다. | `suggest_questions`, `GET /v1/tacit/questions` |
-| **3. 답변** | 담당자가 결론만이 아니라 **이유와 예외 조건**을 작성합니다. 기존 문서를 첨부해 맥락을 보강할 수 있습니다. 초안은 작성자 또는 관리자만 수정합니다. | `TacitStore`, `POST/PATCH /v1/tacit/entries` |
-| **4. 지식화** | 게시하면 `# 암묵지: {질문}` 형식의 Markdown 문서가 생성되고, 일반 업로드와 **동일한 파이프라인**(파싱·청킹·임베딩·Qdrant)을 거쳐 검색 가능한 지식이 됩니다. | `POST /v1/tacit/entries/{id}/publish`, `ingest_upload` |
-| **5. 검증** | 게시된 답변이 원래 공백을 해소했는지 확인하고, 연결된 공백을 닫습니다. 온톨로지 팩이 있으면 수용 질문으로 커버리지를 재검증합니다. | `knowledge.gap_resolved`, `verify_pack` |
-| **6. 활용·환류** | 게시된 문서는 다음 채팅부터 출처와 함께 사용됩니다. 해결되지 않은 공백은 다시 질문 큐로 돌아가 사이클이 반복됩니다. | 채팅 검색, `GET /v1/tacit/entries` |
-
-### 운영 원칙
-
-- **결론보다 판단 근거를 적습니다.** "예외는 팀장 승인"보다 "왜, 어느 범위까지, 어떤 경우에"를 남겨야 재사용됩니다.
-- **한 번에 하나의 질문**에 답합니다. 질문을 쪼개면 검색 청크가 작아지고 인용 정확도가 올라갑니다.
-- **공백에서 시작합니다.** 템플릿보다 실제로 답변에 실패한 질문이 신호가 큽니다.
-- **게시 전 검토합니다.** 게시된 답변은 수정할 수 없으므로 초안 단계에서 작성자·관리자가 확인합니다.
-- **권한을 유지합니다.** 답변과 첨부는 조직·역할 ACL을 따르고, 게시 문서는 `member`/`admin` 역할에 공개됩니다.
-- 모든 기록과 게시는 `tacit.recorded`, `tacit.published`, `knowledge.gap_resolved` 감사 이벤트로 남습니다.
-
-UI에서는 **암묵지** 탭에서 질문 큐, 내 답변, 전체 답변, 게시 상태를 확인할 수 있습니다. 각 항목의 **생성 근거**를 펼치면 생성 경로(공백/템플릿/직접 작성), 원본 질문, 감지 사유, 발생 횟수, 핵심 용어, 게시된 문서까지 확인할 수 있습니다. 지식 공백과 암묵지 저장소는 `/data/gaps`, `/data/tacit`에 보관되어 재시작 후에도 유지됩니다.
-
-## Quick start
-
-> **하드웨어 최소사양**: Basic Core, Full stack, GPU 추론 구성별 CPU·RAM·GPU·스토리지 기준은 [docs/hardware-requirements.md](docs/hardware-requirements.md)에 정리되어 있습니다.
-> **모델 선택**: 같은 하드웨어에서 품질과 속도를 균형 있게 맞추는 모델·정밀도·동시성 조합은 [docs/model-hardware-selection.md](docs/model-hardware-selection.md)를 참고하세요.
-
-### One-line start (Mac mini)
-
-On an Apple Silicon Mac mini with Docker Desktop installed, paste this into Terminal:
+### 1. 한 줄로 시작 (맥미니 · 노트북)
 
 ```bash
 git clone https://github.com/baryonlabs/baryon-ax.git && cd baryon-ax && cp .env.example .env && docker compose up --build
 ```
 
-No GPU or API key is required; the `demo-local` model is used by default. The first build takes about 10–20 minutes. Open `http://localhost:3001` when it finishes.
+첫 빌드는 10~20분 걸립니다. 끝나면 **http://localhost:3001** 을 엽니다. 처음에는 실제 모델 없이 `demo-local`로 동작합니다.
 
-### Basic Core (already cloned, no external services)
+### 2. 실제 모델 연결
 
-```bash
-cp .env.example .env
-docker compose up --build
-```
-
-Open `http://localhost:3001`. The default `demo-local` model works without an API key.
-
-To use a real model from the container stack, expose the host's loopback Ollama (it binds `127.0.0.1` by default) and let Compose reach it:
+OpenAI 호환 `/v1/chat/completions`를 제공하는 서버라면 무엇이든 연결됩니다. 호스트의 Ollama를 쓰는 예:
 
 ```bash
-python3 scripts/ollama_proxy.py --listen-port 11435 &   # host -> 127.0.0.1:11434
-docker compose -f docker-compose.yml -f docker-compose.parsers.yml --profile parsers up -d api
+python3 scripts/ollama_proxy.py --listen-port 11435 &   # 호스트 127.0.0.1:11434 → 컨테이너에서 접근 가능하게
+docker compose up -d --build api                        # MODEL_BASE_URL_DOCKER · MODEL_NAME(기본 qwen2.5:7b)을 읽음
+curl -s http://localhost:8000/health                    # model_adapter: openai-compatible 이면 연결됨
 ```
 
-Compose reads `MODEL_BASE_URL_DOCKER` (default `http://host.docker.internal:11435/v1`) and `MODEL_NAME` (default `qwen2.5:7b`). `/health` reports `model_adapter: openai-compatible` when connected. For remote vLLM, point `MODEL_BASE_URL_DOCKER` at the tunnel and set `MODEL_NAME` accordingly.
+사내 GPU의 vLLM은 `MODEL_BASE_URL_DOCKER`를 그 주소로, `MODEL_NAME`을 모델 ID로 바꾸면 됩니다. 모델·정밀도 선택은 [모델·하드웨어 선택 가이드](docs/model-hardware-selection.md)를 참고하세요.
 
-To accept HWP/HWPX/PDF/Office/images, add the parser sidecars:
+### 3. HWP · PDF · Office · 이미지 읽기
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.parsers.yml --profile parsers up -d --build
 ```
 
-### Updating an existing install
+### 4. 운영 구성 (Qdrant · PostgreSQL · Redis · Langfuse · Mem0)
 
-Pull the latest `main` and rebuild with the same Compose files you started with. Data in the Compose named volumes (documents, audit, gaps, tacit, memory, and the full-stack databases) is kept; do not run `docker compose down -v`.
+```bash
+python3 scripts/ollama_proxy.py --listen-port 11435 &
+OLLAMA_HOST_URL=http://host.docker.internal:11435 \
+  docker compose -f docker-compose.yml -f docker-compose.full.yml --profile deps up -d --build
+```
+
+UI는 `http://localhost:3001`, API는 `http://localhost:8000`입니다(Langfuse가 3000을 씁니다). 준비·검증·문제 해결은 [docs/full-stack.md](docs/full-stack.md)에 있습니다.
+
+<a id="updating-an-existing-install"></a>
+### 기존 설치 업데이트
+
+처음 시작할 때 쓴 Compose 파일 그대로 다시 빌드합니다. 문서 · 감사 · 공백 · 암묵지 · 메모리 데이터는 Compose 볼륨에 남습니다. **`docker compose down -v`는 실행하지 마세요.**
 
 ```bash
 git pull --ff-only
-docker compose up -d --build                                   # Basic Core
-# docker compose -f docker-compose.yml -f docker-compose.full.yml up -d --build   # Full stack
+docker compose up -d --build                     # 운영 구성이면 -f docker-compose.full.yml 등을 그대로 붙임
+curl -s http://localhost:8000/health             # 버전과 연결 상태 확인
 ```
 
-- If `docker compose ps` still shows the old containers after the build, recreate them: `docker compose up -d --force-recreate api web`.
-- If you run the parser sidecars, rebuild them too so refreshed parser dependencies (for example the docling pins) are applied: `docker compose -f docker-compose.yml -f docker-compose.parsers.yml --profile parsers up -d --build`.
-- Verify with `curl http://localhost:8000/health` and open `http://localhost:3001`.
-- For local development without Docker, reinstall API dependencies after pulling (this release adds `PyYAML`): `cd apps/api && uv sync --extra dev`.
+- 빌드 후에도 `docker compose ps`가 옛 컨테이너를 보여 주면 `docker compose up -d --force-recreate api web`으로 다시 만듭니다.
+- 파서 사이드카를 쓰면 파서도 다시 빌드합니다: `docker compose -f docker-compose.yml -f docker-compose.parsers.yml --profile parsers up -d --build`
+- Docker 없이 개발 중이면 `cd apps/api && uv sync --extra dev`로 의존성을 다시 맞춥니다.
 
-### Full stack (Ollama + Qdrant + PostgreSQL + Redis + Langfuse + Mem0)
+<a id="profiles"></a>
+### 실행 구성
 
-```bash
-# Docker Desktop에서 Ollama(127.0.0.1)를 노출하는 프록시
-python3 scripts/ollama_proxy.py --listen-port 11435 &
+| 구성 | 실행되는 것 | 최소 사양 | 시작 |
+| --- | --- | --- | --- |
+| Basic Core | `api`, `web`, `demo-local`, 파일 저장소 | 2 vCPU · 4 GB · GPU 없음 | `docker compose up --build` |
+| + 파서 | kordoc, docling, Tika | 디스크 여유(docling 이미지 10 GB+) | `-f docker-compose.parsers.yml --profile parsers` |
+| 운영 구성 | + Qdrant, PostgreSQL, Redis, Langfuse, Mem0 | 8 vCPU · 16 GB | `-f docker-compose.full.yml --profile deps` |
+| + 인증 | Keycloak (OIDC) | — | `-f docker-compose.auth.yml` · [auth-oidc.md](docs/auth-oidc.md) |
+| + MCP 도구 | ContextForge 게이트웨이 | — | `-f docker-compose.mcp.yml` · [mcp-connectors.md](docs/mcp-connectors.md) |
+| GPU 추론 | vLLM 등 사내 GPU 모델 | 7B: RTX 4090 24 GB 1장부터 | [b300-host-deploy.md](docs/b300-host-deploy.md) |
+| Kubernetes | API 스타터 매니페스트 | — | `deploy/kubernetes` |
 
-OLLAMA_HOST_URL=http://host.docker.internal:11435 \
-  docker compose -f docker-compose.yml -f docker-compose.full.yml \
-  --profile deps up -d --build
-```
-
-- UI: `http://localhost:3001` (Langfuse가 3000을 사용)
-- API: `http://localhost:8000`
-- 자세한 준비·검증·문제 해결: [docs/full-stack.md](docs/full-stack.md)
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `MODEL_BASE_URL` | empty | OpenAI-compatible endpoint; empty selects `demo-local` |
-| `MODEL_NAME` | `qwen2.5:7b` | Model ID (full stack) |
-| `MODEL_DISABLE_THINKING` | `false` | Send `enable_thinking=false` for Qwen3.5/vLLM |
-| `MODEL_PROMPT_PROFILE` | `auto` | Model-specific grounded system prompt (`qwen35`, `qwen`, `generic`) |
-| `RETRIEVAL_MIN_SCORE` | `0.3` | Minimum Qdrant similarity for a citation |
-| `MODEL_TIMEOUT_SECONDS` | `180` | Upstream connect/read timeout |
-| `DATABASE_URL` | empty | PostgreSQL audit store (empty = JSONL only) |
-| `REDIS_URL` | empty | Redis rate limiter (empty = disabled) |
-| `QDRANT_URL` | empty | Qdrant vector store (empty = lexical fallback) |
-| `EMBEDDING_MODEL` | multilingual MiniLM | FastEmbed model |
-| `LANGFUSE_ENABLED` / `LANGFUSE_HOST` | `false` / local | Langfuse tracing |
-| `MEM0_ENABLED` / `OLLAMA_BASE_URL` | `false` / local | Mem0 memory layer |
-| `DOCUMENT_STORE` | `/tmp/baryon-ax-documents` | Durable document JSON directory |
-| `AUDIT_LOG` | `/tmp/baryon-ax-audit/events.jsonl` | JSONL audit mirror |
-| `MAX_DOCUMENT_BYTES` | `20000000` | Upload size limit |
-| `KORDOC_URL` / `KORDOC_CMD` | empty | kordoc sidecar (`POST /parse`) or CLI (`--format json`) for HWP/HWPX |
-| `DOCLING_URL` / `DOCLING_CMD` | empty | docling sidecar or CLI for PDF/Office/images |
-| `TIKA_URL` | empty | Tika `PUT /tika` fallback for legacy formats |
-| `PARSER_TIMEOUT_SECONDS` | `180` | Per-document parser timeout |
-| `INGEST_BATCH_SIZE` / `INGEST_MAX_IN_FLIGHT` | `8` / `4` | Ingest pipeline batching and concurrency |
-| `RATE_LIMIT_PER_MINUTE` | `60` | Chat requests per user/org per minute |
-
-## Architecture
+<a id="architecture"></a>
+## 아키텍처
 
 Baryon AX는 **채널 → 게이트웨이 → 오케스트레이션 → 지식·모델·메모리 → 거버넌스** 순서로 요청을 처리합니다. 모든 요청은 게이트웨이에서 신원과 권한을 확정한 뒤에만 지식과 모델에 닿고, 모든 단계는 같은 `trace_id`로 감사 기록과 트레이스에 이어집니다.
 
@@ -374,184 +350,286 @@ flowchart LR
 
 </details>
 
-### 실행 구성
+<a id="tacit--explicit-cycle"></a>
+## 암묵지 지식화 사이클
 
-| 구성 | 실행되는 것 | 시작 명령 |
+문서에 없는 판단 기준, 예외 처리, 사내 용어, 장애 대응 노하우를 **감지 → 질문 → 답변 → 지식화 → 검증 → 환류** 루프로 문서화합니다. 핵심은 "사람이 아는 것을 문서로 옮기는 일"을 일회성 인터뷰가 아니라 **운영되는 사이클**로 만드는 것입니다.
+
+```mermaid
+flowchart LR
+  D["1 감지<br/>근거 없는 답을<br/>지식 공백으로 기록"] --> Q["2 질문<br/>공백 우선 질문 큐<br/>+ 템플릿 5종"]
+  Q --> A["3 답변<br/>전문가가 이유와<br/>예외 조건을 작성"]
+  A --> P["4 지식화<br/>게시 → 같은 수집<br/>파이프라인으로 색인"]
+  P --> V["5 검증<br/>공백 해소 확인<br/>팩 커버리지 재검증"]
+  V --> R["6 환류<br/>다음 대화의 근거<br/>남은 공백은 다시 큐로"]
+  R --> D
+```
+
+| 단계 | 하는 일 | 구현 |
 | --- | --- | --- |
-| Basic Core | `api`, `web`, `demo-local` 모델, 파일 저장소 | `docker compose up --build` |
-| 파서 추가 | + kordoc, docling, Tika 사이드카 | `-f docker-compose.parsers.yml --profile parsers` |
-| Full stack | + Qdrant, PostgreSQL, Redis, Langfuse, Mem0 | `-f docker-compose.full.yml --profile deps` |
-| 인증 | + Keycloak (OIDC) | `-f docker-compose.auth.yml` · [docs/auth-oidc.md](docs/auth-oidc.md) |
-| MCP 도구 | + ContextForge 게이트웨이 | `-f docker-compose.mcp.yml` · [docs/mcp-connectors.md](docs/mcp-connectors.md) |
-| GPU 서버 | vLLM 등 사내 GPU 모델 | [docs/b300-host-deploy.md](docs/b300-host-deploy.md) |
+| **1. 감지** | 인용이 없거나 모호한 답변을 지식 공백으로 기록하고, 질문 · 이유 · 발생 횟수를 누적합니다. | `record_knowledge_gap`, `GapStore`, `/v1/admin/gaps` |
+| **2. 질문** | 열린 공백을 최우선으로 질문 큐에 올리고, 부족하면 5개 템플릿(판단 기준 · 온보딩 · 권한/예외 · 용어 · 문제 해결)으로 보완합니다. | `suggest_questions`, `GET /v1/tacit/questions` |
+| **3. 답변** | 담당자가 결론만이 아니라 **이유와 예외 조건**을 작성합니다. 기존 문서를 첨부할 수 있고, 초안은 작성자 또는 관리자만 수정합니다. | `TacitStore`, `POST/PATCH /v1/tacit/entries` |
+| **4. 지식화** | 게시하면 `# 암묵지: {질문}` Markdown 문서가 생성되고, 일반 업로드와 **같은 파이프라인**을 거쳐 검색 가능한 지식이 됩니다. | `POST /v1/tacit/entries/{id}/publish` |
+| **5. 검증** | 게시된 답변이 원래 공백을 해소했는지 확인하고 연결된 공백을 닫습니다. 온톨로지 팩이 있으면 수용 질문으로 커버리지를 재검증합니다. | `knowledge.gap_resolved`, `verify_pack` |
+| **6. 환류** | 게시된 문서는 다음 대화부터 출처와 함께 쓰이고, 해결되지 않은 공백은 다시 질문 큐로 돌아갑니다. | 채팅 검색, `GET /v1/tacit/entries` |
 
-See [docs/full-stack.md](docs/full-stack.md) for the applied stack, [docs/b300-vllm.md](docs/b300-vllm.md) for the remote B300 GPU 7 vLLM test, [docs/b300-host-deploy.md](docs/b300-host-deploy.md) for the full platform on B300, [docs/research/strata-and-local-ai-shortlist.md](docs/research/strata-and-local-ai-shortlist.md) for the Strata/local-AI research, [docs/research/clawfit-positioning.md](docs/research/clawfit-positioning.md) for the clawfit comparison and registration strategy, [docs/research/knowledge-gap-loop.md](docs/research/knowledge-gap-loop.md) for the knowledge-gap and ontology loop, [docs/ux-principles.md](docs/ux-principles.md) for the applied UX and AI-interface principles, [docs/site-seo.md](docs/site-seo.md) for the static site SEO/AEO/GEO setup, [docs/auth-oidc.md](docs/auth-oidc.md) for Keycloak/OIDC authentication, [docs/mcp-connectors.md](docs/mcp-connectors.md) for the MCP SaaS connector layer, [docs/mcp-server.md](docs/mcp-server.md) for using baryon-ax itself as an MCP server, [docs/promotion-playbook.md](docs/promotion-playbook.md) for search-engine registration and promotion operations, [docs/promotion-drafts.md](docs/promotion-drafts.md) for ready-to-post launch copy, [docs/domain-migration.md](docs/domain-migration.md) for the custom-domain cutover, [docs/research/clawfit/](docs/research/clawfit/) for the clawfit research-watch draft and registry entry proposal, [docs/features.md](docs/features.md) for the complete feature inventory, [docs/roadmap.md](docs/roadmap.md) for the roadmap, target users, and open-source scope, [docs/open-source.md](docs/open-source.md) for the open-source component and license inventory, and [docs/architecture.md](docs/architecture.md), [docs/operations.md](docs/operations.md), and [docs/security.md](docs/security.md) for the intended production integration boundaries. Ingestion design lives in [docs/ingestion/architecture.md](docs/ingestion/architecture.md) and the parser/connector survey in [docs/ingestion/open-source-inventory.md](docs/ingestion/open-source-inventory.md).
+<details>
+<summary><b>운영 원칙</b></summary>
 
-## API highlights
+- **결론보다 판단 근거를 적습니다.** "예외는 팀장 승인"보다 "왜, 어느 범위까지, 어떤 경우에"를 남겨야 재사용됩니다.
+- **한 번에 하나의 질문**에 답합니다. 질문을 쪼개면 검색 청크가 작아지고 인용 정확도가 올라갑니다.
+- **공백에서 시작합니다.** 템플릿보다 실제로 답변에 실패한 질문이 신호가 큽니다.
+- **게시 전 검토합니다.** 게시된 답변은 수정할 수 없으므로 초안 단계에서 작성자 · 관리자가 확인합니다.
+- **권한을 유지합니다.** 답변과 첨부는 조직 · 역할 ACL을 따르고, 게시 문서는 `member`/`admin` 역할에 공개됩니다.
+- 모든 기록과 게시는 `tacit.recorded`, `tacit.published`, `knowledge.gap_resolved` 감사 이벤트로 남습니다.
 
-| Endpoint | Purpose |
+UI의 **암묵지** 탭에서 질문 큐, 내 답변, 전체 답변, 게시 상태와 각 항목의 생성 근거(생성 경로 · 원본 질문 · 감지 사유 · 발생 횟수 · 게시 문서)를 볼 수 있습니다. 저장소는 `/data/gaps`, `/data/tacit`에 있어 재시작 후에도 유지됩니다.
+
+</details>
+
+<a id="integrations"></a>
+## 연동: API · 메신저 봇 · MCP
+
+모든 채널이 **같은 API와 같은 권한 · 감사 경로**를 씁니다. 그래서 어디서 물어도 답의 근거와 기록 방식이 같습니다.
+
+### OpenAI 호환 API
+
+```bash
+curl -N http://localhost:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-Id: me' -H 'X-Organization-Id: local-org' -H 'X-Roles: member' \
+  -d '{"model": "demo-local", "messages": [{"role": "user", "content": "연차 이월 기준이 뭐야?"}]}'
+```
+
+문서 올리기:
+
+```bash
+curl -s http://localhost:8000/v1/documents \
+  -H 'X-User-Id: me' -H 'X-Organization-Id: local-org' -H 'X-Roles: admin' \
+  -F file=@./연차규정.hwp -F allowed_roles=member,admin
+```
+
+`X-User-Id` 등 개발용 헤더는 `AUTH_MODE=dev`(기본값)에서만 믿습니다. 운영에서는 `AUTH_MODE=oidc`로 Bearer 토큰을 검증합니다([docs/auth-oidc.md](docs/auth-oidc.md)).
+
+<a id="messenger-bots"></a>
+### 메신저 봇
+
+공개 API만 쓰는 예제라서 플랫폼 옆에서 따로 실행합니다.
+
+| 예제 | 하는 일 |
 | --- | --- |
-| `GET /health` | Liveness and configured adapter status |
-| `GET /v1/models` | Models visible to the caller |
-| `GET /v1/open-source` | License inventory for the Settings → Open Source screen |
-| `POST /v1/chat/completions` | OpenAI-style chat completion, including SSE streaming |
-| `POST /v1/documents` | Upload a document (MIME-routed; `?async=true` returns a job id) |
-| `GET /v1/jobs/{job_id}` | Async ingest job state and chunk count |
-| `GET /v1/documents` | List documents visible to the caller (`?category=&tag=` filters) |
-| `GET /v1/documents/{id}` | Permission-checked document text and cited chunk (`?chunk=N`) |
-| `GET /v1/documents/{id}/file` | Original uploaded file for authorized viewers |
-| `DELETE /v1/documents/{id}` | Delete a document as its uploader or an administrator |
-| `PATCH /v1/documents/{id}` | Update category/tags (uploader or admin) and role ACL (admin) |
-| `GET /v1/documents/search` | Permission-scoped retrieval results |
-| `POST /v1/memories` | Store a user memory with Mem0 |
-| `GET /v1/memories` | List the caller's memories |
-| `GET /v1/memories/search` | Semantic memory search |
-| `DELETE /v1/memories/{id}` | Delete the caller's memory |
-| `GET /v1/audit-events` | Recent audit events for administrators |
-| `GET /v1/tacit/questions` | Suggested questions from open gaps and templates |
-| `POST /v1/tacit/entries` | Save an answer with attachment document ids |
-| `POST /v1/tacit/entries/{id}/publish` | Index the answer as a searchable document |
-| `GET /v1/admin/gaps` | Ungrounded questions with reasons and occurrence counts (admin) |
-| `GET /v1/admin/gaps/clusters` | Proposed ontology clusters (admin) |
-| `POST /v1/admin/ontology-packs` | Create a draft ontology pack from selected gaps (admin) |
-| `GET /v1/admin/ontology-packs` | List draft ontology packs (admin) |
-| `GET /v1/admin/ontology-packs/{id}/ossie` | Download an ontology pack as an Apache Ossie draft (admin) |
-| `POST /v1/ossie/import` | Import an Apache Ossie JSON/YAML model as searchable knowledge |
-| `GET /v1/ossie/export` | Export the caller's permitted knowledge as an Apache Ossie model |
-| `POST /v1/admin/reindex` | Reindex documents into Qdrant (administrator) |
-| `GET /v1/admin/settings` | Effective runtime, storage, policy, and integration settings for administrators |
+| [`examples/slack-bot`](examples/slack-bot) | Slack `@멘션`(Socket Mode)에 **답변 + 출처**(문서 · 청크 · 인용 구절)로 답하고, 같은 스레드에서는 멘션 없이 이어 답합니다. **proactive 모드**는 답하지 못한 질문을 데스크 채널에 올리고, 스레드 답글을 초안으로 받아 작성자 승인 후 게시하고, 원래 스레드에 결과를 돌려줍니다. |
+| [`examples/discord-bot`](examples/discord-bot) | 같은 기능의 Discord 봇(Gateway, 공개 URL 불필요). 멘션하면 스레드를 열어 답과 출처 embed를 보여 주고, 승인 버튼으로 답변을 게시합니다. |
 
-For local development, callers can send `X-User-Id`, `X-Organization-Id`, and `X-Roles` headers. Replace this development identity adapter with OIDC/SSO before production use.
+봇은 OIDC 서비스 계정 하나로 인증하고 사람마다 `X-On-Behalf-Of: slack:<ID>`로 요청합니다. 역할은 서비스 계정 권한을 넘지 못하고, 감사 로그에는 사용자와 `acting_service`가 함께 남습니다.
 
-## Messenger bots
+<p align="center"><img src="examples/slack-bot/docs/slack-thread-example.svg" width="680" alt="Slack 스레드 예시: @baryon 질문에 출처와 함께 답하고, 이어지는 질문에 멘션 없이 답함"></p>
+<p align="center"><sub>예시 데이터로 그린 그림이며 실제 화면 캡처가 아닙니다.</sub></p>
 
-Practical integrations that run next to the platform and only use its public API:
+### MCP
 
-| Example | What it does |
-|---|---|
-| [`examples/slack-bot`](examples/slack-bot) | Slack `@mention` bot (Socket Mode): answers from your documents with the **answer + sources** (document, chunk, quoted passage), follows up in mentioned threads without another mention, and keeps per-user audit trails. Modeled on the OpenTag mention-gateway pattern. Optional **proactive mode** asks people first: questions it could not answer are posted to a desk channel, a thread reply becomes a draft the author approves, and the published answer goes back to the original thread. Its README includes a copy-paste setup prompt for coding agents. |
-| [`examples/discord-bot`](examples/discord-bot) | The same bot for Discord over the Gateway (no public URL): `@mention` opens a thread with the answer and a sources embed, follow-ups in the thread need no mention, and the optional ask-first desk turns unanswered questions into published documents with approve buttons. |
+| 방향 | 무엇 | 문서 |
+| --- | --- | --- |
+| **Baryon AX를 MCP 서버로** | `POST /mcp`로 검색 · 근거 답변 · 지식 공백 도구를 Claude, IDE, 에이전트 채팅 앱에 엽니다. 도구는 호출한 사람의 권한으로 실행됩니다. | [docs/mcp-server.md](docs/mcp-server.md) |
+| **MCP 도구를 Baryon AX로** | ContextForge 게이트웨이로 사내 · SaaS 도구를 연결하고, 입력창에서 `/`로 고른 도구만 서버가 권한을 다시 확인해 모델에 노출합니다. | [docs/mcp-connectors.md](docs/mcp-connectors.md) |
 
-<p align="center"><img src="examples/slack-bot/docs/slack-thread-example.svg" width="720" alt="Illustrative Slack thread: an @baryon question answered with sources, then a follow-up answered without a mention"></p>
-<p align="center"><sub>Illustration with sample data, not a screenshot.</sub></p>
+```bash
+claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
+  --header "X-User-Id: me" --header "X-Organization-Id: local-org" --header "X-Roles: member"
+```
 
-## Repository layout
+### Apache Ossie
+
+**지식** 화면에서 Ossie 의미 모델(JSON/YAML)을 가져오면 데이터셋 · 필드 · 메트릭 · 관계가 검색 가능한 문서로 색인됩니다. 내보내기는 내 권한 범위의 지식만 `baryon-knowledge.ossie.json`으로 내려받습니다(`POST /v1/ossie/import`, `GET /v1/ossie/export`).
+
+<a id="configuration"></a>
+## 설정
+
+모든 설정은 환경 변수(`.env`)로 합니다. 비워 두면 해당 기능은 꺼지거나 내장 대체 구현으로 동작합니다.
+
+<details>
+<summary><b>주요 환경 변수</b></summary>
+
+| 변수 | 기본값 | 용도 |
+| --- | --- | --- |
+| `MODEL_BASE_URL` | 비어 있음 | OpenAI 호환 엔드포인트. 비우면 `demo-local` |
+| `MODEL_NAME` | `qwen2.5:7b` | 모델 ID (운영 구성) |
+| `MODEL_DISABLE_THINKING` | `false` | Qwen3.5/vLLM에 `enable_thinking=false` 전송 |
+| `MODEL_PROMPT_PROFILE` | `auto` | 모델별 근거 시스템 프롬프트 (`qwen35`, `qwen`, `generic`) |
+| `MODEL_TIMEOUT_SECONDS` | `180` | 모델 연결·응답 제한 시간 |
+| `AUTH_MODE` | `dev` | `oidc`면 Bearer 토큰 검증. [auth-oidc.md](docs/auth-oidc.md) |
+| `QDRANT_URL` | 비어 있음 | 벡터 저장소 (비우면 어휘 검색) |
+| `RETRIEVAL_MODE` | `vector` | `hybrid`면 벡터 + 어휘 검색 RRF |
+| `RETRIEVAL_MIN_SCORE` | `0.3` | 인용으로 인정할 최소 유사도 |
+| `EMBEDDING_PROVIDER` | `fastembed` | `openai`면 OpenAI 호환 `/v1/embeddings` |
+| `EMBEDDING_MODEL` / `EMBEDDING_DIMENSION` | multilingual MiniLM / `384` | 임베딩 모델과 차원 |
+| `DATABASE_URL` | 비어 있음 | PostgreSQL 감사 저장소 (비우면 JSONL만) |
+| `REDIS_URL` | 비어 있음 | 요청 제한 (비우면 꺼짐) |
+| `RATE_LIMIT_PER_MINUTE` | `60` | 사용자·조직별 분당 채팅 요청 수 |
+| `LANGFUSE_ENABLED` / `LANGFUSE_HOST` | `false` / 로컬 | Langfuse 트레이스 |
+| `MEM0_ENABLED` / `OLLAMA_BASE_URL` | `false` / 로컬 | Mem0 메모리 |
+| `KORDOC_URL` · `DOCLING_URL` · `TIKA_URL` | 비어 있음 | 파서 사이드카 주소 |
+| `PARSER_TIMEOUT_SECONDS` | `180` | 문서당 파서 제한 시간 |
+| `MAX_DOCUMENT_BYTES` | `20000000` | 업로드 크기 제한 |
+| `MCP_SERVER_ENABLED` | `true` | `POST /mcp` MCP 서버 |
+| `DOCUMENT_STORE` · `AUDIT_LOG` | `/tmp/...` | 문서 JSON 디렉터리, JSONL 감사 로그 |
+
+전체 목록과 설명은 [.env.example](.env.example)과 [docs/full-stack.md](docs/full-stack.md)에 있습니다.
+
+</details>
+
+<a id="api"></a>
+## API
+
+전체 스키마는 실행 중인 API의 `http://localhost:8000/docs`(OpenAPI)에서 볼 수 있습니다.
+
+<details>
+<summary><b>엔드포인트 요약</b></summary>
+
+| 영역 | 엔드포인트 | 용도 |
+| --- | --- | --- |
+| 상태 | `GET /health` | 생존 확인, 버전, 연결된 어댑터 |
+| 대화 | `POST /v1/chat/completions` | OpenAI 형식 채팅(SSE 스트리밍 포함) |
+| 대화 | `GET /v1/models` | 호출자가 쓸 수 있는 모델 |
+| 대화 | `POST /v1/feedback` | 👍/👎 답변 피드백 |
+| 인증 | `GET /v1/auth/me` · `POST /v1/auth/login` · `POST /v1/auth/logout` | 현재 신원(위임 반영), 로그인·로그아웃 감사 |
+| 문서 | `POST /v1/documents` | 업로드(MIME 라우팅, `?async=true`면 작업 ID) |
+| 문서 | `GET /v1/jobs/{job_id}` | 비동기 수집 상태 |
+| 문서 | `GET /v1/documents` · `GET /v1/documents/{id}` · `GET /v1/documents/{id}/file` | 목록, 권한 확인된 본문·인용 청크, 원본 파일 |
+| 문서 | `PATCH /v1/documents/{id}` · `DELETE /v1/documents/{id}` | 분류·태그·ACL 변경, 삭제 |
+| 문서 | `GET /v1/documents/search` | 권한 범위 검색 |
+| Ossie | `POST /v1/ossie/import` · `GET /v1/ossie/export` | Ossie 의미 모델 가져오기·내보내기 |
+| 메모리 | `POST` · `GET /v1/memories` · `GET /v1/memories/search` · `DELETE /v1/memories/{id}` | Mem0 사용자 기억 |
+| 암묵지 | `GET /v1/tacit/questions` · `POST /v1/tacit/entries` · `POST /v1/tacit/entries/{id}/publish` | 질문 큐, 답변 저장, 게시 |
+| 공백 | `GET /v1/admin/gaps` · `GET /v1/admin/gaps/clusters` · `POST /v1/admin/gaps/{id}/dismiss` | 지식 공백, 클러스터, 종료 (관리자) |
+| 온톨로지 | `POST` · `GET /v1/admin/ontology-packs` · `GET /v1/admin/ontology-packs/{id}/ossie` | 팩 초안, Ossie 초안 (관리자) |
+| 도구 | `GET /v1/connectors` · `GET /v1/tools/search` · `POST /v1/tools/{id}/call` | MCP 커넥터 카탈로그, 도구 검색·호출 |
+| MCP | `POST /mcp` | MCP 서버(Streamable HTTP, JSON) |
+| 관리 | `GET /v1/audit-events` · `GET /v1/admin/settings` · `POST /v1/admin/reindex` | 감사 이벤트, 실행 설정, 재색인 (관리자) |
+
+</details>
+
+<a id="security"></a>
+## 보안
+
+이 저장소는 **보안 인증이 아니라 검증 가능한 기준선**입니다. 운영 전에 [docs/security.md](docs/security.md)의 체크리스트를 따르세요.
+
+| 경계 | 구현 |
+| --- | --- |
+| 신원 | 게이트웨이에서 확정합니다. 운영은 `AUTH_MODE=oidc`(JWKS 서명 · `iss` · `aud` · `exp` 검증), 개발 헤더는 `dev`에서만 믿습니다. |
+| 권한 | 검색 결과는 조직 · 역할 ACL로 **모델에 넣기 전에** 거릅니다. MCP 도구도 서버가 역할을 다시 확인합니다. |
+| 위임 | 서비스 계정은 `baryon-service` 역할이 있을 때만 `X-On-Behalf-Of`를 쓸 수 있고, 역할은 자기 권한을 넘지 못합니다. |
+| 기록 | 대화 · 업로드 · 게시 · 도구 호출 · 인증 실패를 같은 `trace_id`로 감사 로그와 Langfuse에 남깁니다. |
+| 출력 | 입력 정책 검사, PII 마스킹(스트리밍 청크 경계 포함). |
+
+### PR마다 자동 보안 점검
+
+모든 PR은 병합 전에 [security-sweep](https://github.com/baryonlabs/security-sweep)을 거칩니다. osv-scanner와 Trivy 결과를 OSV에서 실재 확인하고 CISA KEV · EPSS · 도달성으로 우선순위를 매겨 **P0/P1이면 병합을 막습니다.** OSV가 철회한 권고는 막지 않고, 조회가 실패하면 막습니다(fail-closed).
+
+| 프로젝트 | 생태계 | 잠금 파일 | PR 의존성 점검 | 주간 이미지 점검 |
+| --- | --- | --- | :---: | :---: |
+| `apps/web` | npm | `package-lock.json` | ✅ | ✅ |
+| `apps/api` | PyPI | `uv.lock` | ✅ | ✅ |
+| `deploy/parsers/docling` | PyPI | 고정 `requirements.txt` | ✅ | 잠금 파일 SBOM |
+| `deploy/parsers/kordoc` | npm | `package-lock.json` | ✅ | ✅ |
+| `examples/*-bot` | PyPI | `requirements.txt` | ✅ | — |
+
+<details>
+<summary><b>점검이 하는 일과 하지 않는 일</b></summary>
+
+- 매주 월요일 03:00 KST: 기본 브랜치 재점검, `api` · `web` · `kordoc` 이미지 점검과 CycloneDX SBOM, gitleaks 전체 히스토리 비밀 점검.
+- 스캐너 커밋 · Trivy action SHA · osv-scanner 체크섬을 고정하고, 워크플로는 `contents: read`, 비밀 미사용입니다. 보고서가 없으면 통과로 보지 않습니다.
+- 첫 점검에서 웹 이미지 root 실행(P1)을 막았고, 잠금 파일 사각지대를 없앤 뒤 `apps/api`의 의존성 63건(P1 42건)을 업그레이드로 해소했습니다.
+- **알려진 취약점만** 봅니다. 권한 우회 같은 논리 결함은 SAST와 사람 리뷰가 필요합니다. P2/P3는 보고만 합니다. 유출된 비밀은 커밋 삭제가 아니라 교체해야 합니다.
+
+운영 절차는 [docs/security-ci.md](docs/security-ci.md)에 있습니다.
+
+</details>
+
+<a id="roadmap"></a>
+## 로드맵
+
+| 릴리스 | 핵심 메시지 | 주요 내용 |
+| --- | --- | --- |
+| v0.6.0 ✅ | 첫 공개 | 근거 채팅, HWP 수집, ACL · 감사, 암묵지 루프, PR 보안 점검 |
+| v0.7.0 ✅ | 사내 메신저 안에서 먼저 묻는 AI | Slack · Discord 봇, MCP 서버, 서비스 계정 위임, 하이브리드 검색 |
+| v0.8.0 | 보안 심사를 통과하는 운영 기능 | 사용자 · 조직 · 역할 관리 UI, 감사 로그 검색 · 내보내기 · 보존, 백업 · 복구 런북, 공유 링크 |
+| v0.9.0 | 지식 품질 | 온톨로지 편집 UI, 대화 자동 메모리, E2E CI |
+
+대상 고객과 오픈소스 범위(무엇을 공개하고 무엇을 지원으로 제공하는지)는 [docs/roadmap.md](docs/roadmap.md)에 있습니다.
+
+<a id="docs"></a>
+## 문서 지도
+
+| 알고 싶은 것 | 문서 |
+| --- | --- |
+| 설치 · 운영 구성 | [full-stack.md](docs/full-stack.md) · [hardware-requirements.md](docs/hardware-requirements.md) · [model-hardware-selection.md](docs/model-hardware-selection.md) · [operations.md](docs/operations.md) |
+| GPU 서버 배포 | [b300-host-deploy.md](docs/b300-host-deploy.md) · [b300-vllm.md](docs/b300-vllm.md) |
+| 구조 · 설계 | [architecture.md](docs/architecture.md) · [ingestion/architecture.md](docs/ingestion/architecture.md) · [ux-principles.md](docs/ux-principles.md) · [research/knowledge-gap-loop.md](docs/research/knowledge-gap-loop.md) |
+| 기능 전체 | [features.md](docs/features.md) · [screenshots.md](docs/screenshots.md) |
+| 인증 · 보안 | [auth-oidc.md](docs/auth-oidc.md) · [security.md](docs/security.md) · [security-ci.md](docs/security-ci.md) · [SECURITY.md](SECURITY.md) |
+| 연동 | [mcp-server.md](docs/mcp-server.md) · [mcp-connectors.md](docs/mcp-connectors.md) · [examples/](examples) |
+| 오픈소스 · 라이선스 | [open-source.md](docs/open-source.md) · [ingestion/open-source-inventory.md](docs/ingestion/open-source-inventory.md) |
+| 방향 | [roadmap.md](docs/roadmap.md) |
+| 홈페이지 운영 | [promotion-playbook.md](docs/promotion-playbook.md) · [site-seo.md](docs/site-seo.md) · [domain-migration.md](docs/domain-migration.md) |
+
+<a id="development"></a>
+## 개발 · 기여
 
 ```text
-apps/api/       FastAPI control plane and API
-apps/web/       React + Vite chat UI
-deploy/         Compose and Kubernetes deployment assets
-docs/           Architecture, operations, security, full-stack, B300 deployment, research, inventory
-site/           Introduction, help, and GitHub Pages site
-scripts/        Ollama proxy, B300 vLLM serve/tunnel, full-stack smoke
-examples/       Extension examples built on the public API (Slack and Discord bots)
+apps/api/       FastAPI 게이트웨이와 API (Python, uv)
+apps/web/       React + Vite 채팅 워크스페이스
+examples/       공개 API로 만든 확장 예제 (Slack · Discord 봇)
+deploy/         Compose · Kubernetes · 파서 사이드카
+docs/           아키텍처 · 운영 · 보안 · 연동 · 연구 문서
+site/           홈페이지 (GitHub Pages)
+scripts/        Ollama 프록시, 스모크 테스트, IndexNow, 의존성 갱신
 ```
-
-## Development
 
 ```bash
-cd apps/api
-uv sync --extra dev          # uses the pinned uv.lock
-uv run pytest
-
-cd ../web
-npm install
-npm run build
+cd apps/api && uv sync --extra dev && uv run pytest          # API 테스트
+cd apps/web && npm ci && npm run build                        # 웹 빌드
+uvicorn baryon.main:app --app-dir apps/api/src --port 8000 --env-file .env   # 호스트에서 API 실행
 ```
 
-API를 호스트에서 실행할 때 `.env`를 명시적으로 로드합니다.
+<details>
+<summary><b>E2E · 스모크 테스트</b></summary>
 
-```bash
-uvicorn baryon.main:app --app-dir apps/api/src --host 127.0.0.1 --port 8000 --env-file .env
-```
-
-### End-to-end test
-
-Start the API on port 8000 and the web dev server on port 5173, then:
+API(8000)와 웹 개발 서버(5173)를 띄운 뒤:
 
 ```bash
 cd apps/web
-npx playwright install chromium   # first run only
+npx playwright install chromium   # 처음 한 번
 npm run test:e2e
-npm run test:buttons              # clicks every control and asserts a response
+npm run test:buttons              # 모든 컨트롤을 눌러 응답을 확인
 ```
 
-Set `E2E_BASE_URL` to test another deployment (for example `http://127.0.0.1:3001` for the Compose web service), and `E2E_SCREENSHOT=/tmp/baryon-ax.png` to capture a full-page screenshot.
+`E2E_BASE_URL`로 다른 배포(예: Compose 웹 `http://127.0.0.1:3001`)를, `E2E_SCREENSHOT=/tmp/baryon-ax.png`로 전체 화면 캡처를 지정합니다.
 
-### Full-stack smoke
+운영 구성 스모크(상태 · 업로드 · Qdrant 검색 · 채팅 · 감사 · Mem0):
 
 ```bash
 API_BASE=http://127.0.0.1:8000 REQUIRE_FULL=1 python3 scripts/smoke_full_stack.py
 ```
 
-The smoke check covers health backends, document upload, Qdrant retrieval, chat, audit, and Mem0 memory.
+</details>
 
-## Security
+기여 방법은 [CONTRIBUTING.md](CONTRIBUTING.md)를, 여러 사람 · 에이전트가 함께 작업할 때의 규칙은 [AGENTS.md](AGENTS.md)를 보세요. 보안 문제는 공개 이슈가 아니라 [SECURITY.md](SECURITY.md)의 절차로 알려 주세요. 설치 · 모델 연결 · 보안 질의서 지원은 [GitHub Issues](https://github.com/baryonlabs/baryon-ax/issues/new/choose)로 문의할 수 있습니다.
 
-### Security CI on every pull request
+<a id="english"></a>
+## English
 
-Every pull request runs [security-sweep](https://github.com/baryonlabs/security-sweep) before merge. This turns security from a periodic manual review into a merge condition that leaves evidence.
+**Baryon AX** is an on-premises, model-agnostic, MIT-licensed platform for enterprise AI agents that answer from your documents with citations and **ask experts first** for the tacit knowledge that was never written down.
 
-```text
-PR opened or updated
- → checkout the PR
- → fetch the pinned security-sweep commit
- → osv-scanner (checksum-verified) + trivy (SHA-pinned action)
- → discover → sweep → OSV existence check → KEV/EPSS + reachability → REPORT
- → fail on P0/P1 (none = pass)
- → Job Summary + REPORT/Findings artifacts (14 days)
-```
+- **Grounded answers**: streaming chat with source, chunk, and quote citations; a warning instead of a guess when evidence is missing; organization and role ACLs applied before retrieval reaches the model.
+- **Korean-document ready**: MIME-based routing to kordoc (HWP/HWPX), docling (PDF/Office/images), and Tika; structure-aware chunking; vector or hybrid retrieval.
+- **Ask-first loop**: unanswered questions become knowledge gaps, experts answer from a question queue, and published answers are indexed through the same pipeline.
+- **Integrations**: OpenAI-compatible `/v1/chat/completions`, an MCP server at `POST /mcp`, an MCP tool picker, Slack and Discord bots, and Apache Ossie import/export.
+- **Governance**: OIDC with delegated identity for bots and MCP gateways, audit events in PostgreSQL/JSONL, Langfuse traces, and a security sweep that blocks P0/P1 findings on every PR.
 
-**What it buys**
+Start with one line (Docker only, no GPU or API key): see [Quick start](#quick-start). The English website is at [baryon-ax.baryon.ai/en](https://baryon-ax.baryon.ai/en/).
 
-| | |
-| --- | --- |
-| Real defects blocked before merge | The first sweep found the web image running as root (P1) and a missing `HEALTHCHECK` (P3). Closing the lockfile gap then exposed **63 dependency findings (42 P1)** in `apps/api`; upgrading `fastembed`, `langgraph`, and `pillow` cleared all of them. The current scan is **0 P0/P1/P2/P3** across all four projects. |
-| Review cost and consistency | Scanner versions and the skill commit are pinned, so the same input produces the same result. Authors get a prioritized fix list before review; reviewers no longer have to re-ask "is this PR safe?" The PR sweep takes about **30 seconds** for four projects, and this public repository uses no paid Actions minutes. |
-| Supply-chain and CI safety | The scanner skill is pinned by commit, the Trivy action by SHA, and the osv-scanner binary is checksum-verified. The workflow has `contents: read`, uses no secrets, and is safe for fork PRs. A missing or unreadable report **fails closed**; it is never treated as a pass. |
-| Audit and sales evidence | Run history plus `REPORT.md`, `REPORT.html`, and `findings.json` artifacts. CVEs are checked against OSV, then enriched with CISA KEV, EPSS, and reachability. This is usable evidence for on-premises security questionnaires. |
-| Culture | Security moves from a quarterly manual check to an automatic condition on every PR; the P0/P1 criteria are codified in the gate instead of living in a reviewer's head. |
+## 라이선스
 
-**Coverage**
-
-| Project | Ecosystem | Lockfile used | PR dependency scan | Weekly image scan |
-| --- | --- | --- | :---: | :---: |
-| `apps/web` | npm | `package-lock.json` | ✅ | ✅ |
-| `apps/api` | PyPI | `uv.lock` | ✅ | ✅ |
-| `deploy/parsers/docling` | PyPI | pinned `requirements.txt` from `requirements.in` | ✅ | SBOM from lockfile* |
-| `deploy/parsers/kordoc` | npm | `package-lock.json` | ✅ | ✅ |
-
-\* The docling image is over 10 GB, so the weekly job generates its SBOM from the pinned lockfile instead of building the image.
-
-**Weekly tracking**
-
-A scheduled run every Monday 03:00 KST covers what PRs cannot:
-
-- re-scans the default branch for vulnerabilities that landed earlier
-- builds `api`, `web`, and `kordoc` images, scans OS and application packages, and publishes **CycloneDX SBOMs**
-- scans the **full git history** for secrets with gitleaks
-- records OS package CVEs in the report; only critical **application** packages block the scheduled run
-
-**What this does not cover**
-
-- **Known vulnerabilities only.** Authorization bypasses, trust-boundary mistakes, and other logic flaws need SAST and human security review. This is a complement, not a replacement.
-- **P2/P3 are report-only.** They appear in the report and Job Summary but do not fail the build. The policy is in [docs/security-ci.md](docs/security-ci.md).
-- **Base-image CVEs are a moving target.** They depend on upstream rebuilds, so the weekly job tracks them instead of blocking on every OS package.
-- **A leaked secret still needs rotation.** gitleaks scans history, but deleting a commit does not revoke a credential.
-- **Pins are deliberate.** Scanner and action updates are reviewed changes; the bump procedure is in the runbook.
-- **CI configuration is part of the trust boundary.** A PR that edits the workflow can change its own checks. Protecting `.github/**` is tracked in [#4](https://github.com/baryonlabs/baryon-ax/issues/4).
-- This is a **baseline, not a security certification.**
-
-The item-by-item improvement backlog is in issues [#1](https://github.com/baryonlabs/baryon-ax/issues/1) (lockfiles), [#2](https://github.com/baryonlabs/baryon-ax/issues/2) (required check), [#3](https://github.com/baryonlabs/baryon-ax/issues/3) (weekly and image scans), [#4](https://github.com/baryonlabs/baryon-ax/issues/4) (CI trust boundary), and [#5](https://github.com/baryonlabs/baryon-ax/issues/5) (expiring allowlist).
-
-**Runbook:** [docs/security-ci.md](docs/security-ci.md) · **Production hardening:** [docs/security.md](docs/security.md)
-
-### Production hardening
-
-This is a reference implementation, not a security certification. The development identity headers, local JSON files, and JSONL audit mirror are development conveniences. The full-stack profile adds PostgreSQL, Qdrant, Redis, Langfuse, and Mem0, but OIDC/JWT, security headers, and a complete retention policy are still required for production. Follow [docs/security.md](docs/security.md) before exposing a deployment to users or confidential data.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
-
-> 🔐 Every pull request runs [security-sweep](https://github.com/baryonlabs/security-sweep) — OSV-verified CVEs, KEV/EPSS, secrets, and configuration — and **P0/P1 findings block the merge**.
+[MIT](LICENSE) © Baryon AX contributors. 사용한 오픈소스 구성 요소와 라이선스는 [docs/open-source.md](docs/open-source.md)와 [홈페이지](https://baryon-ax.baryon.ai/open-source/)에 있습니다.
