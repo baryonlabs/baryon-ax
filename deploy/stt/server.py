@@ -1,10 +1,11 @@
-"""Baryon AX speech-to-text sidecar (sherpa-onnx, fully offline).
+"""Baryon AX voice sidecar: speech-to-text and text-to-speech (sherpa-onnx, fully offline).
 
 Endpoints (OpenAI-compatible where it matters):
     GET  /health
     GET  /v1/models                       catalog with installed / downloading state
     POST /v1/models/{id}/download         fetch and unpack a model in the background
     POST /v1/audio/transcriptions         multipart: file (16 kHz+ mono WAV), model, language
+    POST /v1/audio/speech                 JSON: input, model, voice, language, speed -> audio/wav
 
 The Baryon AX API is the only intended client: it authenticates users, audits the
 request and never stores audio. Set STT_API_KEY so only the API can call this
@@ -13,6 +14,7 @@ service.
 Environment:
     STT_MODEL_DIR      where models are unpacked (default /models)
     STT_DEFAULT_MODEL  model used when a request names none (default sensevoice-ko)
+    TTS_DEFAULT_MODEL  speech model used when a request names none (default supertonic-3)
     STT_API_KEY        bearer key required on every endpoint except /health
     STT_THREADS        decoding threads per request (default 2)
     STT_MAX_SECONDS    longest accepted audio (default 120)
@@ -36,9 +38,11 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Response, UploadFile
+from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
-from catalog import CATALOG, DEFAULT_MODEL, ModelSpec
+from catalog import CATALOG, DEFAULT_MODEL, DEFAULT_TTS_MODEL, ModelSpec
 
 logger = logging.getLogger("baryon-stt")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -54,6 +58,9 @@ app = FastAPI(title="Baryon AX STT", docs_url=None, redoc_url=None, openapi_url=
 _recognizers: dict[str, Any] = {}
 _load_lock = threading.Lock()
 _downloads: dict[str, dict[str, Any]] = {}
+_synthesizers: dict[str, Any] = {}
+_tts_locks: dict[str, threading.Lock] = {}
+MAX_SPEECH_CHARS = 600
 
 
 def require_key(authorization: str | None) -> None:
@@ -128,7 +135,7 @@ def describe(spec: ModelSpec) -> dict:
     state = _downloads.get(spec.id, {})
     status = "installed" if installed(spec) else state.get("status", "available")
     return {
-        "id": spec.id, "name": spec.name, "size_mb": spec.size_mb, "languages": list(spec.languages),
+        "id": spec.id, "name": spec.name, "task": spec.task, "size_mb": spec.size_mb, "languages": list(spec.languages),
         "badges": list(spec.badges), "license": spec.license, "notes": spec.notes,
         "status": status, "progress": state.get("progress"), "error": state.get("error") or None,
     }
@@ -138,7 +145,8 @@ def describe(spec: ModelSpec) -> dict:
 async def models(authorization: str | None = Header(None)) -> dict:
     require_key(authorization)
     default = os.getenv("STT_DEFAULT_MODEL", DEFAULT_MODEL)
-    return {"object": "list", "default": default, "data": [describe(spec) for spec in CATALOG.values()]}
+    return {"object": "list", "default": default, "default_tts": os.getenv("TTS_DEFAULT_MODEL", DEFAULT_TTS_MODEL),
+            "data": [describe(spec) for spec in CATALOG.values()]}
 
 
 # --- recognition -----------------------------------------------------------------------
@@ -244,6 +252,82 @@ def transcribe(spec: ModelSpec, samples: np.ndarray, rate: int, language: str) -
     return {"text": text, "language": detected}
 
 
+def installed_spec(model_id: str, task: str) -> ModelSpec:
+    spec = CATALOG.get(model_id)
+    if not spec or spec.task != task:
+        raise HTTPException(404, f"unknown {task} model {model_id}")
+    if not installed(spec):
+        raise HTTPException(409, f"model {model_id} is not installed")
+    return spec
+
+
+# --- text-to-speech -------------------------------------------------------------------
+
+def load_tts(spec: ModelSpec):
+    with _load_lock:
+        if spec.id in _synthesizers:
+            return _synthesizers[spec.id]
+        import sherpa_onnx
+
+        base = model_path(spec)
+        f = {role: str(base / name) for role, name in spec.files.items()}
+        if spec.kind != "supertonic":
+            raise RuntimeError(f"unsupported speech model kind {spec.kind}")
+        config = sherpa_onnx.OfflineTtsConfig(model=sherpa_onnx.OfflineTtsModelConfig(
+            supertonic=sherpa_onnx.OfflineTtsSupertonicModelConfig(**f), num_threads=THREADS, provider="cpu"))
+        _synthesizers[spec.id] = sherpa_onnx.OfflineTts(config)
+        _tts_locks[spec.id] = threading.Lock()
+        return _synthesizers[spec.id]
+
+
+def to_wav(samples, rate: int) -> bytes:
+    pcm = (np.clip(np.asarray(samples, dtype=np.float32), -1.0, 1.0) * 32767).astype("<i2")
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(pcm.tobytes())
+    return buffer.getvalue()
+
+
+def synthesize(spec: ModelSpec, text: str, voice: int, language: str, speed: float) -> tuple[bytes, float]:
+    import sherpa_onnx
+
+    tts = load_tts(spec)
+    config = sherpa_onnx.GenerationConfig()
+    config.sid = voice
+    config.speed = speed
+    config.num_steps = int(spec.options.get("num_steps", "8"))
+    config.extra = {"lang": language}  # assign the dict: item assignment on .extra edits a copy and is lost
+    with _tts_locks[spec.id]:  # one generation per model at a time; each takes well under a second
+        audio = tts.generate(text, config)
+    return to_wav(audio.samples, audio.sample_rate), len(audio.samples) / audio.sample_rate
+
+
+class SpeechRequest(BaseModel):
+    input: str = Field(min_length=1, max_length=MAX_SPEECH_CHARS)
+    model: str = ""
+    voice: int = Field(default=0, ge=0, le=9)
+    language: str = Field(default="ko", pattern=r"^[a-z]{2,3}$")
+    speed: float = Field(default=1.0, ge=0.5, le=2.0)
+
+
+@app.post("/v1/audio/speech")
+async def speech(request: SpeechRequest, authorization: str | None = Header(None)) -> Response:
+    require_key(authorization)
+    spec = installed_spec(request.model or os.getenv("TTS_DEFAULT_MODEL", DEFAULT_TTS_MODEL), "tts")
+    text = request.input.strip()
+    if not text:
+        raise HTTPException(400, "input is empty")
+    started = time.perf_counter()
+    audio, seconds = await run_in_threadpool(synthesize, spec, text, request.voice, request.language, request.speed)
+    return Response(audio, media_type="audio/wav", headers={
+        "X-Model": spec.id, "X-Audio-Duration-Ms": str(int(seconds * 1000)),
+        "X-Processing-Ms": str(int((time.perf_counter() - started) * 1000)),
+    })
+
+
 @app.post("/v1/audio/transcriptions")
 async def transcriptions(
     file: UploadFile = File(...),
@@ -253,11 +337,7 @@ async def transcriptions(
 ) -> dict:
     require_key(authorization)
     model_id = model or os.getenv("STT_DEFAULT_MODEL", DEFAULT_MODEL)
-    spec = CATALOG.get(model_id)
-    if not spec:
-        raise HTTPException(404, f"unknown model {model_id}")
-    if not installed(spec):
-        raise HTTPException(409, f"model {model_id} is not installed")
+    spec = installed_spec(model_id, "stt")
     if language and not re.fullmatch(r"[a-z]{2,3}", language):
         raise HTTPException(400, "language must be an ISO code such as ko or en")
     data = await file.read(MAX_BYTES + 1)
@@ -265,7 +345,7 @@ async def transcriptions(
         raise HTTPException(413, "audio too large")
     samples, rate = read_wav(data)
     started = time.perf_counter()
-    result = transcribe(spec, samples, rate, language)
+    result = await run_in_threadpool(transcribe, spec, samples, rate, language)  # keep the event loop free
     return {
         **result, "model": model_id,
         "duration_ms": int(len(samples) / rate * 1000),
@@ -276,4 +356,5 @@ async def transcriptions(
 @app.get("/health")
 async def health() -> dict:
     return {"ok": True, "installed": [spec.id for spec in CATALOG.values() if installed(spec)],
-            "default": os.getenv("STT_DEFAULT_MODEL", DEFAULT_MODEL)}
+            "default": os.getenv("STT_DEFAULT_MODEL", DEFAULT_MODEL),
+            "default_tts": os.getenv("TTS_DEFAULT_MODEL", DEFAULT_TTS_MODEL)}

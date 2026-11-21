@@ -113,6 +113,18 @@ class ChatRequest(BaseModel):
     # The composer sends only tool IDs from the user's explicit selection.  The
     # server resolves these again so a client cannot grant itself a connector.
     selected_tool_ids: list[str] = Field(default_factory=list, max_length=12)
+    # "voice": the answer is spoken in live conversation, so keep it short and plain.
+    response_style: Literal["text", "voice"] = "text"
+
+
+VOICE_STYLE_HINTS = {
+    "ko": "[음성 대화] 이 답변은 음성으로 읽힙니다. 핵심만 2~3문장의 자연스러운 구어체로 답하세요. "
+          "마크다운, 목록, 표, 코드, 이모지, 출처 번호를 쓰지 마세요. 근거가 있으면 문서 이름을 말로 언급하세요. "
+          "더 자세한 내용이 필요하면 짧게 되물으세요.",
+    "en": "[Voice conversation] This answer is read aloud. Reply in 2-3 short, natural spoken sentences. "
+          "No Markdown, lists, tables, code, emoji or citation numbers; name the source document in words if relevant. "
+          "Ask a short follow-up question if more detail is needed.",
+}
 
 
 class OntologyPackRequest(BaseModel):
@@ -1123,7 +1135,7 @@ class ModelAdapter:
         if override:
             memory_section = f"[사용자 기억]\n{memory_block}\n\n" if request.locale == "ko" else f"[User memory]\n{memory_block}\n\n"
             context_section = f"[검색 근거]\n{context_block}" if request.locale == "ko" else f"[Retrieved context]\n{context_block}"
-            return f"{override}\n\n{memory_section}{context_section}"
+            return f"{override}\n\n{memory_section}{context_section}" + self.style_hint(request)
         profile = self.prompt_profile(request)
         base = BASE_SYSTEM_PROMPTS[request.locale]
         hint = PROFILE_HINTS[profile][request.locale]
@@ -1150,7 +1162,11 @@ class ModelAdapter:
             roles=", ".join(sorted(principal.roles)) if principal else "unknown",
             memories=memory_block,
             context=context_block,
-        ) + tool_instruction + (f"\n\n{hint}" if hint else "")
+        ) + tool_instruction + (f"\n\n{hint}" if hint else "") + self.style_hint(request)
+
+    @staticmethod
+    def style_hint(request: ChatRequest) -> str:
+        return f"\n\n{VOICE_STYLE_HINTS[request.locale]}" if request.response_style == "voice" else ""
 
     def payload(self, request: ChatRequest, context: list[dict], stream: bool, principal: Principal | None = None, memories: list[dict] | None = None) -> dict:
         messages = [message.model_dump() for message in request.messages]
@@ -3248,7 +3264,7 @@ async def reindex_documents(
 
 stt_config = voice.SttConfig.from_env()
 _MODEL_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
-_MODEL_FIELDS = ("id", "name", "size_mb", "languages", "badges", "license", "notes", "status", "progress", "error")
+_MODEL_FIELDS = ("id", "name", "task", "size_mb", "languages", "badges", "license", "notes", "status", "progress", "error")
 
 
 def voice_operator(principal: Principal) -> bool:
@@ -3276,7 +3292,8 @@ async def audio_models(
     except (voice.SttUnavailable, voice.SttRejected) as error:
         return {**base, "reachable": False, "error": str(error)}
     models = [{key: item.get(key) for key in _MODEL_FIELDS} for item in data.get("data", []) if isinstance(item, dict)]
-    return {**base, "reachable": True, "default": stt_config.default_model or data.get("default"), "models": models}
+    return {**base, "reachable": True, "default": stt_config.default_model or data.get("default"),
+            "default_tts": data.get("default_tts"), "models": models}
 
 
 @app.post("/v1/admin/audio/models/{model_id}/download")
@@ -3336,6 +3353,46 @@ async def transcribe_audio(
         "duration_ms": result.get("duration_ms"), "processing_ms": result.get("processing_ms"),
         "command": command.as_dict(text) if command else None, "trace_id": trace_id,
     }
+
+
+class SpeechBody(BaseModel):
+    input: str = Field(min_length=1, max_length=2000)
+    voice: int = Field(default=0, ge=0, le=9)
+    speed: float = Field(default=1.0, ge=0.5, le=2.0)
+    locale: Literal["ko", "en"] = "ko"
+    model: str = ""
+
+
+@app.post("/v1/audio/speech")
+async def speak_text(
+    body: SpeechBody,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> Response:
+    """Read an answer aloud with the on-prem speech model (live conversation).
+
+    The text is an answer this user already received from chat, so it is neither
+    audited again nor stored; the per-user rate limit still applies."""
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    rate_limiter.check(f"tts:{principal.organization_id}:{principal.user_id}")
+    if not stt_config.enabled:
+        raise HTTPException(503, "speech is not configured (STT_BASE_URL)")
+    if body.model and not _MODEL_ID.fullmatch(body.model):
+        raise HTTPException(400, "invalid model id")
+    text = voice.speakable(body.input)[:600]
+    if not text:
+        raise HTTPException(400, "nothing to speak")
+    try:
+        response = await voice.stt_send(
+            stt_config, "POST", "/v1/audio/speech", timeout=60.0,
+            json={"input": text, "voice": body.voice, "speed": body.speed, "language": body.locale, "model": body.model},
+        )
+    except (voice.SttUnavailable, voice.SttRejected) as error:
+        raise stt_http_error(error) from error
+    return Response(response.content, media_type="audio/wav", headers={
+        "X-Audio-Duration-Ms": response.headers.get("x-audio-duration-ms", ""),
+        "X-Processing-Ms": response.headers.get("x-processing-ms", ""),
+        "Cache-Control": "no-store",
+    })
 
 
 # --------------------------------------------------------------------------- platform: tenants

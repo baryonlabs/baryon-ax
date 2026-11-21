@@ -64,6 +64,7 @@ def api(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "MODEL_DIR", tmp_path)
     server._recognizers.clear()
     server._downloads.clear()
+    server._synthesizers.clear()
     return TestClient(server.app)
 
 
@@ -193,3 +194,58 @@ def test_sensevoice_gets_one_recognizer_per_language() -> None:
     assert server.recognizer_key(spec, "ko") == "sensevoice-ko:ko"
     assert server.recognizer_key(spec, "") == server.recognizer_key(spec, "de") == "sensevoice-ko:auto"
     assert server.recognizer_key(CATALOG["whisper-turbo"], "ko") == "whisper-turbo"
+
+
+class FakeAudio:
+    def __init__(self, seconds: float, rate: int = 44100) -> None:
+        self.samples = np.zeros(int(seconds * rate), dtype=np.float32)
+        self.sample_rate = rate
+
+
+class FakeTts:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int, float, str, int]] = []
+
+    def generate(self, text, config):
+        self.calls.append((text, config.sid, config.speed, config.extra["lang"], config.num_steps))
+        return FakeAudio(0.5)
+
+
+def install_tts(tmp_path) -> FakeTts:
+    import threading
+
+    spec = CATALOG["supertonic-3"]
+    folder = tmp_path / spec.directory
+    folder.mkdir(parents=True)
+    for name in spec.files.values():
+        (folder / name).write_bytes(b"x")
+    fake = FakeTts()
+    server._synthesizers[spec.id] = fake
+    server._tts_locks[spec.id] = threading.Lock()
+    return fake
+
+
+def test_speech_returns_wav_with_voice_options(api, tmp_path) -> None:
+    fake = install_tts(tmp_path)
+    response = api.post("/v1/audio/speech", headers=AUTH, json={"input": " 안녕하세요. ", "voice": 3, "speed": 1.2, "language": "ko"})
+    assert response.status_code == 200 and response.headers["content-type"] == "audio/wav"
+    assert response.headers["x-audio-duration-ms"] == "500"
+    with wave.open(io.BytesIO(response.content)) as w:
+        assert (w.getnchannels(), w.getsampwidth(), w.getframerate()) == (1, 2, 44100)
+    (text, voice, speed, language, steps), = fake.calls
+    assert (text, voice, language, steps) == ("안녕하세요.", 3, "ko", 8) and speed == pytest.approx(1.2)
+
+
+def test_speech_validation_and_model_kinds(api, tmp_path) -> None:
+    assert api.post("/v1/audio/speech", json={"input": "x"}).status_code == 401
+    assert api.post("/v1/audio/speech", headers=AUTH, json={"input": "x"}).status_code == 409  # not installed
+    install_tts(tmp_path)
+    install(tmp_path, "sensevoice-ko", "x")
+    assert api.post("/v1/audio/speech", headers=AUTH, json={"input": "x", "model": "sensevoice-ko"}).status_code == 404
+    assert api.post("/v1/audio/transcriptions", headers=AUTH, files={"file": ("a.wav", wav())},
+                    data={"model": "supertonic-3"}).status_code == 404
+    assert api.post("/v1/audio/speech", headers=AUTH, json={"input": "x" * 601}).status_code == 422
+    assert api.post("/v1/audio/speech", headers=AUTH, json={"input": "x", "voice": 10}).status_code == 422
+    assert api.post("/v1/audio/speech", headers=AUTH, json={"input": "x", "language": "ko;"}).status_code == 422
+    tasks = {m["id"]: m["task"] for m in api.get("/v1/models", headers=AUTH).json()["data"]}
+    assert tasks["supertonic-3"] == "tts" and tasks["sensevoice-ko"] == "stt"

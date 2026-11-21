@@ -1,4 +1,4 @@
-import { Download, Loader2, Mic, MicOff, Settings2, Square } from "lucide-react";
+import { AudioLines, Download, Loader2, Mic, MicOff, Settings2, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { recordingToWav } from "./audio";
 
@@ -6,7 +6,7 @@ export type VoiceCommand = { action: "new_chat" | "send" | "clear" | "stop" | "o
 type VoiceMode = "auto" | "hold" | "toggle";
 type VoicePrefs = { enabled: boolean; mode: VoiceMode; model: string; commands: boolean };
 type VoiceModel = {
-  id: string; name: string; size_mb: number; languages: string[]; badges: string[]; license: string;
+  id: string; name: string; task?: "stt" | "tts"; size_mb: number; languages: string[]; badges: string[]; license: string;
   notes: string; status: "installed" | "available" | "downloading" | "failed"; progress: number | null; error: string | null;
 };
 type ModelsResponse = { enabled: boolean; reachable: boolean; can_manage: boolean; default: string | null; models: VoiceModel[]; error?: string };
@@ -31,6 +31,8 @@ const TEXT = {
     unavailable: "음성 인식 서버가 설정되지 않았습니다.", unreachable: "음성 인식 서버에 연결할 수 없습니다.",
     micDenied: "마이크 권한이 필요합니다.", failedToTranscribe: "받아쓰지 못했습니다.", empty: "말소리를 알아듣지 못했습니다.",
     adminOnly: "모델 설치는 관리자만 할 수 있습니다.",
+    live: "라이브 대화 — 말로 묻고 음성으로 답을 듣습니다", liveNeedsTts: "라이브 대화에는 음성 합성 모델(Supertonic 3) 설치가 필요합니다.",
+    speechModels: "음성 합성 (라이브 대화)",
   },
   en: {
     start: "Dictate", stop: "Stop recording", recording: (s: number) => `Recording ${s}s`, transcribing: "Transcribing…",
@@ -45,6 +47,8 @@ const TEXT = {
     unavailable: "No speech-to-text server is configured.", unreachable: "Cannot reach the speech-to-text server.",
     micDenied: "Microphone permission is required.", failedToTranscribe: "Could not transcribe.", empty: "No speech was recognized.",
     adminOnly: "Only operators can install models.",
+    live: "Live conversation — ask by voice and hear the answer", liveNeedsTts: "Live conversation needs a speech model (Supertonic 3) installed.",
+    speechModels: "Speech synthesis (live conversation)",
   },
 };
 
@@ -56,9 +60,10 @@ function loadPrefs(): VoicePrefs {
   }
 }
 
-export default function VoiceInput({ locale, request, disabled, onTranscript, onCommand }: {
+export default function VoiceInput({ locale, request, disabled, onTranscript, onCommand, onLive, liveActive }: {
   locale: "ko" | "en"; request: Request; disabled?: boolean;
   onTranscript: (text: string) => void; onCommand: (command: VoiceCommand) => void;
+  onLive?: () => void; liveActive?: boolean;
 }) {
   const t = TEXT[locale];
   const [prefs, setPrefs] = useState<VoicePrefs>(loadPrefs);
@@ -93,7 +98,7 @@ export default function VoiceInput({ locale, request, disabled, onTranscript, on
     return () => window.clearInterval(id);
   }, [catalog, loadCatalog]);
 
-  const ready = Boolean(catalog?.enabled && catalog.reachable) && prefs.enabled && !disabled;
+  const ready = Boolean(catalog?.enabled && catalog.reachable) && prefs.enabled && !disabled && !liveActive;
 
   const transcribe = useCallback(async (blob: Blob) => {
     setState("transcribing");
@@ -200,7 +205,25 @@ export default function VoiceInput({ locale, request, disabled, onTranscript, on
   }
 
   const badge = (name: string) => name === "recommended" ? t.recommended : name === "fast" ? t.fast : name === "english" ? t.english : name;
-  const installed = catalog?.models.filter(model => model.status === "installed") ?? [];
+  const sttModels = catalog?.models.filter(model => (model.task ?? "stt") === "stt") ?? [];
+  const ttsModels = catalog?.models.filter(model => model.task === "tts") ?? [];
+  const installed = sttModels.filter(model => model.status === "installed");
+  const liveReady = Boolean(catalog?.reachable) && installed.length > 0 && ttsModels.some(model => model.status === "installed");
+  const modelItem = (model: VoiceModel, selectable: boolean) => <li key={model.id}>
+    <label>
+      {selectable && <input type="radio" name="voice-model" disabled={model.status !== "installed"} checked={prefs.model === model.id}
+        onChange={() => savePrefs({ model: model.id })}/>}
+      <span className="voice-model-text">
+        <span className="voice-model-name">{model.name}{model.badges.map(name => <span className={`voice-badge ${name}`} key={name}>{badge(name)}</span>)}</span>
+        <small>{model.size_mb} MB · {model.languages.join(", ")}</small>
+      </span>
+    </label>
+    {model.status === "installed" ? null
+      : model.status === "downloading" ? <small>{t.installing}{model.progress != null ? ` ${Math.round(model.progress * 100)}%` : ""}</small>
+      : catalog?.can_manage ? <button type="button" className="ghost small" onClick={() => void install(model)} aria-label={`${t.install} ${model.name}`}>
+          <Download size={13}/>{model.status === "failed" ? t.failed : t.install}</button>
+      : <small>{t.notInstalled}</small>}
+  </li>;
   const title = !catalog?.enabled ? t.unavailable : !catalog.reachable ? t.unreachable
     : state === "recording" ? t.stop : t.start;
 
@@ -212,6 +235,10 @@ export default function VoiceInput({ locale, request, disabled, onTranscript, on
         onKeyDown={(event: ReactKeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (state === "recording") stop(); else void start(); } }}>
         {state === "transcribing" ? <Loader2 size={17} className="spin"/> : state === "recording" ? <Square size={15}/> : ready ? <Mic size={17}/> : <MicOff size={17}/>}
       </button>
+      {onLive && <button type="button" className={`voice-live ${liveActive ? "active" : ""}`} disabled={!liveReady || liveActive || disabled}
+        aria-label={liveReady ? t.live : t.liveNeedsTts} title={liveReady ? t.live : t.liveNeedsTts} onClick={onLive}>
+        <AudioLines size={17}/>
+      </button>}
       <button type="button" className="voice-settings-toggle" aria-label={t.settings} title={t.settings}
         aria-expanded={panelOpen} onClick={() => { setPanelOpen(open => !open); void loadCatalog(); }}>
         <Settings2 size={14}/>
@@ -247,24 +274,15 @@ export default function VoiceInput({ locale, request, disabled, onTranscript, on
               <label><input type="radio" name="voice-model" checked={!prefs.model} onChange={() => savePrefs({ model: "" })}/>
                 {t.serverDefault}{catalog.default ? ` (${catalog.default})` : ""}</label>
             </li>
-            {catalog.models.map(model => <li key={model.id}>
-              <label>
-                <input type="radio" name="voice-model" disabled={model.status !== "installed"} checked={prefs.model === model.id}
-                  onChange={() => savePrefs({ model: model.id })}/>
-                <span className="voice-model-text">
-                  <span className="voice-model-name">{model.name}{model.badges.map(name => <span className={`voice-badge ${name}`} key={name}>{badge(name)}</span>)}</span>
-                  <small>{model.size_mb} MB · {model.languages.join(", ")}</small>
-                </span>
-              </label>
-              {model.status === "installed" ? null
-                : model.status === "downloading" ? <small>{t.installing}{model.progress != null ? ` ${Math.round(model.progress * 100)}%` : ""}</small>
-                : catalog.can_manage ? <button type="button" className="ghost small" onClick={() => void install(model)} aria-label={`${t.install} ${model.name}`}>
-                    <Download size={13}/>{model.status === "failed" ? t.failed : t.install}</button>
-                : <small>{t.notInstalled}</small>}
-            </li>)}
+            {sttModels.map(model => modelItem(model, true))}
           </ul>}
           {catalog?.reachable && !catalog.can_manage && installed.length === 0 && <small>{t.adminOnly}</small>}
         </div>
+        {catalog?.reachable && ttsModels.length > 0 && <div className="voice-row column">
+          <strong>{t.speechModels}</strong>
+          <ul className="voice-models">{ttsModels.map(model => modelItem(model, false))}</ul>
+          {!liveReady && <small>{t.liveNeedsTts}</small>}
+        </div>}
         <p className="voice-privacy">{t.privacy}</p>
       </div>}
     </div>
