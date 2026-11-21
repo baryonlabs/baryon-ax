@@ -52,6 +52,20 @@ MAX_OUTPUT_TOKENS = int(os.getenv("MAX_OUTPUT_TOKENS", "2048"))
 app = FastAPI(title="Baryon AX Bedrock gateway", docs_url=None, redoc_url=None, openapi_url=None)
 _client = None
 
+# Counters for /v1/gateway/status (same shape as the operations dashboard's /api/gateway).
+STATS: dict[str, Any] = {"requests": 0, "failed": 0, "ok": 0, "fail": 0, "last_error": "", "last_ok_at": None}
+
+
+def record(ok: bool, error: str = "") -> None:
+    STATS["requests"] += 1
+    if ok:
+        STATS["ok"] += 1
+        STATS["last_ok_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    else:
+        STATS["fail"] += 1
+        STATS["failed"] += 1
+        STATS["last_error"] = error[:200]
+
 
 def bedrock():
     """Lazily created so tests can replace it."""
@@ -155,7 +169,10 @@ async def chat_completions(request: Request, authorization: str | None = Header(
         try:
             response = bedrock().converse(**kwargs)
         except (ClientError, BotoCoreError) as error:
-            raise bedrock_error(error) from error
+            mapped = bedrock_error(error)
+            record(False, str(mapped.detail))
+            raise mapped from error
+        record(True)
         text = "".join(block.get("text", "") for block in response.get("output", {}).get("message", {}).get("content", []))
         return {
             "id": completion_id, "object": "chat.completion", "created": created, "model": model,
@@ -167,7 +184,10 @@ async def chat_completions(request: Request, authorization: str | None = Header(
     try:
         response = bedrock().converse_stream(**kwargs)
     except (ClientError, BotoCoreError) as error:
-        raise bedrock_error(error) from error
+        mapped = bedrock_error(error)
+        record(False, str(mapped.detail))
+        raise mapped from error
+    record(True)
     include_usage = bool((body.get("stream_options") or {}).get("include_usage"))
 
     def events() -> Iterator[str]:
@@ -256,6 +276,26 @@ async def models(authorization: str | None = Header(None)):
         {"id": CHAT_ALIAS, "object": "model", "owned_by": "bedrock", "bedrock_model_id": CHAT_MODEL_ID},
         {"id": EMBEDDING_ALIAS, "object": "model", "owned_by": "bedrock", "bedrock_model_id": EMBEDDING_MODEL_ID},
     ]}
+
+
+@app.get("/v1/gateway/status")
+async def gateway_status(authorization: str | None = Header(None)):
+    """Fallback chain and live counters, in the contract Baryon AX shows in Settings.
+
+    Bedrock is the only backend here; Bedrock itself retries and, with an inference
+    profile, routes across regions. No key value is ever included.
+    """
+    require_key(authorization)
+    return {
+        "enabled": True, "reachable": True, "error": "",
+        "endpoints": [{"label": "service-connect", "url": "http://llm-gateway:4000/v1"}],
+        "models": {CHAT_ALIAS: [{"provider": "bedrock", "model": CHAT_MODEL_ID}],
+                   EMBEDDING_ALIAS: [{"provider": "bedrock", "model": EMBEDDING_MODEL_ID}]},
+        "providers": [{"name": "bedrock", "up": STATS["fail"] == 0 or STATS["last_ok_at"] is not None,
+                       "ok": STATS["ok"], "fail": STATS["fail"], "lastError": STATS["last_error"],
+                       "lastOkAt": STATS["last_ok_at"], "keyRequired": False, "keySet": False}],
+        "stats": {"requests": STATS["requests"], "served": {"bedrock": STATS["ok"]}, "fallbacks": 0, "failed": STATS["failed"]},
+    }
 
 
 @app.get("/health")

@@ -127,3 +127,18 @@ def test_rejects_bad_input(fake) -> None:
     api = TestClient(gateway.app)
     assert api.post("/v1/chat/completions", json={"messages": []}, headers=AUTH).status_code == 400
     assert api.post("/v1/embeddings", json={"input": [1, 2]}, headers=AUTH).status_code == 400
+
+
+def test_status_reports_counters_without_secrets(fake) -> None:
+    api = TestClient(gateway.app)
+    assert api.get("/v1/gateway/status").status_code == 401
+    api.post("/v1/chat/completions", json={"messages": [{"role": "user", "content": "x"}]}, headers=AUTH)
+    fake.fail = ClientError({"Error": {"Code": "AccessDeniedException", "Message": "no access"}}, "Converse")
+    api.post("/v1/chat/completions", json={"messages": [{"role": "user", "content": "x"}]}, headers=AUTH)
+    status = api.get("/v1/gateway/status", headers=AUTH)
+    assert status.status_code == 200 and KEY not in status.text
+    body = status.json()
+    provider = body["providers"][0]
+    assert provider["name"] == "bedrock" and provider["ok"] >= 1 and provider["fail"] >= 1
+    assert "AccessDeniedException" in provider["lastError"]
+    assert body["models"]["baryon-chat"][0]["model"] == gateway.CHAT_MODEL_ID

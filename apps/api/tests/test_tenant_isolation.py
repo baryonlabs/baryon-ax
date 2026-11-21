@@ -354,6 +354,7 @@ def test_tacit_feedback_audit_and_settings_are_isolated(two_tenants) -> None:
     assert settings_b["system"]["host"]["hostname"] == "shared"
     assert settings_b["system"]["storage"]["documents_count"] == settings_b["counts"]["documents"]
     assert settings_b["links"] == {}
+    assert settings_b["gateway"] is None  # shared model gateway details are for operators only
     assert settings_b["tenant"]["id"] == tenant_b
 
 

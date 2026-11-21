@@ -258,6 +258,8 @@ resource "aws_ecs_task_definition" "api" {
         MODEL_BASE_URL                = "http://llm-gateway:4000/v1"
         MODEL_NAME                    = "baryon-chat"
         MODEL_PROMPT_PROFILE          = "generic"
+        MODEL_GATEWAY_STATUS_URL      = "http://llm-gateway:4000/v1/gateway/status"
+        MODEL_GATEWAY_STATUS_AUTH     = "bearer"
         EMBEDDING_PROVIDER            = "openai"
         EMBEDDING_BASE_URL            = "http://llm-gateway:4000/v1"
         EMBEDDING_MODEL               = "baryon-embed"

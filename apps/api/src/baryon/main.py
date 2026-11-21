@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel, Field
 from starlette.datastructures import Headers
 
-from . import __version__
+from . import __version__, gateway_status
 from .auth import PLATFORM_ADMIN, OIDCConfig, OIDCAuthMiddleware, current_acting_service
 from .connectors import CONNECTOR_BY_ID, CONNECTORS, TOOLS, connector_payload, decide_tool, get_connector, get_tool, search_tools, tool_payload
 from .ingest import Acl as IngestAcl
@@ -1550,12 +1550,17 @@ class SystemMonitor:
 
 
 def dashboard_links() -> dict:
+    """Operator links. A tool's link is shown only when that tool is configured, so
+    the settings page never offers a button that cannot open."""
+    def when(enabled: bool, env: str) -> str:
+        return os.getenv(env, "").strip() if enabled else ""
+
     return {
-        "qdrant": os.getenv("QDRANT_DASHBOARD_URL", ""),
-        "langfuse": os.getenv("LANGFUSE_DASHBOARD_URL", ""),
-        "model_server": os.getenv("MODEL_SERVER_URL", ""),
-        "pgadmin": os.getenv("PGADMIN_URL", ""),
-        "redis_insight": os.getenv("REDIS_INSIGHT_URL", ""),
+        "qdrant": when(bool(os.getenv("QDRANT_URL", "").strip()), "QDRANT_DASHBOARD_URL"),
+        "langfuse": when(os.getenv("LANGFUSE_ENABLED", "false").strip().lower() == "true", "LANGFUSE_DASHBOARD_URL"),
+        "model_server": os.getenv("MODEL_SERVER_URL", "").strip(),
+        "pgadmin": when(bool(os.getenv("DATABASE_URL", "").strip()), "PGADMIN_URL"),
+        "redis_insight": when(bool(os.getenv("REDIS_URL", "").strip()), "REDIS_INSIGHT_URL"),
         "langgraph": "https://github.com/langchain-ai/langgraph",
         "llamaindex": "https://github.com/run-llama/llama_index",
         "mem0": "https://github.com/mem0ai/mem0",
@@ -3175,8 +3180,16 @@ async def admin_settings(
         # every tenant at once; pooled tenants only see their own figures.
         "system": tenant_system_snapshot(principal) if tenancy.pooled else monitor.snapshot(documents, audit, vector, rate_limiter),
         "links": {} if tenancy.pooled else dashboard_links(),
+        # Gateway endpoints, backends and their errors describe shared infrastructure:
+        # operators only (single-tenant admins, or platform admins in pooled mode).
+        "gateway": await model_gateway_payload() if (not tenancy.pooled or "platform-admin" in principal.roles) else None,
         **({"tenant": tenant_settings_payload(principal)} if tenancy.pooled else {}),
     }
+
+
+async def model_gateway_payload() -> dict:
+    return {**gateway_status.connection_info(model_adapter.model, model_adapter.base_url or ""),
+            "status": await gateway_status.fetch_status()}
 
 
 def tenant_system_snapshot(principal: Principal) -> dict:
