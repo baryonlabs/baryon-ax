@@ -22,8 +22,9 @@ Slack ──(Socket Mode, outbound WS)── baryon_slack_bot.py ──HTTP─�
 
 ![Slack 스레드에서 @baryon 멘션 질문에 답변과 근거가 달리고, 멘션 없는 후속 질문에도 답하는 예시 화면](docs/slack-thread-example.svg)
 
-- Slack 사용자마다 `X-User-Id: slack:<USER_ID>` 로 요청하므로 감사 로그·지식 공백 기록이 사람별로 남습니다.
-- 문서 열람 권한은 `BARYON_ROLES`(기본 `member`)로 걸러집니다. 운영에서 OIDC를 켰다면 이 헤더를 넣어 주는 게이트웨이 뒤에 두거나 `BARYON_API_TOKEN`을 쓰세요.
+- Slack 사용자마다 `X-On-Behalf-Of: slack:<USER_ID>`로 요청하므로 감사 로그·지식 공백 기록이 사람별로 남고,
+  봇은 `acting_service`로 함께 기록됩니다([인증 — 서비스 계정 위임](#인증--서비스-계정-위임)).
+- 문서 열람 권한은 `BARYON_ROLES`(기본 `member`)로 걸러집니다. OIDC 운영에서는 서비스 계정의 역할이 상한입니다.
 - 스레드 대화는 `thread_id = slack:<채널>:<스레드 ts>` 로 묶여 baryon-ax 메모리·트레이스와 연결됩니다.
 
 ## AI 에이전트로 설치하기 (프롬프트)
@@ -101,13 +102,47 @@ python baryon_slack_bot.py
 |---|---|---|
 | `SLACK_BOT_TOKEN` / `SLACK_APP_TOKEN` | — | 위 1단계 토큰 |
 | `BARYON_API_URL` | `http://127.0.0.1:8000` | baryon-ax API |
-| `BARYON_ORGANIZATION_ID` | `local-org` | 문서가 속한 조직 |
+| `BARYON_ORGANIZATION_ID` | `local-org` | 문서가 속한 조직 (dev 모드 전용. OIDC에서는 토큰의 조직) |
 | `BARYON_ROLES` | `member` | Slack 사용자에게 줄 역할(문서 권한 필터) |
 | `BARYON_MODEL` | 서버 기본값 | 모델 지정 |
+| `BARYON_OIDC_TOKEN_URL` / `BARYON_OIDC_CLIENT_ID` / `BARYON_OIDC_CLIENT_SECRET` | — | 서비스 계정 client credentials. 넣으면 OIDC 모드 ([인증](#인증--서비스-계정-위임)) |
+| `BARYON_API_TOKEN` | — | client credentials 대신 쓸 고정 Bearer 토큰 |
 | `SLACK_SUBSCRIBE_THREADS` | `true` | 멘션된 스레드의 후속 질문 자동 응답 |
 | `SLACK_THREAD_TURNS` | `10` | 이력으로 보낼 스레드 메시지 수 |
 | `SLACK_MAX_SOURCES` | `4` | 표시할 근거 수 |
 | `SLACK_SHOW_SNIPPETS` | `true` | 근거 아래 인용문 표시 |
+
+## 인증 — 서비스 계정 위임
+
+봇은 Slack 사용자마다 baryon-ax 토큰을 따로 받지 않습니다. **서비스 계정 하나**로 인증하고, 요청마다 실제 사용자를
+`X-On-Behalf-Of`로 알려 줍니다([docs/auth-oidc.md 6절](../../docs/auth-oidc.md#6-서비스-계정-위임봇mcp-클라이언트)).
+
+| 호출 | 보내는 헤더 (`AUTH_MODE=oidc`) |
+|---|---|
+| Slack 사용자를 위한 호출(질문·근거 검색·답변 저장·등록) | `Authorization: Bearer <서비스 계정 토큰>`, `X-On-Behalf-Of: slack:<USER_ID>`, `X-On-Behalf-Of-Roles: <BARYON_ROLES>` |
+| 봇 자신의 호출(먼저 묻기 모드의 공백 조회·닫기) | `Authorization: Bearer <서비스 계정 토큰>`만 |
+
+- 조직은 토큰에서 정해지므로 OIDC 모드에서는 `X-Organization-Id`를 보내지 않습니다(`BARYON_ORGANIZATION_ID`는 dev 모드 전용).
+- 토큰은 client credentials로 받습니다. `BARYON_OIDC_TOKEN_URL`·`BARYON_OIDC_CLIENT_ID`·`BARYON_OIDC_CLIENT_SECRET`을 넣으면
+  `expires_in`보다 조금 일찍(최대 30초) 새로 받고, API가 401을 주면 새 토큰으로 **한 번만** 다시 시도합니다.
+  세 값이 없으면 `BARYON_API_TOKEN`(고정 토큰)을 그대로 보내고, 둘 다 없으면 dev 모드로 동작합니다.
+- 서비스 계정은 IdP에서 `baryon-service`(위임 허용)와 `baryon-member` 그룹에 넣습니다.
+  먼저 묻기 모드를 켤 때만 `baryon-admin`도 추가하세요(공백 조회·닫기가 관리자 API입니다).
+- 위임된 사용자의 역할은 서비스 계정 역할을 넘을 수 없습니다. `BARYON_ROLES`에 서비스 계정에 없는 역할을 넣으면 버려지고,
+  남는 역할이 없으면 403입니다.
+- API 쪽에서 `OIDC_DELEGATION_USER_PREFIXES=slack:`로 위임 대상 ID를 제한할 수 있습니다.
+
+감사 로그에는 실제 사용자와 봇이 함께 남습니다(`GET /v1/audit-events`).
+
+```json
+{"type": "chat.completed", "user_id": "slack:U123ABC", "organization_id": "local-org",
+ "acting_service": "service-account-baryon-slack-bot", "trace_id": "..."}
+```
+
+dev 모드(`AUTH_MODE=dev`, 토큰 없음)에서는 봇이 자기 신원 `X-User-Id: slack-bot`과 `X-Organization-Id`를 보내고,
+사용자를 위한 호출에는 `X-On-Behalf-Of`를 더합니다. API가 이를 운영과 같은 모양(`user_id=slack:<USER_ID>`,
+`acting_service=slack-bot`)으로 기록하므로 운영 전에 로컬에서 감사 형태를 확인할 수 있습니다.
+봇 자신의 호출은 `X-Roles: <PROACTIVE_SERVICE_ROLES>`(기본 `admin`)로 보냅니다.
 
 ## 먼저 묻기 모드 (proactive)
 
@@ -125,7 +160,8 @@ python baryon_slack_bot.py
 - 등록은 답을 쓴 사람만 할 수 있습니다(baryon-ax 암묵지 API가 작성자를 확인).
 - 이미 물어본 공백은 `PROACTIVE_STATE_PATH` JSON에 남아 재시작해도 다시 묻지 않습니다.
 - 버튼을 쓰려면 앱의 **Interactivity**를 켜야 합니다(`manifest.yml`에 반영, Socket Mode라 Request URL 불필요).
-- 공백 목록 조회·닫기는 관리자 API라 봇은 이때만 `PROACTIVE_SERVICE_ROLES`(기본 `admin`)로 호출합니다.
+- 공백 목록 조회·닫기는 관리자 API라 봇이 자기 신원으로 호출합니다. OIDC에서는 서비스 계정에 `baryon-admin`이 있어야 하고,
+  dev 모드에서는 `PROACTIVE_SERVICE_ROLES`(기본 `admin`)를 `X-Roles`로 보냅니다. 답변 저장·등록은 답한 사람으로 위임해 호출합니다.
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
@@ -146,7 +182,8 @@ pip install pytest && python -m pytest -q tests
 ```
 
 Slack·API 없이 가짜 WebClient와 `httpx.MockTransport`로 멘션 → 준비 중 → 답변/근거 교체, 스레드 이력,
-권한 없는 경우의 대체 동작, 구독 스레드 판별, API 오류 처리를 검증합니다.
+권한 없는 경우의 대체 동작, 구독 스레드 판별, API 오류 처리를 검증합니다. `tests/test_auth.py`는 사용자 위임과 봇 자신의 호출
+헤더, OIDC 모드에서 `X-Organization-Id`를 보내지 않는지, 토큰 캐시·만료 전 갱신·401 시 한 번 재발급을 검증합니다.
 
 ## 확장 아이디어
 

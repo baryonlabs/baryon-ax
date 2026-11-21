@@ -24,6 +24,8 @@ from typing import Any
 
 import httpx
 
+from baryon_auth import ApiAuth, TokenSource
+
 logger = logging.getLogger("baryon.slack")
 
 MENTION_RE = re.compile(r"<@[UW][A-Z0-9]+(?:\|[^>]*)?>")
@@ -50,7 +52,7 @@ class Config:
     thread_turns: int = 10
     subscribe_threads: bool = True
     show_snippets: bool = True
-    api_token: str = ""
+    bot_user_id: str = "slack-bot"   # the bot's own principal in dev mode (AUTH_MODE=dev)
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -67,7 +69,6 @@ class Config:
             thread_turns=int(os.getenv("SLACK_THREAD_TURNS", cls.thread_turns)),
             subscribe_threads=flag("SLACK_SUBSCRIBE_THREADS", True),
             show_snippets=flag("SLACK_SHOW_SNIPPETS", True),
-            api_token=os.getenv("BARYON_API_TOKEN", ""),
         )
 
 
@@ -82,30 +83,34 @@ class Answer:
 
 
 class BaryonClient:
-    """Thin client for the OpenAI-compatible chat endpoint and document search."""
+    """Thin client for the OpenAI-compatible chat endpoint and document search.
 
-    def __init__(self, config: Config, http: httpx.Client | None = None) -> None:
+    Each Slack user is its own baryon-ax principal (``slack:<USER_ID>``), sent as
+    ``X-On-Behalf-Of`` so document permissions, gaps and audit logs are per person
+    and the bot is recorded as ``acting_service`` (see baryon_auth.py).
+    """
+
+    def __init__(self, config: Config, http: httpx.Client | None = None, tokens: TokenSource | None = None,
+                 bot_roles: str = "admin") -> None:
         self.config = config
         self.http = http or httpx.Client(base_url=config.api_url, timeout=config.timeout)
+        self.auth = ApiAuth(tokens or TokenSource.from_env(self.http), config.organization_id,
+                            config.bot_user_id, bot_roles)
 
-    def headers(self, slack_user: str) -> dict[str, str]:
-        # Dev auth headers: each Slack user maps to its own baryon-ax principal, so
-        # document permissions and audit logs are per person.  Behind OIDC, put the
-        # bot behind a gateway that sets these or pass a service token instead.
-        headers = {
-            "X-User-Id": f"slack:{slack_user}",
-            "X-Organization-Id": self.config.organization_id,
-            "X-Roles": self.config.roles,
-        }
-        if self.config.api_token:
-            headers["Authorization"] = f"Bearer {self.config.api_token}"
-        return headers
+    def as_user(self, method: str, path: str, slack_user: str, **kwargs: Any) -> httpx.Response:
+        """A call made for a Slack user."""
+        return self.auth.request(self.http, method, path, on_behalf_of=f"slack:{slack_user}",
+                                 roles=self.config.roles, **kwargs)
+
+    def as_bot(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        """A call the bot makes as itself (no On-Behalf-Of header)."""
+        return self.auth.request(self.http, method, path, **kwargs)
 
     def ask(self, messages: list[dict], slack_user: str, thread_id: str) -> Answer:
         body: dict[str, Any] = {"messages": messages, "stream": False, "thread_id": thread_id}
         if self.config.model:
             body["model"] = self.config.model
-        response = self.http.post("/v1/chat/completions", json=body, headers=self.headers(slack_user))
+        response = self.as_user("POST", "/v1/chat/completions", slack_user, json=body)
         response.raise_for_status()
         data = response.json()
         text = data["choices"][0]["message"]["content"]
@@ -116,7 +121,7 @@ class BaryonClient:
         if len(query.strip()) < 2:
             return {}
         try:
-            response = self.http.get("/v1/documents/search", params={"q": query}, headers=self.headers(slack_user))
+            response = self.as_user("GET", "/v1/documents/search", slack_user, params={"q": query})
             response.raise_for_status()
         except httpx.HTTPError:
             logger.warning("document search failed; answering without snippets", exc_info=True)
@@ -351,7 +356,8 @@ def _create_desk(responder: Responder):
     config = ProactiveConfig.from_env()
     if not config.enabled:
         return None
-    knowledge = KnowledgeClient(responder.baryon, config.service_roles)
+    responder.baryon.auth.bot_roles = config.service_roles  # dev mode only; in OIDC the token's roles apply
+    knowledge = KnowledgeClient(responder.baryon)
     return GapDesk(config, responder, knowledge, ProactiveState(config.state_path))
 
 

@@ -31,6 +31,8 @@ from typing import Any
 
 import httpx
 
+from baryon_auth import ApiAuth, TokenSource
+
 logger = logging.getLogger("baryon.discord")
 
 MENTION_RE = re.compile(r"<@[!&]?\d+>")
@@ -60,7 +62,7 @@ class Config:
     roles: str = "member"
     model: str = ""
     timeout: float = 120.0
-    api_token: str = ""
+    bot_user_id: str = "discord-bot"   # the bot's own principal in dev mode (AUTH_MODE=dev)
     max_sources: int = 4
     thread_turns: int = 10
     subscribe_threads: bool = True
@@ -74,7 +76,6 @@ class Config:
             roles=os.getenv("BARYON_ROLES", cls.roles),
             model=os.getenv("BARYON_MODEL", ""),
             timeout=float(os.getenv("BARYON_TIMEOUT", cls.timeout)),
-            api_token=os.getenv("BARYON_API_TOKEN", ""),
             max_sources=int(os.getenv("DISCORD_MAX_SOURCES", cls.max_sources)),
             thread_turns=int(os.getenv("DISCORD_THREAD_TURNS", cls.thread_turns)),
             subscribe_threads=_flag("DISCORD_SUBSCRIBE_THREADS", True),
@@ -92,7 +93,7 @@ class ProactiveConfig:
     min_occurrences: int = 1
     platform_only: bool = False      # only gaps from questions asked on Discord
     mention: str = ""                # prepended to each ask, e.g. "@here" or "<@&ROLE_ID>"
-    service_roles: str = "admin"     # listing/dismissing gaps needs an admin principal
+    service_roles: str = "admin"     # dev mode: the bot's own roles; listing/dismissing gaps needs admin
     state_path: str = ".data/proactive_state.json"
     reanswer: bool = True
 
@@ -137,34 +138,35 @@ class Answer:
 
 
 class BaryonClient:
-    """Chat, search, knowledge-gap and tacit-knowledge endpoints. Synchronous; callers use asyncio.to_thread."""
+    """Chat, search, knowledge-gap and tacit-knowledge endpoints. Synchronous; callers use asyncio.to_thread.
 
-    def __init__(self, config: Config, service_roles: str = "admin", http: httpx.Client | None = None) -> None:
+    Each Discord user is its own baryon-ax principal (``discord:<id>``), sent as
+    ``X-On-Behalf-Of`` so permissions, gaps and audit logs are per person and the
+    bot is recorded as ``acting_service``.  Gap listing and dismissal are admin
+    calls the bot makes as itself (see baryon_auth.py).
+    """
+
+    def __init__(self, config: Config, service_roles: str = "admin", http: httpx.Client | None = None,
+                 tokens: TokenSource | None = None) -> None:
         self.config = config
-        self.service_roles = service_roles
         self.http = http or httpx.Client(base_url=config.api_url, timeout=config.timeout)
+        self.auth = ApiAuth(tokens or TokenSource.from_env(self.http), config.organization_id,
+                            config.bot_user_id, service_roles)
 
-    def headers(self, discord_user: str | int, roles: str | None = None) -> dict[str, str]:
-        # Dev auth headers: each Discord user is its own baryon-ax principal (permissions, audit, gaps).
-        headers = {
-            "X-User-Id": f"discord:{discord_user}",
-            "X-Organization-Id": self.config.organization_id,
-            "X-Roles": roles or self.config.roles,
-        }
-        if self.config.api_token:
-            headers["Authorization"] = f"Bearer {self.config.api_token}"
-        return headers
+    def as_user(self, method: str, path: str, discord_user: str | int, **kwargs: Any) -> httpx.Response:
+        """A call made for a Discord user."""
+        return self.auth.request(self.http, method, path, on_behalf_of=f"discord:{discord_user}",
+                                 roles=self.config.roles, **kwargs)
 
-    def _service(self) -> dict[str, str]:
-        headers = self.headers("bot", roles=self.service_roles)
-        headers["X-User-Id"] = "discord-bot"
-        return headers
+    def as_bot(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        """A call the bot makes as itself (no On-Behalf-Of header)."""
+        return self.auth.request(self.http, method, path, **kwargs)
 
     def ask(self, messages: list[dict], discord_user: str | int, thread_id: str) -> Answer:
         body: dict[str, Any] = {"messages": messages, "stream": False, "thread_id": thread_id}
         if self.config.model:
             body["model"] = self.config.model
-        response = self.http.post("/v1/chat/completions", json=body, headers=self.headers(discord_user))
+        response = self.as_user("POST", "/v1/chat/completions", discord_user, json=body)
         response.raise_for_status()
         data = response.json()
         return Answer(text=data["choices"][0]["message"]["content"], citations=data.get("citations") or [],
@@ -174,7 +176,7 @@ class BaryonClient:
         if len(query.strip()) < 2:
             return {}
         try:
-            response = self.http.get("/v1/documents/search", params={"q": query}, headers=self.headers(discord_user))
+            response = self.as_user("GET", "/v1/documents/search", discord_user, params={"q": query})
             response.raise_for_status()
         except httpx.HTTPError:
             logger.warning("document search failed; answering without snippets", exc_info=True)
@@ -183,21 +185,21 @@ class BaryonClient:
                 for item in response.json().get("data", [])}
 
     def open_gaps(self, limit: int = 100) -> list[dict]:
-        response = self.http.get("/v1/admin/gaps", params={"status": "open", "limit": limit}, headers=self._service())
+        response = self.as_bot("GET", "/v1/admin/gaps", params={"status": "open", "limit": limit})
         response.raise_for_status()
         return response.json().get("data", [])
 
     def dismiss_gap(self, gap_id: str) -> None:
-        self.http.post(f"/v1/admin/gaps/{gap_id}/dismiss", headers=self._service()).raise_for_status()
+        self.as_bot("POST", f"/v1/admin/gaps/{gap_id}/dismiss").raise_for_status()
 
     def save_answer(self, discord_user: str | int, question: str, answer: str, gap_id: str) -> dict:
         body = {"question": question[:500], "answer": answer[:20000], "gap_id": gap_id, "source": "discord"}
-        response = self.http.post("/v1/tacit/entries", json=body, headers=self.headers(discord_user))
+        response = self.as_user("POST", "/v1/tacit/entries", discord_user, json=body)
         response.raise_for_status()
         return response.json()
 
     def publish(self, discord_user: str | int, entry_id: str) -> dict:
-        response = self.http.post(f"/v1/tacit/entries/{entry_id}/publish", headers=self.headers(discord_user))
+        response = self.as_user("POST", f"/v1/tacit/entries/{entry_id}/publish", discord_user)
         response.raise_for_status()
         return response.json()
 

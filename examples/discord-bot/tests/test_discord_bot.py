@@ -171,7 +171,11 @@ def test_mention_opens_thread_and_answers_with_sources() -> None:
     assert "복리후생_안내.md" in embed["description"] and embed["description"].count("취업규칙") == 1
     body = json.loads(api.find("/v1/chat/completions")[0].content)
     assert body["thread_id"] == f"discord:500:{thread.id}"
-    assert api.find("/v1/chat/completions")[0].headers["x-user-id"] == "discord:111"
+    # dev mode: the Discord user is delegated, the bot itself is X-User-Id (→ acting_service)
+    headers = api.find("/v1/chat/completions")[0].headers
+    assert headers["x-on-behalf-of"] == "discord:111" and headers["x-on-behalf-of-roles"] == "member"
+    assert headers["x-user-id"] == "discord-bot" and "x-roles" not in headers and "authorization" not in headers
+    assert api.find("/v1/documents/search")[0].headers["x-on-behalf-of"] == "discord:111"
     assert message.reactions == [("add", "👀"), ("add", "✅"), ("remove", "👀")]
 
 
@@ -252,7 +256,9 @@ def test_desk_asks_once_with_thread_and_dismiss_button(tmp_path) -> None:
     assert first.content.startswith("@here 🙋") and "주차" in first.content  # most frequent first
     assert first.kwargs["view"] == [{"label": "해당 없음", "custom_id": "baryon:dismiss:gap_b", "style": "secondary"}]
     assert desk_channel.threads[0].name.startswith("답: 주차")
-    assert api.find("/v1/admin/gaps")[0].headers["x-roles"] == "admin"
+    gaps_call = api.find("/v1/admin/gaps")[0].headers  # the bot reads gaps as itself
+    assert gaps_call["x-user-id"] == "discord-bot" and gaps_call["x-roles"] == "admin"
+    assert "x-on-behalf-of" not in gaps_call
     again, _, _ = make_desk(tmp_path, api, max_per_run=5)
     assert run(again.run_once(now=datetime(2026, 1, 5, 11))) == 0
 
@@ -289,7 +295,7 @@ def test_answer_publish_reanswers_once_in_original_thread(tmp_path) -> None:
         ephemeral.append(text)
 
     assert run(desk.on_button("baryon:publish:tac_1:gap_a", 222, draft, respond))
-    assert api.find("/publish")[0].headers["x-user-id"] == "discord:222"
+    assert api.find("/publish")[0].headers["x-on-behalf-of"] == "discord:222"
     assert draft.edits[-1] == {"content": "✅ <@222> 님 답변을 문서로 등록했습니다. 고마워요!", "view": None}
     assert desk_channel.sent[1].edits[-1]["content"].startswith("✅ **답이 등록됐어요**")
     assert origin.sent[-1].content.startswith("<@111> 지난번에 답하지 못했던 질문")

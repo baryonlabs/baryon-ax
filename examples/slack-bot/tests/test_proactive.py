@@ -79,7 +79,8 @@ def make_desk(tmp_path, api: FakeApi, **overrides) -> GapDesk:
     baryon = BaryonClient(config, http=api.client())
     responder = Responder(config, baryon, BOT)
     pconfig = ProactiveConfig(channel="CDESK", state_path=str(tmp_path / "state.json"), **overrides)
-    return GapDesk(pconfig, responder, KnowledgeClient(baryon, pconfig.service_roles), ProactiveState(pconfig.state_path))
+    baryon.auth.bot_roles = pconfig.service_roles
+    return GapDesk(pconfig, responder, KnowledgeClient(baryon), ProactiveState(pconfig.state_path))
 
 
 def action_body(action_id: str, value: str, user: str = "UANS") -> dict:
@@ -95,7 +96,9 @@ def test_asks_most_frequent_new_gaps_once_and_persists(tmp_path) -> None:
     assert [post["channel"] for post in posts] == ["CDESK", "CDESK"]
     assert "주차" in posts[0]["text"]  # 3 occurrences first
     assert posts[0]["blocks"][0]["text"]["text"].startswith("<!here>")
-    assert api.find("/v1/admin/gaps")[0].headers["x-roles"] == "admin"
+    gaps_call = api.find("/v1/admin/gaps")[0].headers  # the bot reads gaps as itself
+    assert gaps_call["x-user-id"] == "slack-bot" and gaps_call["x-roles"] == "admin"
+    assert "x-on-behalf-of" not in gaps_call and "x-on-behalf-of-roles" not in gaps_call
 
     # a restarted bot reads the state file and does not ask again
     again = make_desk(tmp_path, api, max_per_run=5)
@@ -124,7 +127,7 @@ def test_thread_reply_becomes_draft_with_publish_buttons(tmp_path) -> None:
     desk.on_answer(reply, "gap_b", web)
     saved = json.loads(api.find("/v1/tacit/entries")[0].content)
     assert saved == {"question": "주차 등록은 어디서 해?", "answer": "평일 11시 30분부터 엽니다.", "gap_id": "gap_b", "source": "slack"}
-    assert api.find("/v1/tacit/entries")[0].headers["x-user-id"] == "slack:UANS"
+    assert api.find("/v1/tacit/entries")[0].headers["x-on-behalf-of"] == "slack:UANS"
     buttons = web.of("post")[-1]["blocks"][1]["elements"]
     assert buttons[0]["action_id"] == ACTION_PUBLISH and buttons[0]["value"] == "tac_1|gap_b"
 
@@ -135,7 +138,7 @@ def test_publish_updates_desk_and_reanswers_original_slack_thread(tmp_path) -> N
     desk.run_once(web, now=datetime(2026, 1, 5, 10))  # gap_b → 900.1, gap_a → 900.2
 
     desk.on_publish(action_body(ACTION_PUBLISH, "tac_1|gap_a"), web)
-    assert api.find("/publish")[0].headers["x-user-id"] == "slack:UANS"
+    assert api.find("/publish")[0].headers["x-on-behalf-of"] == "slack:UANS"
     assert desk.state.get("gap_a")["status"] == "published"
     updates = web.of("update")
     assert any(update["ts"] == "900.2" and "답이 등록됐어요" in update["blocks"][0]["text"]["text"] for update in updates)
@@ -144,7 +147,7 @@ def test_publish_updates_desk_and_reanswers_original_slack_thread(tmp_path) -> N
     assert "<@UASK>" in reanswer["blocks"][0]["text"]["text"]
     asked = json.loads(api.find("/v1/chat/completions")[0].content)
     assert asked["thread_id"] == "slack:CQA:111.1"
-    assert api.find("/v1/chat/completions")[0].headers["x-user-id"] == "slack:UASK"
+    assert api.find("/v1/chat/completions")[0].headers["x-on-behalf-of"] == "slack:UASK"
 
 
 def test_only_author_can_publish(tmp_path) -> None:
@@ -170,7 +173,8 @@ def test_dismiss_closes_gap(tmp_path) -> None:
     desk = make_desk(tmp_path, api, max_per_run=1)
     desk.run_once(web, now=datetime(2026, 1, 5, 10))
     desk.on_dismiss(action_body(ACTION_DISMISS, "gap_b", user="UADMIN"), web)
-    assert api.find("/v1/admin/gaps/gap_b/dismiss")[0].headers["x-roles"] == "admin"
+    dismiss = api.find("/v1/admin/gaps/gap_b/dismiss")[0].headers
+    assert dismiss["x-roles"] == "admin" and "x-on-behalf-of" not in dismiss
     assert desk.state.get("gap_b")["status"] == "dismissed"
     assert "해당 없음" in web.of("update")[0]["blocks"][0]["text"]["text"]
 

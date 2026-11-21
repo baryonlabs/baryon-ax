@@ -53,7 +53,7 @@ class ProactiveConfig:
     min_occurrences: int = 1
     slack_only: bool = False        # only gaps from questions asked in Slack (skip web UI / scripts)
     mention: str = ""               # prepended to each ask, e.g. "<!here>" or "<@U123> <@U456>"
-    service_roles: str = "admin"    # listing/dismissing gaps needs an admin principal
+    service_roles: str = "admin"    # dev mode: the bot's own roles; listing/dismissing gaps needs admin
     state_path: str = ".data/proactive_state.json"
     reanswer: bool = True           # answer the original Slack thread again after publishing
 
@@ -138,35 +138,32 @@ class ProactiveState:
 
 
 class KnowledgeClient:
-    """Gap and tacit-knowledge endpoints, on top of the bot's BaryonClient."""
+    """Gap and tacit-knowledge endpoints, on top of the bot's BaryonClient.
 
-    def __init__(self, baryon, service_roles: str) -> None:
+    Gap listing and dismissal are admin calls the bot makes as itself, so its
+    service account needs ``baryon-admin`` in OIDC mode.  Saving and publishing an
+    answer happen on behalf of the Slack user who wrote it.
+    """
+
+    def __init__(self, baryon) -> None:
         self.baryon = baryon
-        self.service_roles = service_roles
-
-    def _service_headers(self) -> dict[str, str]:
-        headers = self.baryon.headers("baryon-bot")
-        headers["X-User-Id"] = "slack-bot"
-        headers["X-Roles"] = self.service_roles
-        return headers
 
     def open_gaps(self, limit: int = 100) -> list[dict]:
-        response = self.baryon.http.get("/v1/admin/gaps", params={"status": "open", "limit": limit},
-                                        headers=self._service_headers())
+        response = self.baryon.as_bot("GET", "/v1/admin/gaps", params={"status": "open", "limit": limit})
         response.raise_for_status()
         return response.json().get("data", [])
 
     def dismiss_gap(self, gap_id: str) -> None:
-        self.baryon.http.post(f"/v1/admin/gaps/{gap_id}/dismiss", headers=self._service_headers()).raise_for_status()
+        self.baryon.as_bot("POST", f"/v1/admin/gaps/{gap_id}/dismiss").raise_for_status()
 
     def save_answer(self, slack_user: str, question: str, answer: str, gap_id: str) -> dict:
         body = {"question": question[:500], "answer": answer[:20000], "gap_id": gap_id, "source": "slack"}
-        response = self.baryon.http.post("/v1/tacit/entries", json=body, headers=self.baryon.headers(slack_user))
+        response = self.baryon.as_user("POST", "/v1/tacit/entries", slack_user, json=body)
         response.raise_for_status()
         return response.json()
 
     def publish(self, slack_user: str, entry_id: str) -> dict:
-        response = self.baryon.http.post(f"/v1/tacit/entries/{entry_id}/publish", headers=self.baryon.headers(slack_user))
+        response = self.baryon.as_user("POST", f"/v1/tacit/entries/{entry_id}/publish", slack_user)
         response.raise_for_status()
         return response.json()
 

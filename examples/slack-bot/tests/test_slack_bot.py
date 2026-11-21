@@ -116,7 +116,12 @@ def test_mention_answers_in_thread_with_sources() -> None:
     chat = json.loads(requests[0].content)
     assert chat["messages"] == [{"role": "user", "content": "연차휴가는 며칠이야?"}]
     assert chat["stream"] is False and chat["thread_id"] == "slack:C1:100.1"
-    assert requests[0].headers["X-User-Id"] == "slack:U1" and requests[0].headers["X-Organization-Id"] == "org"
+    # dev mode: the Slack user is delegated, the bot itself is X-User-Id (→ acting_service)
+    headers = requests[0].headers
+    assert headers["X-On-Behalf-Of"] == "slack:U1" and headers["X-On-Behalf-Of-Roles"] == "member"
+    assert headers["X-User-Id"] == "slack-bot" and headers["X-Organization-Id"] == "org"
+    assert "X-Roles" not in headers and "Authorization" not in headers
+    assert requests[1].headers["X-On-Behalf-Of"] == "slack:U1"
     assert requests[1].url.path == "/v1/documents/search"
 
     assert web.named("post")[0]["thread_ts"] == "100.1"
