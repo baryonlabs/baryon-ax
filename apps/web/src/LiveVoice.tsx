@@ -6,11 +6,14 @@ import type { VoiceCommand } from "./VoiceInput";
 
 type Phase = "starting" | "listening" | "hearing" | "transcribing" | "thinking" | "speaking" | "muted" | "error";
 type AskOptions = { style?: "text" | "voice"; onToken?: (token: string) => void; onDone?: () => void };
-type LivePrefs = { voice: number; speed: number; bargeIn: boolean };
+type LivePrefs = { voice: number; speed: number; bargeIn: boolean; mode: "docs" | "secretary" };
+type SecretaryEvent = { type: "text"; delta: string } | { type: "status"; text: string } | { type: "confirm"; id: string; prompt: string }
+  | { type: "confirmed"; allow: boolean } | { type: "done" } | { type: "error"; message: string };
 type Request = (path: string, init?: RequestInit) => Promise<Response>;
 
 const PREFS_KEY = "baryon.live";
-const DEFAULTS: LivePrefs = { voice: 0, speed: 1.05, bargeIn: true };
+const DEFAULTS: LivePrefs = { voice: 0, speed: 1.05, bargeIn: true, mode: "docs" };
+const STOP_WORDS = /^(멈춰|그만|중지|스톱|stop)[.!?\s]*$/i;
 
 const TEXT = {
   ko: {
@@ -24,6 +27,9 @@ const TEXT = {
     micDenied: "마이크를 열 수 없습니다. 브라우저 권한과 HTTPS 연결을 확인하세요.",
     sttFailed: "음성을 알아듣지 못했습니다.", ttsFailed: "음성 합성 서버에 연결할 수 없습니다. 답변은 화면에 표시됩니다.",
     privacy: "음성은 사내 서버에서만 처리되며 저장하지 않습니다. 스피커 대신 이어폰을 쓰면 끼어들기가 더 정확합니다.",
+    mode: "상대", modes: { docs: "문서 Q&A", secretary: "비서" }, connecting: "비서에 연결하는 중…",
+    confirm: "확인 질문", secretaryFailed: "비서에 연결할 수 없습니다.",
+    secretaryHint: "비서는 메일·일정·할 일·PR 요약과 DureClaw 작업 지시를 합니다. 변경이 생기는 일은 \"응\"이라고 답해야 실행됩니다.",
   },
   en: {
     title: "Live conversation", end: "End conversation (Esc)", mute: "Mute microphone", unmute: "Unmute microphone",
@@ -36,6 +42,9 @@ const TEXT = {
     micDenied: "Cannot open the microphone. Check the browser permission and that the page uses HTTPS.",
     sttFailed: "Could not understand that.", ttsFailed: "Cannot reach the speech server. The answer is shown on screen.",
     privacy: "Speech is processed on your own servers and never stored. Earphones make interruptions more reliable than speakers.",
+    mode: "Talk to", modes: { docs: "Document Q&A", secretary: "Secretary" }, connecting: "Connecting to the secretary…",
+    confirm: "Question", secretaryFailed: "Cannot reach the secretary.",
+    secretaryHint: "The secretary summarizes mail, calendar, to-dos and PRs and dispatches DureClaw tasks. Anything that changes something runs only after you say yes.",
   },
 };
 
@@ -55,11 +64,15 @@ export default function LiveVoice({ locale, request, ask, stop, onCommand, onClo
   const [notice, setNotice] = useState("");
   const [latency, setLatency] = useState<number | null>(null);
   const [level, setLevel] = useState(0);
+  const [secretaryAllowed, setSecretaryAllowed] = useState(false);
+  const [question, setQuestion] = useState("");
 
   // Mutable conversation state, read from audio callbacks.
   const live = useRef({
     phase: "starting" as Phase, turn: 0, muted: false, chatRunning: false, chatDone: Promise.resolve(),
     speechEndedAt: 0, firstAudio: true, prefs,
+    session: "" as string, sessionStarting: null as Promise<string> | null, discard: false,
+    abort: null as AbortController | null, chunker: new SentenceChunker(),
   });
   const props = useRef({ request, ask, stop, onCommand, locale });
   props.current = { request, ask, stop, onCommand, locale };
@@ -68,6 +81,7 @@ export default function LiveVoice({ locale, request, ask, stop, onCommand, onClo
   const vadRef = useRef<EnergyVad | null>(null);
   const micRef = useRef<Microphone | null>(null);
   const playerRef = useRef<SpeechPlayer | null>(null);
+  const secretaryRef = useRef<{ connect: () => void } | null>(null);
 
   const go = (next: Phase) => { live.current.phase = next; setPhase(next); };
 
@@ -97,7 +111,13 @@ export default function LiveVoice({ locale, request, ask, stop, onCommand, onClo
     const interrupt = () => {
       live.current.turn++;
       player.stop();
-      if (live.current.chatRunning) props.current.stop();
+      if (live.current.prefs.mode === "secretary") {
+        live.current.chunker.flush();
+        if (live.current.chatRunning && live.current.session) {
+          live.current.discard = true; // drop what the agent still sends for the interrupted turn
+          void props.current.request(`/v1/assistant/sessions/${live.current.session}/interrupt`, { method: "POST" });
+        }
+      } else if (live.current.chatRunning) props.current.stop();
       if (vadRef.current) vadRef.current.strict = false;
     };
 
@@ -119,7 +139,97 @@ export default function LiveVoice({ locale, request, ask, stop, onCommand, onClo
       })());
     };
 
+    const idle = () => { if (!player.playing) go(live.current.muted ? "muted" : "listening"); };
+
+    const onSecretaryEvent = (event: SecretaryEvent) => {
+      const state = live.current;
+      if (state.discard) {
+        if (event.type === "done") { state.discard = false; state.chatRunning = false; }
+        return;
+      }
+      if (event.type === "text") {
+        for (const chunk of state.chunker.push(event.delta)) speak(chunk, state.turn);
+      } else if (event.type === "status") {
+        speak(event.text, state.turn); // short filler so a long lookup is never silent
+      } else if (event.type === "confirm") {
+        const rest = state.chunker.flush();
+        if (rest) speak(rest, state.turn);
+        speak(event.prompt, state.turn);
+        setQuestion(event.prompt);
+        state.chatRunning = false; // the agent waits for the user's yes or no
+        idle();
+      } else if (event.type === "confirmed") {
+        setQuestion("");
+        state.chatRunning = true;
+      } else if (event.type === "done") {
+        const rest = state.chunker.flush();
+        if (rest) speak(rest, state.turn);
+        state.chatRunning = false;
+        if (state.phase === "thinking") idle();
+      } else if (event.type === "error") {
+        setNotice(event.message);
+      }
+    };
+
+    const listenSecretary = async (session: string) => {
+      const controller = new AbortController();
+      live.current.abort = controller;
+      try {
+        const response = await props.current.request(`/v1/assistant/sessions/${session}/events`, { signal: controller.signal });
+        if (!response.ok || !response.body) throw new Error(String(response.status));
+        const reader = response.body.getReader(), decoder = new TextDecoder();
+        let buffer = "";
+        while (!disposed) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const frames = buffer.split("\n\n");
+          buffer = frames.pop() || "";
+          for (const frame of frames) {
+            if (frame.startsWith("data: ")) onSecretaryEvent(JSON.parse(frame.slice(6)));
+          }
+        }
+      } catch {
+        if (!controller.signal.aborted) setNotice(TEXT[props.current.locale].secretaryFailed);
+      }
+      if (live.current.session === session) live.current.session = "";
+    };
+
+    const secretarySession = async (): Promise<string> => {
+      if (live.current.session) return live.current.session;
+      live.current.sessionStarting ??= (async () => {
+        const response = await props.current.request("/v1/assistant/sessions", { method: "POST" });
+        if (!response.ok) throw new Error(String(response.status));
+        const { id } = await response.json() as { id: string };
+        live.current.session = id;
+        void listenSecretary(id);
+        return id;
+      })().finally(() => { live.current.sessionStarting = null; });
+      return live.current.sessionStarting;
+    };
+
+    const askSecretary = async (text: string) => {
+      const state = live.current;
+      state.firstAudio = true;
+      state.chatRunning = true;
+      state.chunker = new SentenceChunker();
+      go("thinking");
+      try {
+        const session = await secretarySession();
+        const response = await props.current.request(`/v1/assistant/sessions/${session}/turn`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }),
+        });
+        if (!response.ok) throw new Error(String(response.status));
+      } catch {
+        state.chatRunning = false;
+        setNotice(TEXT[props.current.locale].secretaryFailed);
+        idle();
+      }
+    };
+    secretaryRef.current = { connect: () => void secretarySession().catch(() => setNotice(TEXT[props.current.locale].secretaryFailed)) };
+
     const answer = async (question: string, turn: number) => {
+      if (live.current.prefs.mode === "secretary") { await askSecretary(question); return; }
       await live.current.chatDone; // an interrupted answer must finish unwinding first
       if (turn !== live.current.turn || disposed) return;
       const chunker = new SentenceChunker();
@@ -161,7 +271,8 @@ export default function LiveVoice({ locale, request, ask, stop, onCommand, onClo
         const form = new FormData();
         form.append("file", await samplesToWav(samples, rate), "utterance.wav");
         form.append("locale", props.current.locale);
-        form.append("commands", "true");
+        const secretary = live.current.prefs.mode === "secretary";
+        form.append("commands", secretary ? "false" : "true");
         const response = await props.current.request("/v1/audio/transcriptions", { method: "POST", body: form });
         if (!response.ok) throw new Error(String(response.status));
         const result: { text: string; command: VoiceCommand | null } = await response.json();
@@ -174,7 +285,10 @@ export default function LiveVoice({ locale, request, ask, stop, onCommand, onClo
           go(live.current.muted ? "muted" : "listening");
           return;
         }
-        if (text.replace(/[\s.,!?]/g, "").length < 2) { go(live.current.muted ? "muted" : "listening"); return; } // noise, "음", "어"
+        if (secretary && STOP_WORDS.test(text)) { setHeard(`🎙 ${text}`); interrupt(); go(live.current.muted ? "muted" : "listening"); return; }
+        // Noise, "음", "어". In secretary mode a one-syllable "응"/"네" is a real answer.
+        const minimum = secretary ? 1 : 2;
+        if (text.replace(/[\s.,!?]/g, "").length < minimum) { go(live.current.muted ? "muted" : "listening"); return; }
         setHeard(text);
         setNotice("");
         await answer(text, turn);
@@ -224,9 +338,17 @@ export default function LiveVoice({ locale, request, ask, stop, onCommand, onClo
       micRef.current = null;
       vadRef.current = null;
       player.close();
-      if (live.current.chatRunning) props.current.stop();
+      live.current.abort?.abort();
+      if (live.current.session) void props.current.request(`/v1/assistant/sessions/${live.current.session}`, { method: "DELETE" });
+      else if (live.current.chatRunning) props.current.stop();
     };
   }, []);
+
+  useEffect(() => {
+    props.current.request("/v1/assistant/status").then(response => response.ok ? response.json() : null)
+      .then(result => setSecretaryAllowed(Boolean(result?.allowed))).catch(() => setSecretaryAllowed(false));
+  }, []);
+  useEffect(() => { if (prefs.mode === "secretary" && secretaryAllowed) secretaryRef.current?.connect(); }, [prefs.mode, secretaryAllowed]);
 
   useEffect(() => {
     const key = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
@@ -256,8 +378,13 @@ export default function LiveVoice({ locale, request, ask, stop, onCommand, onClo
           {latency != null && phase !== "error" && <small>{t.latency(latency)}</small>}
         </div>
         {heard && <p className="live-heard"><span>{t.you}</span>{heard}</p>}
+        {question && <p className="live-question"><span>{t.confirm}</span>{question}</p>}
         {notice && phase !== "error" && <p className="live-notice">{notice}</p>}
         <div className="live-controls">
+          {secretaryAllowed && <div className="live-mode" role="radiogroup" aria-label={t.mode}>
+            {(["docs", "secretary"] as const).map(mode => <button type="button" role="radio" key={mode} aria-checked={prefs.mode === mode}
+              className={prefs.mode === mode ? "active" : ""} onClick={() => savePrefs({ mode })}>{t.modes[mode]}</button>)}
+          </div>}
           <label>{t.voice}
             <select value={prefs.voice} onChange={event => savePrefs({ voice: Number(event.target.value) })}>
               {Array.from({ length: 10 }, (_, index) => <option key={index} value={index}>{index + 1}</option>)}
@@ -270,7 +397,7 @@ export default function LiveVoice({ locale, request, ask, stop, onCommand, onClo
           </label>
           <label className="live-toggle"><input type="checkbox" checked={prefs.bargeIn} onChange={event => savePrefs({ bargeIn: event.target.checked })}/>{t.bargeIn}</label>
         </div>
-        <small className="live-privacy">{t.privacy}</small>
+        <small className="live-privacy">{prefs.mode === "secretary" && secretaryAllowed ? t.secretaryHint : t.privacy}</small>
       </div>
       <div className="live-actions">
         <button type="button" className="live-mute" onClick={toggleMute} disabled={phase === "error" || phase === "starting"}

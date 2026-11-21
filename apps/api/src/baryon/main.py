@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel, Field
 from starlette.datastructures import Headers
 
-from . import __version__, gateway_status, voice
+from . import __version__, assistant, gateway_status, voice
 from .auth import PLATFORM_ADMIN, OIDCConfig, OIDCAuthMiddleware, current_acting_service
 from .connectors import CONNECTOR_BY_ID, CONNECTORS, TOOLS, connector_payload, decide_tool, get_connector, get_tool, search_tools, tool_payload
 from .ingest import Acl as IngestAcl
@@ -3393,6 +3393,139 @@ async def speak_text(
         "X-Processing-Ms": response.headers.get("x-processing-ms", ""),
         "Cache-Control": "no-store",
     })
+
+
+# --------------------------------------------------------------------------- voice secretary
+# Spoken summaries and commands backed by apps/secretary. Owner-only; transcripts are
+# not audited, only that a turn happened and which tools the owner approved or refused.
+
+assistant_config = assistant.AssistantConfig.from_env()
+assistant_sessions: dict[str, str] = {}  # secretary session id -> user id that started it
+_SESSION_ID = re.compile(r"[0-9a-f]{32}")
+
+
+class AssistantTurn(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+def assistant_principal(x_user_id: str | None, x_organization_id: str | None, x_roles: str | None) -> Principal:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if not assistant_config.enabled:
+        raise HTTPException(503, "voice secretary is not configured (SECRETARY_URL, SECRETARY_API_KEY, SECRETARY_OWNERS)")
+    if not assistant_config.allowed(principal.user_id):
+        raise HTTPException(403, "the voice secretary is limited to its owners")
+    return principal
+
+
+def owned_session(session_id: str, principal: Principal) -> str:
+    if not _SESSION_ID.fullmatch(session_id) or assistant_sessions.get(session_id) != principal.user_id:
+        raise HTTPException(404, "unknown session")
+    return session_id
+
+
+async def assistant_call(method: str, path: str, **kwargs) -> dict:
+    try:
+        status, body = await assistant.call(assistant_config, method, path, **kwargs)
+    except assistant.AssistantUnavailable as error:
+        raise HTTPException(503, str(error)) from error
+    if status >= 400:
+        raise HTTPException(status if status in (400, 404, 409, 429) else 502, f"voice secretary: {body.get('detail', status)}")
+    return body
+
+
+@app.get("/v1/assistant/status")
+async def assistant_status(
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    return {"enabled": assistant_config.enabled, "allowed": assistant_config.allowed(principal.user_id)}
+
+
+@app.post("/v1/assistant/sessions")
+async def assistant_start(
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = assistant_principal(x_user_id, x_organization_id, x_roles)
+    rate_limiter.check(f"assistant:{principal.organization_id}:{principal.user_id}")
+    body = await assistant_call("POST", "/v1/sessions", json={"owner": principal.user_id}, timeout=60.0)
+    session_id = str(body.get("id", ""))
+    if not _SESSION_ID.fullmatch(session_id):
+        raise HTTPException(502, "voice secretary returned an invalid session")
+    assistant_sessions[session_id] = principal.user_id
+    audit.emit("assistant.session_started", principal, session_id, model=body.get("model"))
+    return {"id": session_id, "model": body.get("model")}
+
+
+@app.post("/v1/assistant/sessions/{session_id}/turn")
+async def assistant_turn(
+    session_id: str, body: AssistantTurn,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = assistant_principal(x_user_id, x_organization_id, x_roles)
+    owned_session(session_id, principal)
+    rate_limiter.check(f"assistant:{principal.organization_id}:{principal.user_id}")
+    result = await assistant_call("POST", f"/v1/sessions/{session_id}/turn", json={"text": body.text})
+    audit.emit("assistant.turn", principal, session_id, characters=len(body.text), used=result.get("used"))
+    return {"used": result.get("used")}
+
+
+@app.post("/v1/assistant/sessions/{session_id}/interrupt")
+async def assistant_interrupt(
+    session_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = assistant_principal(x_user_id, x_organization_id, x_roles)
+    await assistant_call("POST", f"/v1/sessions/{owned_session(session_id, principal)}/interrupt")
+    return {"ok": True}
+
+
+@app.delete("/v1/assistant/sessions/{session_id}")
+async def assistant_end(
+    session_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = assistant_principal(x_user_id, x_organization_id, x_roles)
+    owned_session(session_id, principal)
+    assistant_sessions.pop(session_id, None)
+    await assistant_call("DELETE", f"/v1/sessions/{session_id}")
+    audit.emit("assistant.session_ended", principal, session_id)
+    return {"ok": True}
+
+
+@app.get("/v1/assistant/sessions/{session_id}/events")
+async def assistant_events(
+    session_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> StreamingResponse:
+    principal = assistant_principal(x_user_id, x_organization_id, x_roles)
+    owned_session(session_id, principal)
+
+    async def relay():
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, read=None)) as client:
+                async with client.stream("GET", f"{assistant_config.base_url}/v1/sessions/{session_id}/events",
+                                         headers=assistant_config.headers()) as upstream:
+                    if upstream.status_code != 200:
+                        yield f"data: {json.dumps({'type': 'error', 'message': f'secretary {upstream.status_code}'})}\n\n"
+                        return
+                    async for line in upstream.aiter_lines():
+                        if line.startswith(":"):
+                            yield ": ping\n\n"  # keep proxies from closing an idle line
+                        if not line.startswith("data: "):
+                            continue
+                        try:
+                            event = json.loads(line[6:])
+                        except ValueError:
+                            continue
+                        if event.get("type") == "confirmed":  # which side effects the owner approved
+                            audit.emit("assistant.confirmation", principal, session_id,
+                                       tool=str(event.get("tool", ""))[:120], allow=bool(event.get("allow")))
+                        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except httpx.HTTPError as error:
+            yield f"data: {json.dumps({'type': 'error', 'message': type(error).__name__})}\n\n"
+
+    return StreamingResponse(relay(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 # --------------------------------------------------------------------------- platform: tenants
