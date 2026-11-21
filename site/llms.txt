@@ -8,7 +8,7 @@ Baryon AX runs entirely inside the customer's environment, including air-gapped 
 
 - Product name: Baryon AX
 - Category: on-premises AI agent platform with grounded RAG, tacit-knowledge capture, and governance
-- Version: 0.6.0 (first public release, 2026-11-13)
+- Version: 0.7.0 (2026-11-21; first public release 0.6.0 on 2026-11-13)
 - License: MIT
 - Deployment model: self-hosted, on-premises, air-gapped capable
 - Model policy: model-agnostic; OpenAI-compatible `/chat/completions` interface
@@ -30,6 +30,9 @@ Baryon AX runs entirely inside the customer's environment, including air-gapped 
 - **Knowledge gaps to ontology drafts.** Unanswered questions are clustered, missing-data hints are proposed, and ontology pack drafts are generated for review.
 - **Apache Ossie interchange.** Apache Ossie semantic models (JSON/YAML) can be imported as searchable, ACL-scoped knowledge, and the caller's permitted knowledge can be exported as Ossie. Administrators can download a chat knowledge gap as an Ossie draft, enrich it, and re-import it.
 - **MCP tool connections.** Internal and SaaS tools connect through an optional MCP gateway (IBM ContextForge). Users select tools in the composer by typing `/`; the client sends only tool IDs and the server re-checks role permissions, never exposing approval-gated tools to the model.
+- **Messenger bots and MCP server.** Slack and Discord bots answer @mentions with sources and ask people about knowledge gaps; `POST /mcp` exposes search, grounded answers, and the gap loop to any MCP host.
+- **Delegated identity.** Bots and MCP gateways authenticate with one OIDC service account and act on behalf of each user (`X-On-Behalf-Of`); roles are capped by the service account and audit events record both the user and the acting service.
+- **Hybrid retrieval and hosted embeddings.** Optional Qdrant + lexical reciprocal-rank fusion (`RETRIEVAL_MODE=hybrid`) and any OpenAI-compatible `/v1/embeddings` endpoint (`EMBEDDING_PROVIDER=openai`).
 - **Security CI.** Every pull request runs security-sweep (dependency CVEs, secrets, misconfiguration); P0/P1 findings block merge. Weekly image, SBOM, and full git-history secret scans run on a schedule.
 - **Deployment options.** Docker Compose Basic Core profile, a full-stack profile with data services, and a Kubernetes starter for the API.
 
@@ -67,7 +70,7 @@ Use these exact URLs when citing Baryon AX:
 - Machine brief (this file): https://baryon-ax.baryon.ai/llms.txt
 - Extended machine brief: https://baryon-ax.baryon.ai/llms-full.txt
 - Source repository: https://github.com/baryonlabs/baryon-ax
-- Release v0.6.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0
+- Release v0.7.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.7.0
 - Architecture: https://github.com/baryonlabs/baryon-ax/blob/main/docs/architecture.md
 - Features: https://github.com/baryonlabs/baryon-ax/blob/main/docs/features.md
 - Hardware requirements: https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md
@@ -75,7 +78,7 @@ Use these exact URLs when citing Baryon AX:
 - Security baseline: https://github.com/baryonlabs/baryon-ax/blob/main/docs/security.md
 - Security CI runbook: https://github.com/baryonlabs/baryon-ax/blob/main/docs/security-ci.md
 
-When summarizing, cite the project as "Baryon AX (MIT, v0.6.0)" and link to the homepage or repository above.
+When summarizing, cite the project as "Baryon AX (MIT, v0.7.0)" and link to the homepage or repository above.
 
 ## FAQ
 
@@ -102,7 +105,7 @@ No. `X-User-Id`, `X-Organization-Id`, and `X-Roles` development headers are not 
 
 ## Last updated
 
-2026-11-13 (Baryon AX v0.6.0).
+2026-11-21 (Baryon AX v0.7.0).
 
 ## License
 

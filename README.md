@@ -3,21 +3,24 @@
 [![CI](https://github.com/baryonlabs/baryon-ax/actions/workflows/ci.yml/badge.svg)](https://github.com/baryonlabs/baryon-ax/actions/workflows/ci.yml)
 [![security-sweep](https://github.com/baryonlabs/baryon-ax/actions/workflows/security-sweep.yml/badge.svg)](https://github.com/baryonlabs/baryon-ax/actions/workflows/security-sweep.yml)
 
-[Website](https://baryon-ax.baryon.ai/) · [도움말](https://baryon-ax.baryon.ai/#help) · [지원 형식](https://baryon-ax.baryon.ai/#formats) · [오픈소스·라이선스](https://baryon-ax.baryon.ai/open-source/) · [빠른 시작](#quick-start) · [릴리스](https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0)
+[Website](https://baryon-ax.baryon.ai/) · [도움말](https://baryon-ax.baryon.ai/#help) · [지원 형식](https://baryon-ax.baryon.ai/#formats) · [오픈소스·라이선스](https://baryon-ax.baryon.ai/open-source/) · [빠른 시작](#quick-start) · [릴리스](https://github.com/baryonlabs/baryon-ax/releases/tag/v0.7.0)
 
 **Baryon AX** is an on-premises, model-agnostic foundation for enterprise AI agents that answer from your documents and ask experts for the tacit knowledge they never wrote down.
 
 > Connect models. Ask first. Ground knowledge. Observe everything.
 
-This repository is an executable Basic Core v0.6 reference implementation. It offers a complete vertical slice: role-aware chat, OpenAI-compatible model routing, document ingestion and vector retrieval with citations, policy checks, audit events, memory, and a browser UI. The Basic Core runs with a local demo model and file storage; the **full-stack profile** connects Ollama, Qdrant, PostgreSQL, Redis, Langfuse, LangGraph, LlamaIndex, and Mem0. See [docs/full-stack.md](docs/full-stack.md) for the applied stack.
+This repository is an executable Basic Core v0.7 reference implementation. It offers a complete vertical slice: role-aware chat, OpenAI-compatible model routing, document ingestion and vector retrieval with citations, policy checks, audit events, memory, and a browser UI. The Basic Core runs with a local demo model and file storage; the **full-stack profile** connects Ollama, Qdrant, PostgreSQL, Redis, Langfuse, LangGraph, LlamaIndex, and Mem0. See [docs/full-stack.md](docs/full-stack.md) for the applied stack.
 
 ## What's new
 
-**Apache Ossie 지식 교환 · 지식 공백 꾸러미 · MCP 도구 선택** ([#58](https://github.com/baryonlabs/baryon-ax/pull/58))
+**v0.7.0: 사내 메신저 안에서 먼저 묻는 AI** ([릴리스 노트](https://github.com/baryonlabs/baryon-ax/releases/tag/v0.7.0))
 
-- **Apache Ossie 가져오기/내보내기** — **지식** 탭에서 Ossie 의미 모델(JSON/YAML)을 가져오면 데이터셋·필드·메트릭·관계가 검색 가능한 지식 문서로 색인됩니다. **Ossie 다운로드**는 내 권한 범위의 문서만 `baryon-knowledge.ossie.json`으로 내보냅니다.
-- **지식 공백 → Ossie 초안** — 채팅 답변이 근거를 찾지 못하면 관리자에게 "부족한 지식을 발견했습니다" 카드가 뜹니다. 버튼 하나로 해당 공백의 온톨로지 팩과 Ossie 초안을 만들어 내려받고, 신뢰할 수 있는 데이터로 보완해 다시 가져오면 다음 대화부터 검색에 쓰입니다.
-- **입력창 MCP 도구 선택** — 입력창에 `/`를 치면 사용 가능한 MCP 도구를 검색해 선택할 수 있습니다. 클라이언트는 도구 ID만 보내고, 서버가 호출자 역할로 권한을 다시 확인합니다. 승인이 필요한 도구는 시스템 프롬프트에 노출되지 않습니다.
+- **Slack·Discord 봇** — 멘션하면 출처와 함께 답하고, 지식 공백이 생기면 담당자에게 먼저 묻습니다. 예제는 `examples/`에 있습니다.
+- **MCP 서버** — `POST /mcp`로 검색·근거 답변·지식 공백 도구를 Claude, IDE, 에이전트 채팅 앱에 그대로 엽니다. [docs/mcp-server.md](docs/mcp-server.md)
+- **서비스 계정 위임 인증** — 봇과 MCP 게이트웨이가 OIDC 서비스 계정 하나로 사람마다 대신 요청합니다. 역할은 서비스 계정 권한을 넘지 못하고, 감사 로그에 사용자와 대행 서비스가 함께 남습니다. 웹 OIDC 로그인(PKCE)과 `auth.login`·`auth.logout`·`auth.failed` 감사 이벤트도 추가했습니다. [docs/auth-oidc.md](docs/auth-oidc.md)
+- **하이브리드 검색·외부 임베딩** — `RETRIEVAL_MODE=hybrid`로 벡터와 어휘 검색을 RRF로 합치고, `EMBEDDING_PROVIDER=openai`로 OpenAI 호환 임베딩 엔드포인트를 씁니다.
+- **Apache Ossie 지식 교환·MCP 도구 선택** — Ossie 의미 모델 가져오기/내보내기, 지식 공백을 Ossie 초안으로 내려받기, 입력창에서 `/`로 MCP 도구 선택.
+- **운영** — 아키텍처 도식([Architecture](#architecture)), [로드맵·오픈소스 범위](docs/roadmap.md), CI 안정화(의존성 고정 검사, 철회된 보안 권고 제외).
 
 기존 설치를 업데이트하려면 [Updating an existing install](#updating-an-existing-install)을 참고하세요.
 

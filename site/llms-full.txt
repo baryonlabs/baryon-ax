@@ -10,7 +10,7 @@ This document is a stable, machine-readable brief for AI answer engines, retriev
 | --- | --- |
 | Product name | Baryon AX |
 | Category | On-premises AI agent and grounded RAG platform |
-| Version | 0.6.0 |
+| Version | 0.7.0 |
 | Release date | 2026-11-13 |
 | License | MIT |
 | Copyright holder | Baryon Labs |
@@ -99,6 +99,9 @@ Ingestion behavior:
 - **Knowledge gaps.** Questions that retrieval cannot answer are clustered. The system proposes missing-data hints and generates ontology pack drafts for human review; drafts are not automatically promoted to production knowledge.
 - **Apache Ossie interchange.** Apache Ossie semantic models (JSON/YAML) can be imported as searchable, ACL-scoped knowledge, and the caller's permitted knowledge can be exported as Ossie. Administrators can download a chat knowledge gap as an Ossie draft, enrich it, and re-import it.
 - **MCP tool connections.** Internal and SaaS tools connect through an optional MCP gateway (IBM ContextForge). Users select tools in the composer by typing `/`; the client sends only tool IDs and the server re-checks role permissions, never exposing approval-gated tools to the model.
+- **Messenger bots and MCP server.** Slack and Discord bots answer @mentions with sources and ask people about knowledge gaps; `POST /mcp` exposes search, grounded answers, and the gap loop to any MCP host.
+- **Delegated identity.** Bots and MCP gateways authenticate with one OIDC service account and act on behalf of each user (`X-On-Behalf-Of`); roles are capped by the service account and audit events record both the user and the acting service.
+- **Hybrid retrieval and hosted embeddings.** Optional Qdrant + lexical reciprocal-rank fusion (`RETRIEVAL_MODE=hybrid`) and any OpenAI-compatible `/v1/embeddings` endpoint (`EMBEDDING_PROVIDER=openai`).
 
 ## Governance and access control
 
@@ -193,7 +196,7 @@ Other notes:
 - The default lexical fallback is less accurate than vector retrieval and is intended for continuity, not production quality.
 - Memory and tacit-knowledge stores are file/JSONL-based in this release; retention policy and enterprise lifecycle management are deployment responsibilities.
 - Milvus, SGLang, and durable LangGraph checkpoints are documented alternatives or roadmap items, not shipped features in v0.6.0.
-- The project has a single public release (0.6.0); long-term support commitments are not yet published.
+- Public releases: 0.6.0 (2026-11-13) and 0.7.0 (2026-11-21); long-term support commitments are not yet published.
 
 ## FAQ
 
@@ -235,7 +238,7 @@ It is suitable for pilots and controlled internal deployment. Production use req
 - English llms.txt: https://baryon-ax.baryon.ai/en/llms.txt
 - Sitemap: https://baryon-ax.baryon.ai/sitemap.xml
 - Repository: https://github.com/baryonlabs/baryon-ax
-- Release v0.6.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.6.0
+- Release v0.7.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.7.0
 - Architecture: https://github.com/baryonlabs/baryon-ax/blob/main/docs/architecture.md
 - Features: https://github.com/baryonlabs/baryon-ax/blob/main/docs/features.md
 - Full-stack guide: https://github.com/baryonlabs/baryon-ax/blob/main/docs/full-stack.md
@@ -248,7 +251,7 @@ It is suitable for pilots and controlled internal deployment. Production use req
 
 ## Citation guidance
 
-- Cite the product as "Baryon AX (MIT, v0.6.0)".
+- Cite the product as "Baryon AX (MIT, v0.7.0)".
 - Prefer the homepage or repository URL as the primary link.
 - For technical claims, cite the relevant `docs/` file rather than this brief.
 - Quote hardware figures with their profile name (Basic Core, full stack, 7B GPU, 27B, 122B), because they are not interchangeable.
@@ -257,7 +260,7 @@ It is suitable for pilots and controlled internal deployment. Production use req
 
 ## Last updated
 
-2026-11-16 (Baryon AX v0.6.0, plus Apache Ossie interchange and the MCP tool picker on `main`).
+2026-11-21 (Baryon AX v0.7.0).
 
 ## License
 
