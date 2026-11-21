@@ -34,6 +34,27 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+  aws-gateway:
+    name: aws gateway
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/aws/gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install "uv==${UV_VERSION}"
+      - name: Bedrock gateway tests (fake Bedrock client, no AWS calls)
+        run: uv run --no-project --with-requirements requirements.txt --with pytest --with httpx python -m pytest -q test_app.py
+        env:
+          AWS_DEFAULT_REGION: ap-northeast-2
+      - name: Keycloak AWS realm is generated from the dev realm
+        working-directory: .
+        run: |
+          python3 deploy/aws/keycloak/make_realm.py
+          git diff --exit-code -- deploy/aws/keycloak/realm-baryon-ax.aws.json
+
   locks:
     name: lockfile check
     runs-on: ubuntu-latest
@@ -59,6 +80,14 @@ jobs:
             -o "$RUNNER_TEMP/docling-requirements.txt"
           diff -u requirements.txt "$RUNNER_TEMP/docling-requirements.txt"
         working-directory: deploy/parsers/docling
+      - name: aws gateway requirements.txt matches requirements.in
+        run: |
+          cp requirements.txt "$RUNNER_TEMP/gateway-requirements.txt"
+          uv pip compile requirements.in \
+            --python-version 3.12 --python-platform x86_64-manylinux_2_28 --no-header --generate-hashes \
+            -o "$RUNNER_TEMP/gateway-requirements.txt"
+          diff -u requirements.txt "$RUNNER_TEMP/gateway-requirements.txt"
+        working-directory: deploy/aws/gateway
       - name: kordoc package-lock.json is current
         run: npm ci --dry-run --omit=dev --no-audit --no-fund
         working-directory: deploy/parsers/kordoc

@@ -182,6 +182,7 @@ curl -s http://localhost:8000/health             # 버전과 연결 상태 확�
 | + 인증 | Keycloak (OIDC) | — | `-f docker-compose.auth.yml` · [auth-oidc.md](docs/auth-oidc.md) |
 | + MCP 도구 | ContextForge 게이트웨이 | — | `-f docker-compose.mcp.yml` · [mcp-connectors.md](docs/mcp-connectors.md) |
 | GPU 추론 | vLLM 등 사내 GPU 모델 | 7B: RTX 4090 24 GB 1장부터 | [b300-host-deploy.md](docs/b300-host-deploy.md) |
+| AWS | ECS Fargate · RDS · Bedrock, 데모 · 멀티테넌트 · 고객 전용 | 데모 약 $130/월(업무시간) | [aws-deploy.md](docs/aws-deploy.md) |
 | Kubernetes | API 스타터 매니페스트 | — | `deploy/kubernetes` |
 
 <a id="architecture"></a>
@@ -567,6 +568,7 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 | --- | --- |
 | 설치 · 운영 구성 | [full-stack.md](docs/full-stack.md) · [hardware-requirements.md](docs/hardware-requirements.md) · [model-hardware-selection.md](docs/model-hardware-selection.md) · [operations.md](docs/operations.md) |
 | GPU 서버 배포 | [b300-host-deploy.md](docs/b300-host-deploy.md) · [b300-vllm.md](docs/b300-vllm.md) |
+| AWS 배포 · 멀티테넌트 | [aws-deploy.md](docs/aws-deploy.md) · [multi-tenancy.md](docs/multi-tenancy.md) |
 | 구조 · 설계 | [architecture.md](docs/architecture.md) · [ingestion/architecture.md](docs/ingestion/architecture.md) · [ux-principles.md](docs/ux-principles.md) · [research/knowledge-gap-loop.md](docs/research/knowledge-gap-loop.md) |
 | 기능 전체 | [features.md](docs/features.md) · [screenshots.md](docs/screenshots.md) |
 | 인증 · 보안 | [auth-oidc.md](docs/auth-oidc.md) · [multi-tenancy.md](docs/multi-tenancy.md) · [security.md](docs/security.md) · [security-ci.md](docs/security-ci.md) · [SECURITY.md](SECURITY.md) |

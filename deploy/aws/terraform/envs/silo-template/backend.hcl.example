@@ -1,0 +1,5 @@
+bucket         = "baryon-ax-tfstate-<ACCOUNT_ID>-ap-northeast-2"
+key            = "envs/<customer>/terraform.tfstate"
+region         = "ap-northeast-2"
+dynamodb_table = "baryon-ax-tflock"
+encrypt        = true
