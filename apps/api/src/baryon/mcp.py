@@ -12,6 +12,8 @@ from typing import Any
 
 import httpx
 
+from . import __version__
+
 
 class MCPGatewayError(Exception):
     """Raised when the gateway rejects a request or returns an MCP error."""
@@ -46,7 +48,7 @@ class MCPClient:
                     "params": {
                         "protocolVersion": "2025-03-26",
                         "capabilities": {},
-                        "clientInfo": {"name": "baryon-ax", "version": "0.6.0"},
+                        "clientInfo": {"name": "baryon-ax", "version": __version__},
                     },
                 },
             )
