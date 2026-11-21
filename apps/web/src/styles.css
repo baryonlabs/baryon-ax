@@ -519,3 +519,6 @@ details.trace[open] summary::before { transform: rotate(90deg); }
   .os-main { flex-basis: 100%; }
   .open-source-controls select { flex: 1; }
 }
+
+.pill.signed-in { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.auth-error { max-width: 480px; margin: 15vh auto; padding: 0 16px; color: var(--text-soft); }
