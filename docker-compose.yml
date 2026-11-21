@@ -44,7 +44,12 @@ services:
       retries: 5
 
   web:
-    build: ./apps/web
+    build:
+      context: ./apps/web
+      args:
+        VITE_AUTH_MODE: ${VITE_AUTH_MODE:-dev}
+        VITE_OIDC_ISSUER: ${VITE_OIDC_ISSUER:-}
+        VITE_OIDC_CLIENT_ID: ${VITE_OIDC_CLIENT_ID:-}
     ports:
       - "${BIND_HOST:-0.0.0.0}:${WEB_PORT:-3001}:8080"
     depends_on:
