@@ -82,6 +82,7 @@ object VoiceEngine {
                 open = true
                 emit("state", "state" to if (audio) "connected" else "typing", "audio" to audio)
                 if (audio) startAudio(webSocket)
+                prefsJson?.let { webSocket.send(it) }
                 synchronized(pendingTexts) { pendingTexts.forEach { sendText(it) }; pendingTexts.clear() }
             }
 
@@ -119,6 +120,18 @@ object VoiceEngine {
                 stop("failed")
             }
         })
+    }
+
+    /** The caller's settings for this call (earcons, voice, speed); resent whenever they change. */
+    @Volatile var prefsJson: String? = null
+        set(value) {
+            field = value
+            if (open && value != null) socket?.send(value)
+        }
+
+    /** The caller is typing: the gateway ignores key clicks on the microphone for a moment. */
+    fun typing() {
+        if (open) socket?.send("""{"type":"typing"}""")
     }
 
     /** Typed message or a tapped answer such as "응". Queued until the line is open. */

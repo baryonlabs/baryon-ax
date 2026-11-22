@@ -43,13 +43,15 @@ class FakeSpeech:
     def __init__(self, heard: list[str]) -> None:
         self.heard = list(heard)
         self.spoken: list[str] = []
+        self.voices: list = []
 
     async def transcribe(self, samples, rate) -> str:
         assert rate == gateway.VAD_RATE and len(samples) > 0
         return self.heard.pop(0) if self.heard else ""
 
-    async def synthesize(self, text: str):
+    async def synthesize(self, text: str, voice=None, speed=None):
         self.spoken.append(text)
+        self.voices.append((voice, speed))
         rate = 24000  # like Supertonic: the call resamples to its own rate
         return np.full(rate // 2 * max(1, len(text) // 10), 0.2, dtype=np.float32), rate  # longer text, longer audio
 
@@ -430,4 +432,69 @@ def test_thinking_ticks_only_while_working_in_silence() -> None:
             server.close()
         finally:
             gateway.THINKING_TICK_SECONDS = 2.5
+    asyncio.run(run())
+
+
+def test_quiet_noise_and_fragments_never_reach_the_secretary() -> None:
+    """From a real call: room noise passed the VAD and Whisper turned it into "다음 영상에서 만나요"
+    61 times in 10 minutes; "아" and "자" interrupted the secretary. None of it is a request."""
+    async def run() -> None:
+        faint = (np.full(160, 0.06, dtype=np.float32) * 32767).astype("<i2").tobytes()  # VAD says speech, peak 0.06
+        speech, secretary = FakeSpeech(["자", "메일 알려줘"]), FakeSecretary({})
+        server, writer, received, collector, calls = await start_call(speech, secretary)
+        await send(writer, faint, 20)
+        await send(writer, QUIET, 12)
+        await asyncio.sleep(0.1)
+        assert speech.heard == ["자", "메일 알려줘"], "the quiet segment never went to STT"
+        for _ in range(2):  # "자", then a real request
+            await send(writer, LOUD, 20)
+            await send(writer, QUIET, 12)
+            await asyncio.sleep(0.1)
+        await wait_for(lambda: secretary.turns == ["메일 알려줘"])
+        collector.cancel()
+        server.close()
+    asyncio.run(run())
+
+
+def test_one_syllable_answer_counts_when_a_question_is_open() -> None:
+    async def run() -> None:
+        ask = [{"type": "confirm", "id": "1", "prompt": "보낼까요?"}]
+        speech, secretary = FakeSpeech(["보내줘", "응"]), FakeSecretary({"보내줘": ask})
+        server, writer, received, collector, calls = await start_call(speech, secretary)
+        for _ in range(2):
+            await send(writer, LOUD, 20)
+            await send(writer, QUIET, 12)
+            await asyncio.sleep(0.15)
+        await wait_for(lambda: secretary.turns == ["보내줘", "응"])
+        collector.cancel()
+        server.close()
+    asyncio.run(run())
+
+
+def test_app_prefs_choose_voice_speed_and_silence_earcons() -> None:
+    from websockets.asyncio.client import connect
+    from websockets.asyncio.server import serve as ws_serve
+
+    async def run() -> None:
+        speech, secretary = FakeSpeech(["할 일 알려줘"]), FakeSecretary({})
+        calls: list = []
+
+        async def app_call(websocket) -> None:
+            call = gateway.Call(gateway.WebSocketTransport(websocket), speech=speech, secretary=secretary, vad=FakeVad(),
+                                settings=gateway.Settings(secretary_url="x"))
+            calls.append(call)
+            await call.run()
+
+        async with ws_serve(app_call, "127.0.0.1", 0) as server:
+            port = server.sockets[0].getsockname()[1]
+            async with connect(f"ws://127.0.0.1:{port}/v1/voice/call") as ws:
+                await ws.send('{"type": "prefs", "earcons": false, "voice": 4, "speed": 1.2}')
+                await wait_for(lambda: calls and calls[0].voice == 4)
+                cued: list = []
+                original = calls[0].cue
+                calls[0].cue = lambda name: (cued.append(name), original(name))
+                await ws.send('{"type": "text", "text": "메일 알려줘"}')
+                await wait_for(lambda: "메일 알려줘에 답할게요." in speech.spoken)
+                assert speech.voices[-1] == (4, 1.2)
+                assert calls[0].earcons_on is False
     asyncio.run(run())
