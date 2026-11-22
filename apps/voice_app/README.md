@@ -1,17 +1,8 @@
-# baryon_voice
+# 바리온 비서 (Baryon voice app)
 
-Baryon voice secretary: call your secretary hands-free
+An Android app for talking to the [voice secretary](../../docs/voice-secretary.md) hands-free. It is written in Flutter, and the call engine is native Kotlin. The full guide is in [docs/voice-app.md](../../docs/voice-app.md).
 
-## Getting Started
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+flutter test                 # widget tests
+flutter build apk --debug    # build/app/outputs/flutter-apk/app-debug.apk
+```
