@@ -260,6 +260,127 @@ curl -s http://localhost:8000/health             # 버전과 연결 상태 확�
 | 딩-동? | 대답이 필요해요 ("응" / "아니") |
 | 도-미-솔 | 맡긴 백그라운드 작업이 끝났어요 |
 
+### 소통 파이프라인 (UML)
+
+음성 한 마디가 어떻게 흐르는지 UML로 정리했습니다. 유스케이스, 배치, 시퀀스(끼어들기 · 음성 확인 · 목표 에이전트), 목표 상태, 발화 필터 활동, 클래스까지 11개 다이어그램 전체는 [docs/voice-architecture.md](docs/voice-architecture.md)에 있습니다.
+
+<details open>
+<summary><b>컴포넌트 다이어그램</b>: 무엇이 있고 어떻게 연결되나</summary>
+
+```mermaid
+flowchart LR
+    subgraph phone["📱 Android phone"]
+        ui["Flutter UI<br/>chat · status chip · settings"]
+        engine["VoiceEngine (Kotlin)<br/>mic AEC/NS · speaker · WebSocket"]
+        telecom["Telecom self-managed call<br/>→ car Bluetooth"]
+        ui <-->|MethodChannel / EventChannel| engine
+        engine --- telecom
+    end
+    sip["📞 SIP app (Linphone)"]
+
+    subgraph gateway["deploy/phone"]
+        asterisk["Asterisk<br/>PJSIP · AudioSocket"]
+        gw["Phone gateway<br/>Call · VAD · noise gate · echo filter<br/>earcons · chunker · barge-in"]
+        asterisk -->|AudioSocket 8 kHz| gw
+    end
+
+    subgraph speech["deploy/stt (on-prem)"]
+        stt["STT<br/>Whisper turbo · SenseVoice"]
+        tts["TTS<br/>Supertonic 3"]
+    end
+
+    subgraph secretary["apps/secretary (workstation)"]
+        session["Session<br/>Claude Agent SDK · policy"]
+        goals["GoalManager<br/>goal agents · worktrees"]
+        session --> goals
+    end
+
+    claude["☁️ Claude model"]
+    mcp["MCP: Gmail · Calendar · to-dos · DureClaw · KB"]
+
+    engine <-->|wss 16 kHz PCM + JSON| gw
+    sip <-->|SIP/RTP over tailnet| asterisk
+    gw -->|utterance WAV| stt
+    gw -->|sentence| tts
+    gw <-->|turn · SSE events| session
+    session --> claude
+    session --> mcp
+    goals --> claude
+```
+
+</details>
+
+<details>
+<summary><b>시퀀스 다이어그램</b>: 말 한 마디가 답이 되기까지</summary>
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Owner
+    participant App as App (VoiceEngine)
+    participant GW as Gateway (Call)
+    participant STT as STT sidecar
+    participant SEC as Secretary (Session)
+    participant LLM as Claude + tools
+    participant TTS as TTS sidecar
+
+    Owner->>App: speaks "열린 PR이랑 CI 알려줘"
+    App->>GW: PCM 16 kHz frames (20 ms)
+    GW-->>App: {"type":"vad","speaking":true} (ear moves)
+    GW->>GW: Silero VAD ends segment after 0.6 s silence
+    GW->>GW: noise gate (RMS/peak)
+    GW->>STT: POST /v1/audio/transcriptions
+    STT-->>GW: text
+    GW-->>App: 띠링 earcon + {"type":"heard"}
+    GW->>SEC: POST /turn {text}
+    SEC->>LLM: query (persona, policy)
+    LLM-->>SEC: tool_use gh pr list (auto: read-only)
+    SEC-->>GW: event activity + status "깃허브를 확인하고 있어요"
+    GW->>TTS: synthesize filler
+    TTS-->>GW: WAV
+    GW-->>App: audio (paced in real time)
+    LLM-->>SEC: answer text (streamed)
+    SEC-->>GW: text deltas
+    GW->>GW: SentenceChunker
+    loop each sentence
+        GW->>TTS: synthesize
+        TTS-->>GW: WAV
+        GW-->>App: audio + {"type":"said"}
+    end
+    SEC-->>GW: done
+    GW-->>App: {"type":"idle"}
+```
+
+</details>
+
+<details>
+<summary><b>상태 다이어그램</b>: 통화 중 비서의 상태와 효과음</summary>
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Connecting: call button / shortcut
+    Idle --> Typing: send text (no call)
+    Typing --> Connecting: call button
+    Connecting --> Listening: socket open, greeting
+    Listening --> Hearing: VAD speech
+    Hearing --> Listening: dropped (quiet, phantom, echo, fragment)
+    Hearing --> Thinking: utterance accepted (띠링)
+    Thinking --> Speaking: first sentence synthesized
+    Thinking --> Thinking: tick every 2.5 s
+    Speaking --> Listening: idle
+    Speaking --> Hearing: barge-in (뚝)
+    Thinking --> AwaitingAnswer: confirm (딩-동?)
+    AwaitingAnswer --> Thinking: 응 / 아니
+    Listening --> Muted: mute
+    Muted --> Listening: unmute
+    Listening --> Ended: hang up
+    Speaking --> Ended: hang up
+    Ended --> [*]
+```
+
+</details>
+
 시작하기: 음성 프로필(`docker-compose.voice.yml`)로 STT · TTS를 띄우고, 작업자 PC에서 `apps/secretary`를 실행한 뒤, 전화 게이트웨이(`docker-compose.phone.yml`)와 앱을 연결합니다. 자세한 순서는 [voice-secretary.md](docs/voice-secretary.md) → [voice-app.md](docs/voice-app.md)에 있습니다.
 
 <a id="architecture"></a>
@@ -651,7 +772,7 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 | 기능 전체 | [features.md](docs/features.md) · [screenshots.md](docs/screenshots.md) |
 | 인증 · 보안 | [auth-oidc.md](docs/auth-oidc.md) · [multi-tenancy.md](docs/multi-tenancy.md) · [security.md](docs/security.md) · [security-ci.md](docs/security-ci.md) · [SECURITY.md](SECURITY.md) |
 | 연동 | [mcp-server.md](docs/mcp-server.md) · [mcp-connectors.md](docs/mcp-connectors.md) · [examples/](examples) |
-| 음성 비서 · 앱 | [voice.md](docs/voice.md) · [voice-secretary.md](docs/voice-secretary.md) · [phone.md](docs/phone.md) · [voice-app.md](docs/voice-app.md) |
+| 음성 비서 · 앱 | [voice.md](docs/voice.md) · [voice-secretary.md](docs/voice-secretary.md) · [phone.md](docs/phone.md) · [voice-app.md](docs/voice-app.md) · [voice-architecture.md](docs/voice-architecture.md) (UML) · [voice-app-design.md](docs/voice-app-design.md) (UX 가이드) |
 | 오픈소스 · 라이선스 | [open-source.md](docs/open-source.md) · [ingestion/open-source-inventory.md](docs/ingestion/open-source-inventory.md) |
 | 방향 | [roadmap.md](docs/roadmap.md) |
 | 홈페이지 운영 | [promotion-playbook.md](docs/promotion-playbook.md) · [site-seo.md](docs/site-seo.md) · [domain-migration.md](docs/domain-migration.md) |
