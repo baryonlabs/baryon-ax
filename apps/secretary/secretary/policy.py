@@ -20,6 +20,9 @@ AUTO_TOOLS = {
     "Read", "Grep", "Glob", "LS", "WebSearch", "WebFetch", "TodoWrite", "ToolSearch",
 }
 AUTO_BASH_PREFIXES = (
+    # Google mail and calendar through gogcli (`gog`), read-only commands only
+    "gog gmail search ", "gog gmail get ", "gog gmail thread get ", "gog gmail url ", "gog gmail labels list",
+    "gog calendar events", "gog calendar event ", "gog calendar calendars",
     "gh pr list", "gh pr view", "gh pr checks", "gh pr status", "gh pr diff", "gh run list", "gh run view",
     "gh issue list", "gh issue view", "gh repo view",
     "git status", "git log", "git diff", "git show", "git branch --show-current", "git branch -a", "git branch -v", "git remote -v", "git fetch",
@@ -40,6 +43,7 @@ AUTO_MCP_SUFFIXES = (
 
 DENY_BASH = re.compile(
     r"\brm\s+-[a-z]*r[a-z]*f|\brm\s+-[a-z]*f[a-z]*r|--force\b|\bpush\s+-f\b|reset\s+--hard|\bclean\s+-[a-z]*f"
+    r"|\bgog\b.*\b(?:batch\s+delete|delete-calendar)\b"  # permanent mail deletion, removing a calendar
     r"|\bmkfs\b|\bdd\s+if=|\bshutdown\b|\breboot\b|:\(\)\s*\{|\bchmod\s+-R\s+777|\bcurl\b[^|]*\|\s*(?:ba|z)?sh",
 )
 _UNSAFE_SHELL = re.compile(r"[`$<>]|(?<![&])&(?![&])")  # substitution, redirects, background jobs
@@ -100,6 +104,21 @@ def _spoken_steps(value: object) -> str:
     return re.sub(r"https?://(?:www\.)?([^/\s]+)\S*", r"\1", text)
 
 
+def _flag(command: str, name: str) -> str:
+    match = re.search(rf"--{name}[= ](?:'([^']*)'|\"([^\"]*)\"|(\S+))", command)
+    return next((group for group in match.groups() if group), "") if match else ""
+
+
+def _gog_send_prompt(command: str) -> str:
+    """Read the mail back before it goes: who gets it, the subject, and how it starts."""
+    to = _flag(command, "to") or ("답장 받는 사람들" if "--reply-all" in command else "")
+    subject = _flag(command, "subject") or ("같은 스레드 답장" if "--thread-id" in command or "--reply-to" in command else "")
+    body = _flag(command, "body")
+    parts = [f"받는 사람 {_short(to, 50)}" if to else "", f"제목 {_short(subject, 40)}" if subject else "",
+             f"내용 {_short(body, 60)}" if body else ""]
+    return "메일을 보낼까요? " + ", ".join(part for part in parts if part)
+
+
 def confirmation_prompt(tool: str, tool_input: dict) -> str:
     """One short spoken question that says what will happen."""
     name = tool.rsplit("__", 1)[-1]
@@ -123,6 +142,8 @@ def confirmation_prompt(tool: str, tool_input: dict) -> str:
         return f"일정을 등록할까요? {_short(tool_input.get('summary') or tool_input.get('title'))}"
     if name in {"delete_event", "trash_message", "trash_thread", "delete_draft"}:
         return "삭제할까요? 되돌리기 어려울 수 있어요."
+    if tool == "Bash" and re.search(r"\bgog\s+gmail\s+send\b", str(tool_input.get("command", ""))):
+        return _gog_send_prompt(str(tool_input.get("command", "")))
     if tool == "Bash":
         command = re.sub(r"^\s*cd\s+\S+\s*(?:&&|;)\s*", "", str(tool_input.get("command", "")))
         command = re.sub(r"(?:/[\w.~-]+){2,}/?", "", command)  # long paths are noise when read aloud
@@ -177,6 +198,12 @@ def status_label(tool: str, tool_input: dict) -> str:
             return "깃허브를 확인하고 있어요."
         if command.startswith("git "):
             return "저장소를 보고 있어요."
+        if command.startswith("gog gmail send"):
+            return "메일을 보내고 있어요."
+        if command.startswith("gog gmail"):
+            return "메일을 확인하고 있어요."
+        if command.startswith("gog calendar"):
+            return "일정을 확인하고 있어요."
         return "명령을 실행하고 있어요."
     for key, label in STATUS_LABELS:
         if tool.endswith(key):

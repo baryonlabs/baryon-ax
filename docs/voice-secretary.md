@@ -130,8 +130,32 @@ You also need [voice](voice.md) with a dictation model and Supertonic 3 installe
 | `SECRETARY_MAX_GOALS` | `3` | Goal agents running at once. Others wait as `queued`. |
 | `SECRETARY_STATE_DIR` | `~/.baryon-secretary` | Where the goal list is kept. |
 
-Mail, calendar and drive come from the Claude account's connectors when they are
-enabled there.
+### Gmail and Google Calendar (gogcli)
+
+The secretary reads and sends Gmail and reads Google Calendar through [gogcli](https://github.com/steipete/gogcli)
+(`gog`), a command-line client that keeps its OAuth token in the workstation's keychain.
+
+```bash
+brew install steipete/tap/gogcli
+gog auth credentials ~/Downloads/client_secret_….json   # your own Google Cloud OAuth client (Desktop app)
+gog auth add you@example.com --services gmail,calendar   # a browser opens; you approve the scopes yourself
+gog gmail search 'is:unread newer_than:1d' --max 3 -j     # check that it works
+```
+
+The secretary runs `gog` itself, from the same user account. Policy (`secretary/policy.py`):
+
+| Command | What happens |
+| --- | --- |
+| `gog gmail search`, `gog gmail get`, `gog gmail thread get`, `gog calendar events` | Runs at once (read only) |
+| `gog gmail send` (new mail or reply) | Read back first: "메일을 보낼까요? 받는 사람 …, 제목 …, 내용 …". Sent only after "응" |
+| Archive, labels, other changes | Spoken confirmation |
+| `gog gmail batch delete`, `gog calendar delete-calendar` | Never runs |
+
+Mail text is untrusted. The secretary is told not to follow instructions written in a mail (open a link, forward,
+send to someone else), only to tell you about them, and every send still needs your "응". Mail you ask about is
+sent to the Claude model to be summarized.
+
+Mail, calendar and drive also come from the Claude account's connectors when they are enabled there.
 
 ## Measured
 

@@ -412,3 +412,31 @@ def test_brain_choice_picks_the_model_for_the_next_call_and_for_goal_agents(api,
     api.put("/v1/profile", headers=AUTH, json={"brain": "fast", "goal_brain": "nonsense"})
     assert server.profile.conversation_brain("sonnet")["fallback"] is None  # no fallback to itself
     assert server.profile.data["goal_brain"] == "best"                       # unknown choices are ignored
+
+
+@pytest.mark.parametrize("command,action", [
+    ("gog gmail search 'is:unread newer_than:1d' --max 10 -j", "auto"),
+    ("gog gmail thread get 18c2f -j | head -50", "auto"),
+    ("gog calendar events --today -j", "auto"),
+    ("gog gmail send --to a@example.com --subject '회의' --body '10분 늦어요'", "confirm"),
+    ("gog gmail archive 18c2f", "confirm"),
+    ("gog gmail batch delete 18c2f 18c30", "deny"),          # permanent: a misheard word must never do this
+    ("gog calendar delete-calendar primary", "deny"),
+    ("gog gmail search x; gog gmail send --to b@example.com --body hi", "confirm"),  # a send hidden after a search
+])
+def test_gog_mail_policy(command: str, action: str) -> None:
+    assert policy.decide("Bash", {"command": command}).action == action
+
+
+def test_mail_is_read_back_before_it_is_sent() -> None:
+    prompt = policy.confirmation_prompt("Bash", {"command":
+        "gog gmail send --to kim@example.com --subject '내일 회의' --body '10분 늦을 것 같아요. 먼저 시작해 주세요.'"})
+    assert prompt.startswith("메일을 보낼까요?") and "kim@example.com" in prompt and "내일 회의" in prompt
+    assert "10분 늦을 것 같아요" in prompt
+    reply = policy.confirmation_prompt("Bash", {"command": "gog gmail send --thread-id 18c2f --reply-all --body=확인했어요"})
+    assert "답장 받는 사람들" in reply and "같은 스레드 답장" in reply and "확인했어요" in reply
+
+
+def test_mail_status_is_spoken_plainly() -> None:
+    assert policy.status_label("Bash", {"command": "gog gmail search is:unread -j"}) == "메일을 확인하고 있어요."
+    assert policy.status_label("Bash", {"command": "gog calendar events --today -j"}) == "일정을 확인하고 있어요."
