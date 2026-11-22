@@ -1,0 +1,15 @@
+{
+  "description": "Held-out Korean gap questions, written after the extractor was tuned on ontology_gold_ko.json. Do not tune on these; report them separately.",
+  "questions": [
+    {"q": "사내 동호회 지원금 상한은 얼마야?", "entities": ["동호회"], "ok": ["사내 동호회", "지원금", "동호회 지원금", "사내 동호회 지원금"], "slots": [{"subject": ["동호회"], "relation": "한도", "value_type": "금액"}]},
+    {"q": "개인정보 유출이 의심되면 누구에게 보고해?", "entities": ["개인정보"], "ok": ["개인정보 유출", "유출"], "slots": [{"subject": ["개인정보"], "relation": "신고처", "value_type": "사람·조직"}]},
+    {"q": "분기 실적 보고서 제출 마감은 언제야?", "entities": ["실적 보고서"], "ok": ["분기 실적 보고서", "보고서", "분기", "분기 실적", "제출"], "slots": [{"subject": ["보고서"], "relation": "기한", "value_type": "기간"}]},
+    {"q": "외근 교통비는 어느 시스템에서 청구해?", "entities": ["교통비"], "ok": ["외근", "외근 교통비"], "slots": [{"subject": ["교통비"], "relation": "제출처", "value_type": "시스템"}]},
+    {"q": "해외 송금은 누가 결재해?", "entities": ["해외 송금"], "ok": ["송금", "해외"], "slots": [{"subject": ["송금"], "relation": "승인자", "value_type": "사람·조직"}]},
+    {"q": "명함 제작은 누구한테 신청해?", "entities": ["명함"], "ok": ["명함 제작", "제작"], "slots": [{"subject": ["명함"], "relation": "담당", "value_type": "사람·조직"}]},
+    {"q": "소프트웨어 라이선스 구매 기준은 뭐야?", "entities": ["소프트웨어 라이선스"], "ok": ["라이선스", "소프트웨어", "구매", "라이선스 구매"], "slots": [{"subject": ["라이선스", "소프트웨어"], "relation": "근거", "value_type": "문서·규정"}]},
+    {"q": "육아휴직은 며칠 전에 신청해야 해?", "entities": ["육아휴직"], "ok": ["신청"], "slots": [{"subject": ["육아휴직"], "relation": "기한", "value_type": "기간"}]},
+    {"q": "협력사 대금 지급은 누가 승인해?", "entities": ["대금 지급"], "ok": ["협력사", "대금", "지급", "협력사 대금", "협력사 대금 지급"], "slots": [{"subject": ["대금", "지급", "협력사"], "relation": "승인자", "value_type": "사람·조직"}]},
+    {"q": "사무용품 구매 한도는 얼마야?", "entities": ["사무용품"], "ok": ["구매", "사무용품 구매"], "slots": [{"subject": ["사무용품"], "relation": "한도", "value_type": "금액"}]}
+  ]
+}

@@ -79,6 +79,9 @@ def test_ungrounded_chat_becomes_ontology_pack() -> None:
     assert ossie.headers["content-disposition"].startswith("attachment;")
     assert ossie.json()["version"] == "0.3.0.dev0"
     assert ossie.json()["datasets"][0]["name"] == "knowledge_gap"
+    # The open slot ("일정" → a deadline) travels with the Ossie draft, so whoever completes it knows what is missing.
+    assert pack["slots"] and pack["slots"][0]["relation"] == "기한"
+    assert "?기간" in ossie.json()["ai_context"]["instructions"]
 
 
 def test_streaming_chat_also_records_gap() -> None:

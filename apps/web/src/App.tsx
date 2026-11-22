@@ -114,7 +114,8 @@ type PackVerification = {
 };
 type OntologyPack = {
   id: string; name: string; domain: string; status: string; created_at: string;
-  entities: { name: string; type: string }[]; relations: { from: string; type: string; to: string }[];
+  entities: { name: string; type: string; synonyms?: string[] }[]; relations: { from: string; type: string; to: string }[];
+  slots?: { subject: string; relation: string; value_type: string; question: string; status: string }[];
   required_sources: { kind: string; hint: string }[]; acceptance_questions: string[]; source_gap_ids: string[];
   verification?: PackVerification;
 };
@@ -327,6 +328,7 @@ const copy = {
     noGaps: "아직 지식 공백이 없습니다", noGapsBody: "근거를 찾지 못한 질문이 생기면 여기에 쌓입니다.",
     noPacks: "아직 꾸러미가 없습니다", noPacksBody: "클러스터에서 꾸러미를 만들면 초안이 저장됩니다.",
     entities: "엔티티", relations: "관계", generatedFrom: (count: number) => `질문 ${count}건에서 생성`,
+    openSlots: "아직 모르는 값", alsoCalled: "다른 이름",
     gapCaptureFailed: "지식 공백을 불러올 수 없습니다.", packFailed: "온톨로지 꾸러미를 만들 수 없습니다.", statusDraft: "초안",
     approvePack: "승인", verifyPack: "재검증", verifying: "검증 중…", coverage: "커버리지", resolved: "해결",
     statusReviewed: "검토됨", statusActive: "활성", packVerified: (name: string, coverage: number) => `${name} 커버리지 ${Math.round(coverage * 100)}%`,
@@ -424,6 +426,7 @@ const copy = {
     noGaps: "No knowledge gaps yet", noGapsBody: "Questions the platform cannot ground will appear here.",
     noPacks: "No packs yet", noPacksBody: "Create a pack from a cluster to store a draft.",
     entities: "entities", relations: "relations", generatedFrom: (count: number) => `From ${count} question(s)`,
+    openSlots: "Still unknown", alsoCalled: "Also called",
     gapCaptureFailed: "Could not load knowledge gaps.", packFailed: "Could not create the ontology pack.", statusDraft: "draft",
     approvePack: "Approve", verifyPack: "Re-verify", verifying: "Verifying…", coverage: "Coverage", resolved: "Resolved",
     statusReviewed: "Reviewed", statusActive: "Active", packVerified: (name: string, coverage: number) => `${name} coverage ${Math.round(coverage * 100)}%`,
@@ -1798,7 +1801,17 @@ export default function App({ session = null }: { session?: AuthSession | null }
                 <div className="meter"><span style={{ width: `${Math.min(100, pack.verification.coverage * 100)}%` }}/></div>
                 <small>{pack.verification.passed}/{pack.verification.total} · {Math.round(pack.verification.coverage * 100)}%</small>
               </div>}
-              <div className="chips">{pack.entities.slice(0, 8).map(entity => <span className="chip" key={entity.name}>{entity.name}</span>)}</div>
+              <div className="chips">{pack.entities.slice(0, 8).map(entity => <span className="chip" key={entity.name}
+                title={entity.synonyms?.length ? `${t.alsoCalled}: ${entity.synonyms.join(", ")}` : undefined}>
+                {entity.name}{entity.type && entity.type !== "개념" && entity.type !== "concept" ? <small className="chip-type"> · {entity.type}</small> : null}
+              </span>)}</div>
+              {pack.slots && pack.slots.some(slot => slot.status === "open") && <div className="slots">
+                <small className="section-label">{t.openSlots}</small>
+                <ul>{pack.slots.filter(slot => slot.status === "open").slice(0, 6).map(slot =>
+                  <li key={`${slot.subject}-${slot.relation}`} title={slot.question}>
+                    <strong>{slot.subject}</strong> <span className="slot-rel">{slot.relation}</span> <span className="slot-value">?{slot.value_type}</span>
+                  </li>)}</ul>
+              </div>}
               {pack.verification?.results.filter(result => !result.passed).slice(0, 2).map(result => <p className="muted" key={result.question}>
                 {result.question}{result.missing_terms.length ? ` · ${t.missingTerms}: ${result.missing_terms.join(", ")}` : ""}
               </p>)}

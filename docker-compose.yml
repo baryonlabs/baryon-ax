@@ -22,6 +22,10 @@ services:
       HOST_HOSTNAME: ${HOST_HOSTNAME:-}
       GAP_STORE: /data/gaps/gaps.jsonl
       TACIT_STORE: /data/tacit/tacit.jsonl
+      # Ontology packs and answer feedback live on volumes too; without these they were written to /tmp
+      # inside the container and lost whenever the container was recreated.
+      ONTOLOGY_STORE: /data/ontology
+      FEEDBACK_STORE: /data/feedback/feedback.jsonl
     extra_hosts:
       - "host.docker.internal:host-gateway"
     group_add:
@@ -33,6 +37,8 @@ services:
       - models:/data/fastembed
       - gaps:/data/gaps
       - tacit:/data/tacit
+      - ontology:/data/ontology
+      - feedback:/data/feedback
       - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
     ports:
@@ -101,5 +107,7 @@ volumes:
   models:
   gaps:
   tacit:
+  ontology:
+  feedback:
   postgres:
   qdrant:
