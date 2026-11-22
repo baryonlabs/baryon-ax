@@ -36,7 +36,7 @@ from .ingest.mime import sniff_mime
 from .ingest.parsers import ParseError
 from .ingest.pipeline import PipelineConfig, PermanentError, run_pipeline
 from .feedback import FeedbackStore
-from .gaps import GapStore, PackStore, build_pack, cluster_gaps, verify_pack
+from .gaps import GapStore, PackStore, build_pack, cluster_gaps, detect_reasons, verify_pack
 from .ontology import Extraction as OntologyExtraction, model_extract_each as ontology_model_extract_each, resolve_synonyms as ontology_resolve_synonyms, rule_extract as ontology_rule_extract
 from .mcp import MCPClient, MCPGatewayError
 from .mcp_server import MCPServer, Tool, ToolError, parse_body
@@ -2830,10 +2830,14 @@ async def chat(
                citations=[item["document_id"] for item in citations], streamed=False,
                **({"usage": metered} if metered else {}))
     audit_ms = round((time.perf_counter() - audit_started) * 1000, 2)
-    record_knowledge_gap(principal, request, answer, citations, trace_id)
+    gap = record_knowledge_gap(principal, request, answer, citations, trace_id)
+    # Whether the documents answered it: clients (the Slack bot) should not list sources under "I could not find it".
+    reasons = detect_reasons(request.messages[-1].content, answer, len(citations), request.use_retrieval)
     return {"id": trace_id, "object": "chat.completion", "model": request.model,
             "choices": [{"index": 0, "message": {"role": "assistant", "content": answer}, "finish_reason": "stop"}],
             "citations": citation_payload(citations),
+            "grounding": {"answered": not ({"refusal", "no_citations", "empty_answer"} & set(reasons)), "reasons": reasons},
+            "knowledge_gap": gap,
             "trace": _finish_trace(trace_payload, model_ms, audit_ms, started, trace_id)}
 
 
@@ -3847,13 +3851,31 @@ async def _mcp_ask(arguments: dict, identity: dict) -> tuple[str, dict]:
     data = await _rest(chat(request, **_identity(identity)))
     answer = data["choices"][0]["message"]["content"]
     citations = data.get("citations") or []
-    seen: list[str] = []
+    grounding = data.get("grounding") or {}
+    # Retrieval returns passages whether or not the answer used them. An agent reading this (the voice
+    # secretary) must not name an unused passage as its source, so the two are listed apart.
+    cited: list[str] = []
+    retrieved: list[str] = []
     for item in citations:
-        label = f"{item.get('title')} · chunk {item.get('chunk')}"
-        if label not in seen:
-            seen.append(label)
-    text = answer + ("\n\nSources:\n" + "\n".join(f"- {label}" for label in seen) if seen else "\n\n(No supporting document found.)")
-    return text, {"answer": answer, "citations": citations, "trace_id": data.get("id")}
+        title = str(item.get("title") or "")
+        label = f"{title} · chunk {item.get('chunk')}"
+        stem = title.rsplit(".", 1)[0]
+        bucket = cited if title and (title in answer or (len(stem) >= 4 and stem in answer)) else retrieved
+        if label not in cited and label not in retrieved:
+            bucket.append(label)
+    if not grounding.get("answered", True):
+        text = answer + "\n\n(The documents did not answer this. It was recorded as a knowledge gap.)"
+    elif cited or retrieved:
+        text = answer
+        if cited:
+            text += "\n\nSources used in the answer:\n" + "\n".join(f"- {label}" for label in cited)
+        if retrieved:
+            text += ("\n\nAlso retrieved, not necessarily used (do not cite these unless the answer relies on them):\n"
+                     + "\n".join(f"- {label}" for label in retrieved))
+    else:
+        text = answer + "\n\n(No supporting document found.)"
+    return text, {"answer": answer, "citations": citations, "cited": cited, "grounding": grounding,
+                  "trace_id": data.get("id")}
 
 
 async def _mcp_gaps(arguments: dict, identity: dict) -> tuple[str, dict]:
