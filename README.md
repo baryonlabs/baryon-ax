@@ -7,8 +7,10 @@
 **문서에 없는 지식은, AI가 먼저 물어봅니다.**
 
 사내 문서로 근거를 들어 답하고, 답하지 못한 질문은 전문가에게 먼저 물어 조직의 지식으로 쌓는<br>
-**온프레미스 · 모델 비종속 · 소스 공개** 엔터프라이즈 AI 플랫폼<br>
-운전 중에도 전화 한 통으로 요약을 듣고 일을 맡기는 **음성 비서**까지 함께 공개합니다
+**온프레미스 · 모델 비종속 · 소스 공개** 엔터프라이즈 AI 플랫폼
+
+📱 **바리온 비서 앱**: 운전 중에도 전화 한 통으로 요약을 듣고 일을 맡깁니다.<br>
+"네, 비서입니다. 말씀하세요." 하고 받으면, 말로 묻고 말로 시키면 됩니다. 음성은 사내 서버에서만 처리합니다.
 
 [![Release](https://img.shields.io/github/v/release/baryonlabs/baryon-ax?label=release&color=1f6f5c)](https://github.com/baryonlabs/baryon-ax/releases/latest)
 [![License: Community 1.0](https://img.shields.io/badge/license-Community%201.0%20%2B%20Commercial-1f6f5c)](docs/licensing.md)
@@ -19,7 +21,16 @@
 
 </div>
 
-<p align="center"><a href="docs/screenshots.md"><img src="docs/images/gallery/01-chat.png" width="820" alt="Baryon AX 근거 기반 채팅: 답변 아래 출처·청크 인용과 처리 과정 trace"></a></p>
+<table align="center">
+<tr>
+<td valign="top"><a href="docs/screenshots.md"><img src="docs/images/gallery/01-chat.png" width="600" alt="Baryon AX 근거 기반 채팅: 답변 아래 출처·청크 인용과 처리 과정 trace"></a></td>
+<td valign="top"><a href="#voice-secretary"><img src="docs/images/voice-app/chat.png" width="200" alt="바리온 비서 앱: 통화하며 나눈 대화, 스피커·마이크·통화 버튼"></a></td>
+</tr>
+<tr>
+<td align="center"><sub>웹: 근거 인용 답변과 처리 과정 trace</sub></td>
+<td align="center"><sub>폰: 바리온 비서 앱 (통화 중)</sub></td>
+</tr>
+</table>
 
 ---
 
@@ -135,6 +146,7 @@
 - **음성 비서**: 메일 · 일정 · 할 일 · PR/CI를 요약하고 DureClaw 플릿에 일을 맡깁니다. 바뀌는 일은 음성 확인을 거쳐야 실행됩니다 ([voice-secretary.md](docs/voice-secretary.md)).
 - **목표 에이전트**: 대화로 맡긴 목표를 백그라운드 에이전트 여러 개가 각자 브랜치에서 병렬로 처리하고, 끝나면 비서가 먼저 알려 줍니다.
 - **바리온 비서 앱 · 전화**: Flutter 안드로이드 앱과 SIP 전화. 차량 블루투스로 쓰고, 상태는 효과음으로 알 수 있습니다 ([voice-app.md](docs/voice-app.md) · [phone.md](docs/phone.md)).
+- **내 목소리만 듣기**: 말마다 잡음을 지우고(GTCRN), 휴대폰 가까이에서 한 말만 받아씁니다. 소음과 옆 사람 말은 요청으로 들어가지 않습니다.
 
 **v0.7.0 — 사내 메신저 안에서 먼저 묻는 AI** · [릴리스 노트](https://github.com/baryonlabs/baryon-ax/releases/tag/v0.7.0)
 
@@ -222,10 +234,20 @@ curl -s http://localhost:8000/health             # 버전과 연결 상태 확�
 
 운전 중이거나 손이 바쁠 때, 전화 한 통으로 요약을 듣고 일을 맡깁니다. 음성은 사내 서버에서만 처리됩니다.
 
+```text
+📞 비서  네, 비서입니다. 말씀하세요.
+🙂 나    열린 PR이랑 CI 상태 알려줘
+📞 비서  (띠링) 열린 PR은 두 개예요. CI는 모두 통과했어요. …
+🙂 나    로그인 버그 고쳐서 테스트 통과시켜 줘
+📞 비서  목표 에이전트에게 맡길까요? (딩-동?)
+🙂 나    응
+📞 비서  맡겼어요. 끝나면 먼저 알려 드릴게요.
+```
+
 <table>
 <tr>
-<td width="34%"><img src="docs/images/voice-app/home.png" alt="바리온 비서 앱: 진행 카드, 입력창, 통화 버튼"></td>
-<td width="34%"><img src="docs/images/voice-app/settings.png" alt="바리온 비서 앱 설정: 화면 테마, 글자 크기, 서버"></td>
+<td width="34%"><img src="docs/images/voice-app/chat.png" alt="바리온 비서 앱 통화 화면: 대화 내역, 상태 표시, 스피커·마이크·통화 버튼"><br><sub>통화 화면: 대화가 화면의 중심</sub></td>
+<td width="34%"><img src="docs/images/voice-app/settings.png" alt="바리온 비서 앱 설정: 테마, 글자 크기, 효과음, 목소리, 속도, 주변 소리 거르기"><br><sub>설정: 주변 소리 거르기 (내 목소리만)</sub></td>
 <td valign="top">
 
 **이렇게 말하면**
@@ -826,7 +848,7 @@ API_BASE=http://127.0.0.1:8000 REQUIRE_FULL=1 python3 scripts/smoke_full_stack.p
 <a id="english"></a>
 ## English
 
-**Baryon AX** is an on-premises, model-agnostic, source-available platform for enterprise AI agents that answer from your documents with citations and **ask experts first** for the tacit knowledge that was never written down.
+**Baryon AX** is an on-premises, model-agnostic, source-available platform for enterprise AI agents that answer from your documents with citations and **ask experts first** for the tacit knowledge that was never written down. It ships with **바리온 비서**, an Android app you call like a person ("네, 비서입니다. 말씀하세요."): hear summaries and hand off work by voice while driving, with speech processed only on your own servers.
 
 - **Grounded answers**: streaming chat with source, chunk, and quote citations; a warning instead of a guess when evidence is missing; organization and role ACLs applied before retrieval reaches the model.
 - **Korean-document ready**: MIME-based routing to kordoc (HWP/HWPX), docling (PDF/Office/images), and Tika; structure-aware chunking; vector or hybrid retrieval.
