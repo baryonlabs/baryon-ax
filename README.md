@@ -37,6 +37,22 @@
 <a id="one-page"></a>
 ## 한 장으로 보기
 
+<p align="center">
+<img src="https://img.shields.io/badge/Glean-%EC%82%AC%EB%82%B4_%EA%B2%80%EC%83%89-f4f5f7?style=flat-square&amp;labelColor=343CED" alt="Glean: 사내 검색" height="30">
+<b>&nbsp;+&nbsp;</b>
+<img src="https://img.shields.io/badge/Palantir-%EC%98%A8%ED%86%A8%EB%A1%9C%EC%A7%80-f4f5f7?style=flat-square&amp;labelColor=101113&amp;logo=palantir&amp;logoColor=white" alt="Palantir: 온톨로지" height="30">
+<b>&nbsp;+&nbsp;</b>
+<img src="https://img.shields.io/badge/ChatGPT_Enterprise-%EA%B7%BC%EA%B1%B0_%EB%8C%80%ED%99%94-f4f5f7?style=flat-square&amp;labelColor=10A37F" alt="ChatGPT Enterprise: 근거 대화" height="30">
+<b>&nbsp;+&nbsp;</b>
+<img src="https://img.shields.io/badge/Slack_AI-%EB%A9%94%EC%8B%A0%EC%A0%80_%EC%97%90%EC%9D%B4%EC%A0%84%ED%8A%B8-f4f5f7?style=flat-square&amp;labelColor=4A154B" alt="Slack AI: 메신저 에이전트" height="30">
+<b>&nbsp;+&nbsp;</b>
+<img src="https://img.shields.io/badge/OpenAI_dots-%EC%83%81%EC%A3%BC%ED%98%95_%EC%97%90%EC%9D%B4%EC%A0%84%ED%8A%B8-f4f5f7?style=flat-square&amp;labelColor=000000" alt="OpenAI dots: 상주형 에이전트" height="30">
+<b>&nbsp;+&nbsp;</b>
+<img src="https://img.shields.io/badge/Pickle-%EA%B0%9C%EC%9D%B8_%EA%B8%B0%EC%96%B5-f4f5f7?style=flat-square&amp;labelColor=3E8E41" alt="Pickle: 개인 기억" height="30">
+<br><b>≈</b><br>
+<img src="https://img.shields.io/badge/Baryon_AX-%EC%82%AC%EB%82%B4_%EC%84%A4%EC%B9%98_%C2%B7_%EB%AA%A8%EB%8D%B8_%EC%84%A0%ED%83%9D_%C2%B7_%EC%86%8C%EC%8A%A4_%EA%B3%B5%EA%B0%9C-f4f5f7?style=flat-square&amp;labelColor=1f6f5c" alt="Baryon AX: 사내 설치 · 모델 선택 · 소스 공개" height="30">
+</p>
+
 **Glean + Palantir 온톨로지 + ChatGPT Enterprise + Slack AI + OpenAI dots·Pickle ≈ Baryon AX**. 다만 전부 사내 서버 안에서 돌고, 모델은 골라 쓰며, 답하지 못한 질문은 전문가에게 먼저 묻습니다.
 
 <p align="center"><img src="docs/images/baryon-ax-figure1-ko.png" width="920" alt="그림 1. (a) 구성: Glean(사내 검색) + Palantir 온톨로지(지식 지도) + ChatGPT Enterprise(근거 대화) + Slack AI(메신저 에이전트) + OpenAI dots · Pickle(상주형 에이전트·개인 기억) ≈ Baryon AX(사내 설치·모델 선택·소스 공개). (b) 하나의 사내 스택: 회사 서버 안에서 데이터 → 조각 지식 → 온톨로지 → 근거 대화 → 슬랙 에이전트 → 상주형 음성 비서. 모르는 질문은 전문가에게 먼저 묻고, 답은 온톨로지와 지식으로 돌아간다."></p>
