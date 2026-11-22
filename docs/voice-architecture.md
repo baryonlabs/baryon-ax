@@ -294,7 +294,12 @@ flowchart TD
     E -- no --> A
     D -- yes --> F{RMS ≥ 0.004 and peak ≥ 0.1?}
     F -- no --> X2[drop: quiet noise]
-    F -- yes --> G[STT]
+    F -- yes --> V[GTCRN denoise]
+    V --> W{kept ≥ 45% of its energy?}
+    W -- no --> X6[drop: noise]
+    W -- yes --> Y{near the mic?<br/>denoised RMS ≥ 0.025}
+    Y -- no --> X7[drop: distant voice]
+    Y -- yes --> G[STT on the denoised audio]
     G --> H{one syllable and no open question?}
     H -- yes --> X3[drop: fragment]
     H -- no --> J{phantom phrase?<br/>다음 영상에서 만나요…}
@@ -306,7 +311,9 @@ flowchart TD
     L -- no --> M[띠링 → secretary turn]
 ```
 
-The thresholds come from a real call. Speech had RMS of about 0.015–0.09 and peaks of 0.3–0.9. Room noise that Whisper turned into "다음 영상에서 만나요" stayed under RMS 0.0025 and peak 0.12. Of 97 recorded segments, 78 were dropped before STT, and every real utterance was kept.
+The near-field check is the `strict` filter (the default, "내 목소리만" in the app); `normal` lowers it to 0.006 so any clear voice passes, and `off` skips denoising. Replayed on 123 utterances from real calls, `strict` dropped all 89 noise segments that Whisper had turned into phantom phrases and all 5 voices of people talking near the phone, and kept all 23 of the owner's requests (denoised RMS 0.045–0.16, against 0.008–0.014 for the neighbours). Speech-to-text on the denoised audio was as good or slightly better ("반경해" became "변경해"). See `deploy/phone/gateway/voicefilter.py`.
+
+The level thresholds come from a real call. Speech had RMS of about 0.015–0.09 and peaks of 0.3–0.9. Room noise that Whisper turned into "다음 영상에서 만나요" stayed under RMS 0.0025 and peak 0.12. Of 97 recorded segments, 78 were dropped before STT, and every real utterance was kept.
 
 ## 11. Classes
 

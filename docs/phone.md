@@ -66,6 +66,14 @@ A side effect asks first:
 The ports are UDP 5060 for SIP and UDP 10000–10019 for audio (ten calls). The password must be at
 least 16 characters, and Asterisk refuses to start otherwise.
 
+**Your voice only.** Each utterance is denoised with GTCRN (a 0.5 MB speech-enhancement model,
+MIT, about 40 ms per second of audio on one CPU thread) before speech-to-text. Room noise and the
+voices of people near the phone are dropped, and STT hears the cleaned audio. `GATEWAY_VOICE_FILTER`
+sets the default (`strict`: only a voice close to the microphone; `normal`: any clear voice; `off`),
+and the app can change it per call. If a hands-free car microphone sits far from you and your
+own requests are dropped, use `normal` or lower `GATEWAY_NEAR_FIELD_RMS` (default 0.025). The gateway
+logs each dropped segment with its level, so the threshold can be read off a real call.
+
 Optional: let the phone also connect on the same Wi-Fi with `PHONE_LAN_ADDRESS=<server LAN IP>`.
 This adds a second SIP transport that advertises the LAN address, so the audio stays on the
 LAN. Docker Desktop cannot publish one container port on two host addresses, so publish the audio

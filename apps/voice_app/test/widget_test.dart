@@ -124,6 +124,24 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a new call starts a new answer bubble; distant voices are counted',
+    (tester) async {
+      await open(tester);
+      await emit(tester, {'type': 'state', 'state': 'connected'});
+      await emit(tester, {'type': 'said', 'text': '첫 문장.'});
+      await emit(tester, {'type': 'said', 'text': '둘째 문장.'});
+      expect(find.text('첫 문장. 둘째 문장.'), findsOneWidget);
+      await emit(tester, {'type': 'idle'});
+      await emit(tester, {'type': 'state', 'state': 'ended'});
+      await emit(tester, {'type': 'state', 'state': 'connected'});
+      await emit(tester, {'type': 'said', 'text': '네, 비서입니다.'});
+      expect(find.text('네, 비서입니다.'), findsOneWidget);
+      await emit(tester, {'type': 'ignored', 'reason': 'distant'});
+      await emit(tester, {'type': 'state', 'state': 'ended'});
+    },
+  );
+
   testWidgets('a confirmation can be answered by tapping', (tester) async {
     await open(tester);
     await emit(tester, {'type': 'state', 'state': 'connected'});
@@ -170,6 +188,23 @@ void main() {
       tester.widget<Slider>(find.byKey(const Key('voice'))).onChanged!(5);
       await tester.pumpAndSettle();
       expect(prefs.getInt('voice'), greaterThan(0));
+
+      await tester.scrollUntilVisible(
+        find.text('또렷한 말'),
+        150,
+        scrollable: find.byType(Scrollable).last,
+      );
+      expect(find.textContaining('옆 사람 말은 버려요'), findsOneWidget);
+      await tester.tap(find.text('또렷한 말'));
+      await tester.pumpAndSettle();
+      expect(prefs.getString('filter'), 'normal');
+      expect(
+        calls
+            .where((call) => call.method == 'callPrefs')
+            .last
+            .arguments['filter'],
+        'normal',
+      );
 
       await tester.scrollUntilVisible(
         find.byKey(const Key('pin-shortcut')),
