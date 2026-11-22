@@ -26,7 +26,7 @@
 | 검색 | 어휘 기반 검색 + 조직/역할/소유자 ACL |
 | 인증 | 개발용 신원 헤더 (프로덕션은 OIDC/JWT 필요) |
 | 배포 | Docker Compose, Kubernetes 스타터 매니페스트 |
-| 라이선스 | MIT |
+| 라이선스 | 소스 공개 멀티 라이선스 — Community 1.0(개인·10인 미만 무료) + 상용(10인 이상). v0.7.0 이하 MIT. [licensing.md](licensing.md) |
 
 ---
 

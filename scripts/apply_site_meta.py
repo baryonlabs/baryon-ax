@@ -118,9 +118,9 @@ def upgrade_jsonld(markup: str, config: dict, title: str, description: str, faq:
             "@type": "SoftwareSourceCode",
             "@id": base_id + "#source",
             "name": "Baryon AX",
-            "description": "MIT-licensed on-premises AI agent and grounded RAG platform.",
+            "description": "Source-available on-premises AI agent and grounded RAG platform (free for individuals and teams under 10; commercial license for larger organizations).",
             "codeRepository": "https://github.com/baryonlabs/baryon-ax",
-            "license": "https://opensource.org/licenses/MIT",
+            "license": "https://github.com/baryonlabs/baryon-ax/blob/main/LICENSE",
             "programmingLanguage": ["Python", "TypeScript"],
             "runtimePlatform": "Docker, Kubernetes",
         })
