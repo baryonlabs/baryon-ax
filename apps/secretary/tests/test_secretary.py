@@ -440,3 +440,20 @@ def test_mail_is_read_back_before_it_is_sent() -> None:
 def test_mail_status_is_spoken_plainly() -> None:
     assert policy.status_label("Bash", {"command": "gog gmail search is:unread -j"}) == "메일을 확인하고 있어요."
     assert policy.status_label("Bash", {"command": "gog calendar events --today -j"}) == "일정을 확인하고 있어요."
+
+
+@pytest.mark.parametrize("tool,action", [
+    ("mcp__baryon-ax__search_documents", "auto"),
+    ("mcp__baryon-ax__ask", "auto"),
+    ("mcp__baryon-ax__list_knowledge_gaps", "auto"),
+    ("mcp__baryon-ax__record_answer", "confirm"),   # writes to the knowledge base
+    ("mcp__baryon-ax__publish_answer", "confirm"),
+    ("mcp__other__ask", "confirm"),                 # another server's "ask" is not trusted by name
+])
+def test_baryon_knowledge_tools(tool: str, action: str) -> None:
+    assert policy.decide(tool, {}).action == action
+
+
+def test_publishing_knowledge_is_read_back() -> None:
+    assert "게시할까요" in policy.confirmation_prompt("mcp__baryon-ax__publish_answer", {"entry_id": "tk_1"})
+    assert "출장비" in policy.confirmation_prompt("mcp__baryon-ax__record_answer", {"question": "출장비 정산 마감"})
