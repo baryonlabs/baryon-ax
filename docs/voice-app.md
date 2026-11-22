@@ -84,7 +84,11 @@ Without USB, over a Tailscale or headscale tailnet (debug builds only):
 
 1. Publish the gateway's app port on the server's tailnet address as well, for example
    `-p <tailnet-ip>:9093:9093` next to `-p 127.0.0.1:9093:9093`. The device token is still required.
-2. In the app: Settings → server → `ws://<tailnet-ip>:9093/v1/voice/call`.
+2. In the app: Settings → server → `ws://<tailnet-ip>:9093/v1/voice/call`, or over USB once:
+   `adb shell am start -n ai.baryon.baryon_voice/.MainActivity --es server ws://<tailnet-ip>:9093/v1/voice/call`.
+   A debug build can also type a test message:
+   `adb shell "am start -n ai.baryon.baryon_voice/.MainActivity --es ask '이번 주 수요일 오후에 비는 시간 알려줘'"`
+   (quote the whole command, or the phone's shell splits the message at spaces).
 
 Debug builds allow plain `ws://` (`android/app/src/debug/res/xml/network_security_config.xml`), because tailnet
 traffic is already encrypted by WireGuard. Release builds keep `wss://` everywhere except the USB tunnel to
