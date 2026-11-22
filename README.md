@@ -81,6 +81,25 @@
 
 <sub>제품명은 이해를 돕기 위한 비유이며 각 회사의 상표입니다. Baryon AX는 이 회사들과 관계가 없습니다.</sub>
 
+### 단계별 증거: 실제 화면
+
+비유가 아니라 지금 동작하는 화면입니다. 이미지를 누르면 크게 볼 수 있습니다.
+
+<table>
+<tr>
+<td width="33%" valign="top"><a href="docs/images/gallery/03-knowledge.png"><img src="docs/images/gallery/03-knowledge.png" width="100%" alt="1. 데이터"></a><br><b>1. 데이터</b><br><sub>HWP·HWPX·PDF·Word·Excel·이미지를 그대로 올리면 색인 문서로 쌓입니다. 문서마다 역할 권한이 붙습니다.</sub></td>
+<td width="33%" valign="top"><a href="docs/images/gallery/02-source-viewer.png"><img src="docs/images/gallery/02-source-viewer.png" width="100%" alt="2. 조각 지식"></a><br><b>2. 조각 지식</b><br><sub>답변에 쓰인 조각(chunk #5 · 4 chunks)과 인용 구절을 원문 위에 그대로 보여 줍니다.</sub></td>
+<td width="33%" valign="top"><a href="docs/images/gallery/06-knowledge-gaps.png"><img src="docs/images/gallery/06-knowledge-gaps.png" width="100%" alt="3. 온톨로지"></a><br><b>3. 온톨로지</b><br><sub>답하지 못한 질문을 공백 묶음으로 모으고, 한 번에 온톨로지 꾸러미(개체·관계·수용 질문)로 만듭니다.</sub></td>
+</tr>
+<tr>
+<td width="33%" valign="top"><a href="docs/images/gallery/01-chat.png"><img src="docs/images/gallery/01-chat.png" width="100%" alt="4. 근거 대화"></a><br><b>4. 근거 대화</b><br><sub>답 아래에 출처 문서와 처리 과정(정책 → 메모리 → 검색 → 모델 → 감사)이 붙습니다.</sub></td>
+<td width="33%" valign="top"><a href="examples/slack-bot/docs/slack-thread-example.svg"><img src="examples/slack-bot/docs/slack-thread-example.svg" width="100%" alt="5. 슬랙 에이전트"></a><br><b>5. 슬랙 에이전트</b><br><sub>멘션하면 출처와 함께 답하고 스레드에서 이어 갑니다. <i>예시 그림입니다. 실제 캡처는 준비 중입니다.</i></sub></td>
+<td width="33%" valign="top"><a href="docs/images/voice-app/chat.png"><img src="docs/images/voice-app/chat.png" width="62%" alt="6. 상주형 비서"></a><br><b>6. 상주형 비서</b><br><sub>바리온 비서 앱의 통화 화면. 말로 묻고 맡긴 대화가 그대로 남고, 설정에서 기억·연결·두뇌를 고릅니다.</sub></td>
+</tr>
+</table>
+
+<sub>암묵지 질문과 게시(<a href="docs/images/gallery/08-tacit-knowledge.png">암묵지 화면</a>), 사용자 메모리, 감사 로그, 설정 화면은 <a href="docs/screenshots.md">스크린샷 모음</a>에 있습니다.</sub>
+
 ---
 
 ## 목차
