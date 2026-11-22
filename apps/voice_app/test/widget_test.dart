@@ -4,6 +4,7 @@ import 'package:baryon_voice/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -11,6 +12,7 @@ void main() {
 
   setUp(() {
     calls.clear();
+    SharedPreferences.setMockInitialValues({});
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('baryon/voice'),
       (call) async {
@@ -90,5 +92,26 @@ void main() {
     expect(calls.where((call) => call.method == 'text').single.arguments, {'text': '아니'});
     expect(find.text('builder@mini에게 이 작업을 보낼까요?'), findsNothing);
   });
-}
 
+  testWidgets('no header; the floating gear changes theme and text size', (tester) async {
+    await tester.pumpWidget(const BaryonVoiceApp());
+    await tester.pumpAndSettle();
+    expect(find.byType(AppBar), findsNothing);
+    expect(find.text('바리온 비서'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('settings')));
+    await tester.pumpAndSettle();
+    expect(find.text('화면 테마'), findsOneWidget);
+    expect(find.text('서버 설정'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('palette-forest')));
+    await tester.pumpAndSettle();
+    expect(tester.widget<ChoiceChip>(find.byKey(const Key('palette-forest'))).selected, isTrue);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('palette'), 'forest');
+
+    await tester.drag(find.byKey(const Key('text-scale')), const Offset(200, 0));
+    await tester.pumpAndSettle();
+    expect(prefs.getDouble('scale'), greaterThan(1.0));
+  });
+}

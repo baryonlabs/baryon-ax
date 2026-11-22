@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// 바리온 비서: talk to your voice secretary hands-free, or type to it.
 ///
@@ -14,26 +15,168 @@ void main() => runApp(const BaryonVoiceApp());
 const _channel = MethodChannel('baryon/voice');
 const _events = EventChannel('baryon/voice/events');
 
-const _background = Color(0xFF0B1020);
-const _surface = Color(0xFF16233A);
+/// A colour theme. Add one here and it shows up in the view settings.
+class Palette {
+  const Palette(
+    this.id,
+    this.name,
+    this.background,
+    this.surface,
+    this.accent, {
+    this.brightness = Brightness.dark,
+  });
+  final String id;
+  final String name;
+  final Color background;
+  final Color surface;
+  final Color accent;
+  final Brightness brightness;
+}
 
-class BaryonVoiceApp extends StatelessWidget {
+const palettes = <Palette>[
+  Palette(
+    'night',
+    '밤하늘',
+    Color(0xFF0B1020),
+    Color(0xFF16233A),
+    Color(0xFF7FB0FF),
+  ),
+  Palette(
+    'forest',
+    '숲',
+    Color(0xFF0C1712),
+    Color(0xFF16291F),
+    Color(0xFF6FD9A4),
+  ),
+  Palette(
+    'ember',
+    '노을',
+    Color(0xFF1A1210),
+    Color(0xFF2B1D19),
+    Color(0xFFFFA45C),
+  ),
+  Palette(
+    'contrast',
+    '고대비',
+    Color(0xFF000000),
+    Color(0xFF1F1F1F),
+    Color(0xFFFFE14D),
+  ),
+  Palette(
+    'light',
+    '밝게',
+    Color(0xFFF4F6FA),
+    Color(0xFFE3E9F3),
+    Color(0xFF2F6FE4),
+    brightness: Brightness.light,
+  ),
+];
+
+enum LayoutMode { auto, stacked, split }
+
+/// How the screen looks: text size, colours, layout. Saved on the phone.
+class ViewPrefs {
+  const ViewPrefs({
+    this.scale = 1.0,
+    this.paletteId = 'night',
+    this.layout = LayoutMode.auto,
+    this.compact = true,
+  });
+  final double scale;
+  final String paletteId;
+  final LayoutMode layout;
+  final bool compact;
+
+  Palette get palette => palettes.firstWhere(
+    (p) => p.id == paletteId,
+    orElse: () => palettes.first,
+  );
+
+  ViewPrefs copy({
+    double? scale,
+    String? paletteId,
+    LayoutMode? layout,
+    bool? compact,
+  }) => ViewPrefs(
+    scale: scale ?? this.scale,
+    paletteId: paletteId ?? this.paletteId,
+    layout: layout ?? this.layout,
+    compact: compact ?? this.compact,
+  );
+
+  static Future<ViewPrefs> load() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      return ViewPrefs(
+        scale: p.getDouble('scale') ?? 1.0,
+        paletteId: p.getString('palette') ?? 'night',
+        layout: LayoutMode.values.firstWhere(
+          (m) => m.name == p.getString('layout'),
+          orElse: () => LayoutMode.auto,
+        ),
+        compact: p.getBool('compact') ?? true,
+      );
+    } catch (_) {
+      return const ViewPrefs();
+    }
+  }
+
+  Future<void> save() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setDouble('scale', scale);
+      await p.setString('palette', paletteId);
+      await p.setString('layout', layout.name);
+      await p.setBool('compact', compact);
+    } catch (_) {}
+  }
+}
+
+class BaryonVoiceApp extends StatefulWidget {
   const BaryonVoiceApp({super.key});
 
   @override
+  State<BaryonVoiceApp> createState() => _BaryonVoiceAppState();
+}
+
+class _BaryonVoiceAppState extends State<BaryonVoiceApp> {
+  ViewPrefs prefs = const ViewPrefs();
+
+  @override
+  void initState() {
+    super.initState();
+    ViewPrefs.load().then((loaded) {
+      if (mounted) setState(() => prefs = loaded);
+    });
+  }
+
+  void change(ViewPrefs next) {
+    setState(() => prefs = next);
+    next.save();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final palette = prefs.palette;
     return MaterialApp(
       title: '바리온 비서',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF7FB0FF),
-          brightness: Brightness.dark,
+          seedColor: palette.accent,
+          brightness: palette.brightness,
         ),
-        scaffoldBackgroundColor: _background,
+        scaffoldBackgroundColor: palette.background,
+        cardColor: palette.surface,
         useMaterial3: true,
       ),
-      home: const CallScreen(),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(
+          context,
+        ).copyWith(textScaler: TextScaler.linear(prefs.scale)),
+        child: child!,
+      ),
+      home: CallScreen(prefs: prefs, onPrefs: change),
     );
   }
 }
@@ -63,7 +206,10 @@ class BackgroundTask {
 }
 
 class CallScreen extends StatefulWidget {
-  const CallScreen({super.key});
+  const CallScreen({super.key, this.prefs = const ViewPrefs(), this.onPrefs});
+
+  final ViewPrefs prefs;
+  final ValueChanged<ViewPrefs>? onPrefs;
 
   @override
   State<CallScreen> createState() => _CallScreenState();
@@ -277,7 +423,91 @@ class _CallScreenState extends State<CallScreen> {
     _ => '수화부',
   };
 
+  /// The floating gear: how the screen looks, and (outside a call) the server.
   Future<void> openSettings() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheet) {
+          var prefs = widget.prefs;
+          void apply(ViewPrefs next) {
+            widget.onPrefs?.call(next);
+            setSheet(() => prefs = next);
+          }
+
+          return SafeArea(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '화면 테마',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final palette in palettes)
+                          ChoiceChip(
+                            key: Key('palette-${palette.id}'),
+                            label: Text(palette.name),
+                            selected: prefs.paletteId == palette.id,
+                            avatar: CircleAvatar(
+                              backgroundColor: palette.accent,
+                              radius: 8,
+                            ),
+                            onSelected: (_) =>
+                                apply(prefs.copy(paletteId: palette.id)),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      '글자 크기 ${(prefs.scale * 100).round()}%',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    Slider(
+                      key: const Key('text-scale'),
+                      value: prefs.scale,
+                      min: 0.85,
+                      max: 1.6,
+                      divisions: 15,
+                      onChanged: (value) => apply(prefs.copy(scale: value)),
+                    ),
+                    const SizedBox(height: 4),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.dns_outlined),
+                      title: const Text('서버 설정'),
+                      subtitle: Text(
+                        open
+                            ? '대화 중에는 바꿀 수 없어요'
+                            : (config['server'] as String? ?? ''),
+                      ),
+                      enabled: !open,
+                      onTap: () {
+                        Navigator.pop(context);
+                        openServerSettings();
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> openServerSettings() async {
     final server = TextEditingController(
       text: config['server'] as String? ?? '',
     );
@@ -333,230 +563,243 @@ class _CallScreenState extends State<CallScreen> {
     // While the keyboard is up, keep the conversation and the input; hide the call controls.
     final keyboard = MediaQuery.of(context).viewInsets.bottom > 0;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('바리온 비서'),
-        backgroundColor: Colors.transparent,
-        actions: [
-          IconButton(
-            onPressed: open ? null : openSettings,
-            icon: const Icon(Icons.settings),
-            tooltip: '서버 설정',
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _ProgressCard(
-              compact: keyboard,
-              status: status,
-              working: working,
-              steps: steps,
-              liveText: liveText,
-              detail: inCall
-                  ? [routeLabel, if (echoCanceller) '에코 제거 켜짐'].join(' · ')
-                  : null,
-              error: error,
-            ),
-            if (tasks.isNotEmpty) _TaskStrip(tasks: tasks),
-            Expanded(
-              child: ListView.builder(
-                controller: scroll,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              children: [
+                _ProgressCard(
+                  rightInset: 56, // room for the floating settings button
+                  compact: keyboard,
+                  status: status,
+                  working: working,
+                  steps: steps,
+                  liveText: liveText,
+                  detail: inCall
+                      ? [routeLabel, if (echoCanceller) '에코 제거 켜짐'].join(' · ')
+                      : null,
+                  error: error,
                 ),
-                itemCount: messages.length,
-                itemBuilder: (context, index) {
-                  final message = messages[index];
-                  return Align(
-                    alignment: message.fromMe
-                        ? Alignment.centerRight
-                        : Alignment.centerLeft,
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      constraints: BoxConstraints(
-                        maxWidth: MediaQuery.of(context).size.width * 0.8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: message.fromMe
-                            ? scheme.primaryContainer
-                            : _surface,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Text(
-                        message.text,
-                        style: const TextStyle(fontSize: 16, height: 1.4),
-                      ),
+                if (tasks.isNotEmpty) _TaskStrip(tasks: tasks),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scroll,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
                     ),
-                  );
-                },
-              ),
-            ),
-            if (question != null)
-              Container(
-                margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF3A2E14),
-                  borderRadius: BorderRadius.circular(16),
+                    itemCount: messages.length,
+                    itemBuilder: (context, index) {
+                      final message = messages[index];
+                      return Align(
+                        alignment: message.fromMe
+                            ? Alignment.centerRight
+                            : Alignment.centerLeft,
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          constraints: BoxConstraints(
+                            maxWidth: MediaQuery.of(context).size.width * 0.8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: message.fromMe
+                                ? scheme.primaryContainer
+                                : Theme.of(context).cardColor,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Text(
+                            message.text,
+                            style: const TextStyle(fontSize: 16, height: 1.4),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
-                child: Column(
-                  children: [
-                    Text(
-                      question!,
-                      style: const TextStyle(fontSize: 17),
-                      textAlign: TextAlign.center,
-                      maxLines: keyboard ? 2 : 4,
-                      overflow: TextOverflow.ellipsis,
+                if (question != null)
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF3A2E14),
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    const SizedBox(height: 12),
-                    Row(
+                    child: Column(
                       children: [
-                        Expanded(
-                          child: FilledButton(
-                            onPressed: () => send('응'),
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size.fromHeight(56),
+                        Text(
+                          question!,
+                          style: const TextStyle(fontSize: 17),
+                          textAlign: TextAlign.center,
+                          maxLines: keyboard ? 2 : 4,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: () => send('응'),
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(56),
+                                ),
+                                child: const Text(
+                                  '응, 진행해',
+                                  style: TextStyle(fontSize: 18),
+                                ),
+                              ),
                             ),
-                            child: const Text(
-                              '응, 진행해',
-                              style: TextStyle(fontSize: 18),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => send('아니'),
+                                style: OutlinedButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(56),
+                                ),
+                                child: const Text(
+                                  '아니',
+                                  style: TextStyle(fontSize: 18),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                // Typing, with on-prem dictation into the box.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          key: const Key('input'),
+                          controller: input,
+                          minLines: 1,
+                          maxLines: 4,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) => send(),
+                          decoration: InputDecoration(
+                            hintText: dictating
+                                ? '말씀하세요… 다시 누르면 받아씁니다'
+                                : '비서에게 입력',
+                            filled: true,
+                            fillColor: Theme.of(context).cardColor,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(24),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            suffixIcon: IconButton(
+                              key: const Key('dictate'),
+                              onPressed: toggleDictation,
+                              icon: Icon(
+                                dictating
+                                    ? Icons.stop_circle
+                                    : Icons.keyboard_voice,
+                                color: dictating ? scheme.error : null,
+                              ),
+                              tooltip: dictating ? '받아쓰기 끝내기' : '말로 입력 (받아쓰기)',
                             ),
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => send('아니'),
-                            style: OutlinedButton.styleFrom(
-                              minimumSize: const Size.fromHeight(56),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filled(
+                        key: const Key('send'),
+                        onPressed: send,
+                        icon: const Icon(Icons.send),
+                        tooltip: '보내기',
+                      ),
+                    ],
+                  ),
+                ),
+                if (!keyboard)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (inCall) ...[
+                          IconButton.filledTonal(
+                            iconSize: 28,
+                            isSelected: route == 'speaker',
+                            onPressed: toggleSpeaker,
+                            icon: Icon(
+                              route == 'bluetooth'
+                                  ? Icons.bluetooth_audio
+                                  : Icons.volume_up,
                             ),
-                            child: const Text(
-                              '아니',
-                              style: TextStyle(fontSize: 18),
+                            tooltip: route == 'speaker' ? '스피커 끄기' : '스피커 켜기',
+                          ),
+                          const SizedBox(width: 20),
+                          IconButton.filledTonal(
+                            iconSize: 28,
+                            onPressed: () => _channel.invokeMethod('mute', {
+                              'muted': line != Line.muted,
+                            }),
+                            icon: Icon(
+                              line == Line.muted ? Icons.mic_off : Icons.mic,
+                            ),
+                            tooltip: line == Line.muted ? '마이크 켜기' : '마이크 끄기',
+                          ),
+                          const SizedBox(width: 20),
+                        ],
+                        SizedBox(
+                          width: 80,
+                          height: 80,
+                          child: FilledButton(
+                            onPressed: line == Line.connecting
+                                ? null
+                                : toggleCall,
+                            style: FilledButton.styleFrom(
+                              shape: const CircleBorder(),
+                              padding: EdgeInsets.zero,
+                              backgroundColor: inCall
+                                  ? const Color(0xFFD9534F)
+                                  : const Color(0xFF3BB273),
+                            ),
+                            child: Icon(
+                              inCall ? Icons.call_end : Icons.call,
+                              size: 38,
+                              color: Colors.white,
                             ),
                           ),
                         ),
                       ],
                     ),
-                  ],
+                  ),
+                if (!keyboard)
+                  Text(
+                    inCall ? '통화 종료' : '비서에게 전화',
+                    style: TextStyle(color: scheme.outline, fontSize: 12),
+                  ),
+                SizedBox(height: keyboard ? 6 : 8),
+              ],
+            ),
+          ),
+          Positioned(
+            top: 0,
+            right: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: IconButton.filledTonal(
+                  key: const Key('settings'),
+                  onPressed: openSettings,
+                  icon: const Icon(Icons.settings),
+                  tooltip: '설정',
                 ),
-              ),
-            // Typing, with on-prem dictation into the box.
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      key: const Key('input'),
-                      controller: input,
-                      minLines: 1,
-                      maxLines: 4,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => send(),
-                      decoration: InputDecoration(
-                        hintText: dictating ? '말씀하세요… 다시 누르면 받아씁니다' : '비서에게 입력',
-                        filled: true,
-                        fillColor: _surface,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        suffixIcon: IconButton(
-                          key: const Key('dictate'),
-                          onPressed: toggleDictation,
-                          icon: Icon(
-                            dictating
-                                ? Icons.stop_circle
-                                : Icons.keyboard_voice,
-                            color: dictating ? scheme.error : null,
-                          ),
-                          tooltip: dictating ? '받아쓰기 끝내기' : '말로 입력 (받아쓰기)',
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    key: const Key('send'),
-                    onPressed: send,
-                    icon: const Icon(Icons.send),
-                    tooltip: '보내기',
-                  ),
-                ],
               ),
             ),
-            if (!keyboard)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (inCall) ...[
-                      IconButton.filledTonal(
-                        iconSize: 28,
-                        isSelected: route == 'speaker',
-                        onPressed: toggleSpeaker,
-                        icon: Icon(
-                          route == 'bluetooth'
-                              ? Icons.bluetooth_audio
-                              : Icons.volume_up,
-                        ),
-                        tooltip: route == 'speaker' ? '스피커 끄기' : '스피커 켜기',
-                      ),
-                      const SizedBox(width: 20),
-                      IconButton.filledTonal(
-                        iconSize: 28,
-                        onPressed: () => _channel.invokeMethod('mute', {
-                          'muted': line != Line.muted,
-                        }),
-                        icon: Icon(
-                          line == Line.muted ? Icons.mic_off : Icons.mic,
-                        ),
-                        tooltip: line == Line.muted ? '마이크 켜기' : '마이크 끄기',
-                      ),
-                      const SizedBox(width: 20),
-                    ],
-                    SizedBox(
-                      width: 80,
-                      height: 80,
-                      child: FilledButton(
-                        onPressed: line == Line.connecting ? null : toggleCall,
-                        style: FilledButton.styleFrom(
-                          shape: const CircleBorder(),
-                          padding: EdgeInsets.zero,
-                          backgroundColor: inCall
-                              ? const Color(0xFFD9534F)
-                              : const Color(0xFF3BB273),
-                        ),
-                        child: Icon(
-                          inCall ? Icons.call_end : Icons.call,
-                          size: 38,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            if (!keyboard)
-              Text(
-                inCall ? '통화 종료' : '비서에게 전화',
-                style: TextStyle(color: scheme.outline, fontSize: 12),
-              ),
-            SizedBox(height: keyboard ? 6 : 8),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -572,7 +815,10 @@ class _ProgressCard extends StatelessWidget {
     this.detail,
     this.error,
     this.compact = false,
+    this.rightInset = 0,
   });
+
+  final double rightInset;
 
   final bool compact;
   final String status;
@@ -591,10 +837,10 @@ class _ProgressCard extends StatelessWidget {
         : steps;
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      margin: EdgeInsets.fromLTRB(16, 12, 16 + rightInset, 8),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: _surface,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
