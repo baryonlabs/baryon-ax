@@ -657,7 +657,7 @@ class _CallScreenState extends State<CallScreen> {
                   key: const Key('earcons'),
                   contentPadding: EdgeInsets.zero,
                   title: const Text('효과음'),
-                  subtitle: const Text('띠링 · 톡 · 뚝 · 딩동으로 상태 알림'),
+                  subtitle: const Text('띠링 · 동 · 뚝 · 딩동으로 상태 알림'),
                   value: current.earcons,
                   onChanged: (value) => apply(current.copy(earcons: value)),
                 ),
