@@ -32,8 +32,9 @@ Design rules: [voice-app-design.md](voice-app-design.md). Architecture in UML: [
 - **Confirmations:** "응, 진행해 / 아니" buttons answer the secretary's yes/no questions. Saying it works too.
 - **Speaker and route:** a speaker button. The current route (수화부, 스피커, 블루투스, 이어폰) and whether the echo canceller is on are shown.
 - **Layout:** the conversation fills the screen. Status is a top-right chip with an ear that moves while it listens, call buttons float, and history (the last 200 messages) stays on the phone.
-- **Settings:** theme, text size, steps on or off, earcons, voice 1–10, speaking speed, call on open, keep the screen on, haptics, home-screen shortcut, clear history and server. All are saved on the phone. Earcons, voice and speed are sent to the gateway for each call.
+- **Settings:** theme, text size, steps on or off, earcons, voice 1–10, speaking speed, call on open, keep the screen on, haptics, home-screen shortcut, clear history and server. All are saved on the phone. Earcons, voice, speed and the voice filter are sent to the gateway for each call (`{"type": "prefs", "earcons": true, "voice": 0, "speed": 1.05, "filter": "strict"}`).
 - **Noise handling:** quiet segments, one-syllable fragments, phantom phrases and echoes never reach the secretary. The status tooltip shows how many were dropped.
+- **Your voice only:** Settings → 듣기 → 주변 소리 거르기. 내 목소리만 (default) denoises each utterance and passes only a voice close to the phone, so people talking nearby are not taken as requests. 또렷한 말 passes any clear voice, and 끄기 turns the filter off. Dropped voices are counted as "주변 말소리 N건 거름".
 
 ## Server side
 

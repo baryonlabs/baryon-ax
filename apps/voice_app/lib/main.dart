@@ -53,6 +53,7 @@ class ViewPrefs {
     this.earcons = true,
     this.voice = 0,
     this.speed = 1.05,
+    this.filter = 'strict',
     this.keepAwake = true,
     this.haptics = true,
     this.showSteps = true,
@@ -64,6 +65,7 @@ class ViewPrefs {
   final bool earcons;
   final int voice;
   final double speed;
+  final String filter; // strict: only my voice, normal: any clear voice, off
   final bool keepAwake;
   final bool haptics;
   final bool showSteps;
@@ -80,6 +82,7 @@ class ViewPrefs {
     bool? earcons,
     int? voice,
     double? speed,
+    String? filter,
     bool? keepAwake,
     bool? haptics,
     bool? showSteps,
@@ -90,6 +93,7 @@ class ViewPrefs {
     earcons: earcons ?? this.earcons,
     voice: voice ?? this.voice,
     speed: speed ?? this.speed,
+    filter: filter ?? this.filter,
     keepAwake: keepAwake ?? this.keepAwake,
     haptics: haptics ?? this.haptics,
     showSteps: showSteps ?? this.showSteps,
@@ -105,6 +109,7 @@ class ViewPrefs {
         earcons: p.getBool('earcons') ?? true,
         voice: p.getInt('voice') ?? 0,
         speed: p.getDouble('speed') ?? 1.05,
+        filter: p.getString('filter') ?? 'strict',
         keepAwake: p.getBool('keepAwake') ?? true,
         haptics: p.getBool('haptics') ?? true,
         showSteps: p.getBool('showSteps') ?? true,
@@ -123,6 +128,7 @@ class ViewPrefs {
       await p.setBool('earcons', earcons);
       await p.setInt('voice', voice);
       await p.setDouble('speed', speed);
+      await p.setString('filter', filter);
       await p.setBool('keepAwake', keepAwake);
       await p.setBool('haptics', haptics);
       await p.setBool('showSteps', showSteps);
@@ -278,6 +284,9 @@ class _CallScreenState extends State<CallScreen> {
   bool dictating = false;
   String liveText = '';
   int ignored = 0; // noise and fragments dropped this call
+  int distant = 0; // other people's voices near the phone, dropped this call
+  bool replyOpen =
+      false; // spoken sentences join the current answer bubble until it is finished
   final steps = <Step>[];
   final tasks = <BackgroundTask>[];
   final messages = <Message>[];
@@ -312,7 +321,8 @@ class _CallScreenState extends State<CallScreen> {
     super.didUpdateWidget(old);
     if (old.prefs.earcons != prefs.earcons ||
         old.prefs.voice != prefs.voice ||
-        old.prefs.speed != prefs.speed) {
+        old.prefs.speed != prefs.speed ||
+        old.prefs.filter != prefs.filter) {
       sendCallPrefs();
     }
   }
@@ -342,6 +352,7 @@ class _CallScreenState extends State<CallScreen> {
       'earcons': prefs.earcons,
       'voice': prefs.voice,
       'speed': prefs.speed,
+      'filter': prefs.filter,
     });
   }
 
@@ -387,9 +398,12 @@ class _CallScreenState extends State<CallScreen> {
               status = '연결하는 중';
               error = null;
               ignored = 0;
+              distant = 0;
             case 'connected':
               line = Line.connected;
               status = '듣고 있어요';
+              replyOpen =
+                  false; // the greeting is a new bubble, not the end of the last call's answer
               if (prefs.keepAwake) {
                 _channel.invokeMethod('keepAwake', {'on': true});
               }
@@ -413,7 +427,7 @@ class _CallScreenState extends State<CallScreen> {
         case 'vad':
           hearing = event['speaking'] == true;
         case 'ignored':
-          ignored++;
+          event['reason'] == 'distant' ? distant++ : ignored++;
         case 'heard':
           messages.add(Message(true, event['text'] as String? ?? ''));
           startWork();
@@ -456,11 +470,12 @@ class _CallScreenState extends State<CallScreen> {
           working = true;
         case 'said':
           final text = event['text'] as String? ?? '';
-          if (messages.isNotEmpty && !messages.last.fromMe) {
+          if (replyOpen && messages.isNotEmpty && !messages.last.fromMe) {
             messages.last.text = '${messages.last.text} $text';
           } else {
             messages.add(Message(false, text));
           }
+          replyOpen = true;
           if (inCall) {
             speaking = true;
             status = '말하는 중';
@@ -468,10 +483,12 @@ class _CallScreenState extends State<CallScreen> {
           remember();
         case 'agent_done':
           working = false;
+          if (!speaking) replyOpen = false;
           liveText = '';
           status = inCall ? '듣고 있어요' : '입력 대화';
         case 'idle':
           speaking = false;
+          if (!working) replyOpen = false; // a later notice gets its own bubble
           if (!working) status = '듣고 있어요';
         case 'confirm':
           question = event['prompt'] as String?;
@@ -649,6 +666,29 @@ class _CallScreenState extends State<CallScreen> {
                     current.copy(speed: double.parse(value.toStringAsFixed(2))),
                   ),
                 ),
+                section('듣기'),
+                const Text('주변 소리 거르기'),
+                const SizedBox(height: 8),
+                SegmentedButton<String>(
+                  key: const Key('filter'),
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: 'strict', label: Text('내 목소리만')),
+                    ButtonSegment(value: 'normal', label: Text('또렷한 말')),
+                    ButtonSegment(value: 'off', label: Text('끄기')),
+                  ],
+                  selected: {current.filter},
+                  onSelectionChanged: (value) =>
+                      apply(current.copy(filter: value.first)),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, bottom: 4),
+                  child: Text(switch (current.filter) {
+                    'strict' => '휴대폰 가까이에서 말한 목소리만 듣고, 소음과 옆 사람 말은 버려요',
+                    'normal' => '소음은 버리고, 또렷한 목소리는 누구 것이든 들어요',
+                    _ => '거르지 않아요 (소음이 말로 잘못 들릴 수 있어요)',
+                  }, style: Theme.of(context).textTheme.bodySmall),
+                ),
                 section('통화'),
                 SwitchListTile(
                   key: const Key('auto-call'),
@@ -810,6 +850,7 @@ class _CallScreenState extends State<CallScreen> {
                                 routeLabel,
                                 if (echoCanceller) '에코 제거',
                                 if (ignored > 0) '잡음 $ignored건 무시',
+                                if (distant > 0) '주변 말소리 $distant건 거름',
                               ].join(' · ')
                             : null,
                       ),
@@ -833,7 +874,13 @@ class _CallScreenState extends State<CallScreen> {
                       ? _EmptyHint(inCall: inCall)
                       : ListView.builder(
                           controller: scroll,
-                          padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
+                          // in a call, room for the floating speaker and mic buttons
+                          padding: EdgeInsets.fromLTRB(
+                            12,
+                            4,
+                            12,
+                            inCall ? 112 : 16,
+                          ),
                           itemCount:
                               messages.length +
                               (busyBubble ? 1 : 0) +

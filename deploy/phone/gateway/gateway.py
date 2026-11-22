@@ -17,6 +17,8 @@ Environment:
                               and Whisper hears it far better than SenseVoice)
     SECRETARY_URL, SECRETARY_API_KEY, SECRETARY_OWNER
     VAD_MODEL                 silero_vad.onnx path (default /models/silero_vad.onnx)
+    DENOISE_MODEL             GTCRN speech denoiser (default /models/gtcrn_simple.onnx; see voicefilter.py)
+    GATEWAY_VOICE_FILTER      strict (default: only the voice close to the mic), normal, or off
     VOICE_LANGUAGE            ko (default) or en
     VOICE_ID, VOICE_SPEED     Supertonic voice 0-9 and speed (default 0, 1.05)
     GREETING                  first sentence spoken when the call connects
@@ -41,6 +43,7 @@ import httpx
 import numpy as np
 
 from earcons import earcon
+from voicefilter import MODES as FILTER_MODES, VoiceFilter
 from audio import (FRAME_BYTES, FRAME_MS, KIND_AUDIO, KIND_ERROR, KIND_HANGUP, KIND_UUID, PHONE_RATE,
                    SentenceChunker, float_to_pcm, frame, from_wav, pcm_to_float, read_frame, resample, speakable, to_wav)
 
@@ -67,6 +70,7 @@ SCREEN_EVENTS = {"activity": "activity", "activity_done": "activity_done", "task
 MIN_SPEECH_RMS = float(os.getenv("GATEWAY_MIN_SPEECH_RMS", "0.004"))
 MIN_SPEECH_PEAK = float(os.getenv("GATEWAY_MIN_SPEECH_PEAK", "0.1"))
 BARGE_IN_FRAME_RMS = 0.01   # only frames this loud count toward interrupting the secretary
+BARGE_IN_FRAME_RMS_STRICT = 0.02  # "strict" filter: a voice across the room does not cut the secretary off
 BARGE_IN_MS = 350           # this much speech while the secretary talks interrupts it (echo bursts are shorter)
 ECHO_WINDOW_SECONDS = 15.0  # what the secretary said this recently may come back as echo
 ECHO_SIMILARITY = 0.6
@@ -88,6 +92,8 @@ class Settings:
     speed: float = field(default_factory=lambda: float(os.getenv("VOICE_SPEED", "1.05")))
     greeting: str = field(default_factory=lambda: os.getenv("GREETING", "네, 비서입니다. 말씀하세요."))
     vad_model: str = field(default_factory=lambda: os.getenv("VAD_MODEL", "/models/silero_vad.onnx"))
+    denoise_model: str = field(default_factory=lambda: os.getenv("DENOISE_MODEL", "/models/gtcrn_simple.onnx"))
+    voice_filter: str = field(default_factory=lambda: os.getenv("GATEWAY_VOICE_FILTER", "strict"))
     # Log what callers said. Off by default; turn on only briefly on your own machine to debug.
     debug_transcripts: bool = field(default_factory=lambda: os.getenv("GATEWAY_DEBUG_TRANSCRIPTS", "") == "1")
     debug_audio_dir: str = field(default_factory=lambda: os.getenv("GATEWAY_DEBUG_AUDIO_DIR", ""))
@@ -277,7 +283,7 @@ class WebSocketTransport:
             if command.get("type") == "dictate":
                 return {"dictate": bool(command.get("on"))}  # speech to text for the input box only
             if command.get("type") == "prefs":  # the caller's settings: earcons on/off, voice, speed
-                return {"prefs": {key: command[key] for key in ("earcons", "voice", "speed") if key in command}}
+                return {"prefs": {key: command[key] for key in ("earcons", "voice", "speed", "filter") if key in command}}
             if command.get("type") == "typing":
                 return {"typing": True}  # the caller is on the keyboard: what the mic hears is key clicks
 
@@ -309,9 +315,12 @@ def similar(a: str, b: str) -> float:
 
 
 class Call:
-    def __init__(self, transport: Any, *, speech: Speech, secretary: Secretary, vad: Any, settings: Settings) -> None:
+    def __init__(self, transport: Any, *, speech: Speech, secretary: Secretary, vad: Any, settings: Settings,
+                 voice_filter: VoiceFilter | None = None) -> None:
         self.transport = transport
         self.speech, self.secretary, self.vad, self.settings = speech, secretary, vad, settings
+        self.voice_filter = voice_filter or VoiceFilter()
+        self.filter_mode = settings.voice_filter if settings.voice_filter in FILTER_MODES else "strict"
         self.id = ""
         self.rate = transport.rate
         self.frame_bytes = self.rate * FRAME_MS // 1000 * 2
@@ -387,7 +396,8 @@ class Call:
         if speaking != self.vad_speaking:  # the app's ear moves while you speak
             self.vad_speaking = speaking
             self.tasks.append(asyncio.create_task(self.transport.send_event({"type": "vad", "speaking": speaking})))
-        loud = float(np.sqrt(np.mean(incoming ** 2))) >= BARGE_IN_FRAME_RMS if len(incoming) else False
+        threshold = BARGE_IN_FRAME_RMS_STRICT if self.filter_mode == "strict" else BARGE_IN_FRAME_RMS
+        loud = float(np.sqrt(np.mean(incoming ** 2))) >= threshold if len(incoming) else False
         if speaking and loud and (self.playing or self.agent_busy):
             before = self.speech_ms
             self.speech_ms += len(incoming) * 1000 / self.rate
@@ -406,6 +416,13 @@ class Call:
                         len(samples) / VAD_RATE, rms, peak)
             await self.transport.send_event({"type": "ignored", "reason": "quiet"})
             return
+        verdict = await asyncio.to_thread(self.voice_filter.check, samples, VAD_RATE, self.filter_mode)
+        if not verdict.keep:  # room noise, or someone talking near the caller
+            logger.info("call %s dropped a %.1fs %s segment (denoised rms %.4f, kept %.0f%%)", self.id,
+                        len(samples) / VAD_RATE, verdict.reason, verdict.rms, verdict.ratio * 100)
+            await self.transport.send_event({"type": "ignored", "reason": verdict.reason})
+            return
+        samples = verdict.samples
         try:
             text = await self.speech.transcribe(samples, VAD_RATE)
         except Exception:
@@ -474,6 +491,8 @@ class Call:
                 self.speed = max(0.7, min(1.5, float(prefs["speed"])))
         except (TypeError, ValueError):
             pass
+        if prefs.get("filter") in FILTER_MODES:
+            self.filter_mode = prefs["filter"]
 
     async def _dictate(self, on: bool) -> None:
         """The app's mic button in the text box: transcribe what was said and hand it back as text,
@@ -629,10 +648,12 @@ async def serve(settings: Settings | None = None) -> None:
     if not settings.secretary_url:
         raise SystemExit("SECRETARY_URL is required")
     speech = HttpSpeech(settings)
+    voice_filter = VoiceFilter(settings.denoise_model)
+    logger.info("voice filter: %s, denoiser %s", settings.voice_filter, "on" if voice_filter.denoising else "missing")
 
     def new_call(transport: Any) -> Call:
         return Call(transport, speech=speech, secretary=HttpSecretary(settings), vad=SileroVad(settings.vad_model),
-                    settings=settings)
+                    settings=settings, voice_filter=voice_filter)
 
     async def audiosocket(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         await new_call(AudioSocketTransport(reader, writer)).run()

@@ -498,3 +498,76 @@ def test_app_prefs_choose_voice_speed_and_silence_earcons() -> None:
                 assert speech.voices[-1] == (4, 1.2)
                 assert calls[0].earcons_on is False
     asyncio.run(run())
+
+
+# --- voice filter: the caller's voice only -------------------------------------------------
+
+import os  # noqa: E402
+
+from voicefilter import Verdict, VoiceFilter  # noqa: E402
+
+
+def tone(level: float, seconds: float = 1.0, rate: int = 16000) -> np.ndarray:
+    t = np.arange(int(rate * seconds)) / rate
+    return (np.sin(2 * np.pi * 220 * t) * level * np.sqrt(2)).astype(np.float32)  # RMS == level
+
+
+def test_voice_filter_keeps_the_near_voice_and_drops_noise_and_distant_voices() -> None:
+    # a stand-in denoiser: "noise" (a 3 kHz hiss) is removed, voice (220 Hz) is kept
+    def denoise(samples: np.ndarray, rate: int) -> np.ndarray:
+        spectrum = np.fft.rfft(samples)
+        spectrum[np.fft.rfftfreq(len(samples), 1 / rate) > 1000] = 0
+        return np.fft.irfft(spectrum, len(samples)).astype(np.float32)
+
+    voice_filter = VoiceFilter(denoise=denoise)
+    t = np.arange(16000) / 16000
+    hiss = (np.sin(2 * np.pi * 3000 * t) * 0.05).astype(np.float32)
+    near, distant = tone(0.07), tone(0.012)
+    assert voice_filter.check(near, 16000).keep
+    assert voice_filter.check(hiss, 16000).reason == "noise"
+    assert voice_filter.check(distant, 16000, "strict").reason == "distant"
+    assert voice_filter.check(distant, 16000, "normal").keep          # "normal" lets other clear voices in
+    assert voice_filter.check(hiss, 16000, "off").keep                 # "off": the plain level gate only
+    assert voice_filter.check(near + hiss, 16000).keep                 # speech over noise survives
+    cleaned = voice_filter.check(near + hiss, 16000).samples
+    assert abs(float(np.sqrt(np.mean(cleaned ** 2))) - 0.07) < 0.005   # and STT hears it without the hiss
+
+
+@pytest.mark.skipif(not os.path.exists(os.getenv("DENOISE_MODEL", "/models/gtcrn_simple.onnx")),
+                    reason="GTCRN model not downloaded")
+def test_real_denoiser_removes_white_noise() -> None:
+    voice_filter = VoiceFilter(os.getenv("DENOISE_MODEL", "/models/gtcrn_simple.onnx"))
+    noise = np.random.default_rng(0).normal(0, 0.02, 32000).astype(np.float32)
+    assert not voice_filter.check(noise, 16000).keep
+
+
+def test_a_neighbours_voice_never_reaches_the_secretary_and_the_app_can_relax_the_filter() -> None:
+    class Neighbour:
+        """The first utterance is someone talking nearby; the filter hands STT the cleaned audio."""
+        def __init__(self) -> None:
+            self.modes: list[str] = []
+
+        def check(self, samples, rate, mode):
+            self.modes.append(mode)
+            if len(self.modes) == 1:
+                return Verdict(False, samples, "distant", 0.012, 0.9)
+            return Verdict(True, samples * 0.5, "", 0.15, 0.98)
+
+    async def run() -> None:
+        speech, secretary = FakeSpeech(["메일 알려줘"]), FakeSecretary({})
+        server, writer, received, collector, calls = await start_call(speech, secretary)
+        await wait_for(lambda: calls)
+        neighbour = calls[0].voice_filter = Neighbour()
+        for _ in range(2):
+            await send(writer, LOUD, 20)
+            await send(writer, QUIET, 12)
+            await asyncio.sleep(0.1)
+        await wait_for(lambda: secretary.turns == ["메일 알려줘"])
+        assert speech.heard == [] and neighbour.modes == ["strict", "strict"]
+        calls[0]._apply_prefs({"filter": "normal"})
+        assert calls[0].filter_mode == "normal"
+        calls[0]._apply_prefs({"filter": "bogus"})
+        assert calls[0].filter_mode == "normal"
+        collector.cancel()
+        server.close()
+    asyncio.run(run())

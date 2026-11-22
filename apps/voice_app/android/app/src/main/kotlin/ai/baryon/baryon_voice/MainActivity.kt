@@ -118,7 +118,8 @@ class MainActivity : FlutterActivity() {
                     VoiceEngine.prefsJson = org.json.JSONObject().put("type", "prefs")
                         .put("earcons", call.argument<Boolean>("earcons") ?: true)
                         .put("voice", call.argument<Int>("voice") ?: 0)
-                        .put("speed", call.argument<Double>("speed") ?: 1.05).toString()
+                        .put("speed", call.argument<Double>("speed") ?: 1.05)
+                        .put("filter", call.argument<String>("filter") ?: "strict").toString()
                     result.success(true)
                 }
                 "keepAwake" -> {
