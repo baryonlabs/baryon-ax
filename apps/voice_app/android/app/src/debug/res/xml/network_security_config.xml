@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only (this file replaces src/main/res/xml/network_security_config.xml in debug).
+     Plain ws:// is allowed so a development phone can reach the gateway over a Tailscale/headscale
+     tailnet (100.64.0.0/10, already encrypted by WireGuard) without USB. Release builds keep the
+     main policy: wss:// everywhere except the USB tunnel to 127.0.0.1. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
