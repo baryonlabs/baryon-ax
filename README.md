@@ -39,7 +39,20 @@
 
 **Glean + Palantir 온톨로지 + ChatGPT Enterprise + Slack AI + Siri·Claude Code ≈ Baryon AX**. 다만 전부 사내 서버 안에서 돌고, 모델은 골라 쓰며, 답하지 못한 질문은 전문가에게 먼저 묻습니다.
 
+<p align="center"><img src="docs/images/baryon-ax-figure1-ko.png" width="920" alt="그림 1. (a) 구성: Glean(사내 검색) + Palantir 온톨로지(지식 지도) + ChatGPT Enterprise(근거 대화) + Slack AI(메신저 에이전트) + Siri + Claude Code(음성 비서·코딩 에이전트) ≈ Baryon AX(사내 설치·모델 선택·소스 공개). (b) 하나의 사내 스택: 회사 서버 안에서 데이터 → 조각 지식 → 온톨로지 → 근거 대화 → 슬랙 에이전트 → 상주형 음성 비서. 모르는 질문은 전문가에게 먼저 묻고, 답은 온톨로지와 지식으로 돌아간다."></p>
+
+**그림 읽는 법**
+
+- **(a) 구성:** 따로 사야 하는 다섯 가지 상용 제품의 역할을 Baryon AX 하나가 맡습니다.
+- **(b) 하나의 사내 스택:** 그 역할이 회사 서버 안의 여섯 층으로 쌓입니다. 아래(데이터)에서 위(상주형 비서)로 갈수록 사람에게 가까워집니다.
+- **주황 점선:** 비서와 봇이 답하지 못한 질문은 전문가에게 먼저 묻고, 그 답이 온톨로지와 지식으로 돌아가 다음 사람은 바로 답을 받습니다.
+
+<details>
+<summary>단계별 세로 그림 보기</summary>
+
 <p align="center"><img src="docs/images/baryon-ax-ladder.svg" width="900" alt="데이터 → 조각 지식 → 온톨로지 → 근거 대화 → 슬랙 에이전트 → 상주형 비서. 각 단계 옆에 비슷한 상용 제품: Google Drive·SharePoint, Glean, Palantir 온톨로지, ChatGPT Enterprise, Slack AI, Siri + Claude Code. 답하지 못한 질문은 전문가를 거쳐 온톨로지와 지식으로 돌아간다."></p>
+
+</details>
 
 | 단계 | 하는 일 | 비슷한 상용 제품 |
 | --- | --- | --- |
@@ -878,7 +891,9 @@ API_BASE=http://127.0.0.1:8000 REQUIRE_FULL=1 python3 scripts/smoke_full_stack.p
 - **Voice secretary**: dictation, interruptible live conversation, and a resident secretary you can phone, by SIP or from the **바리온 비서** Android app. It shows up as a normal call, so car Bluetooth works. The secretary summarizes mail, calendar, to-dos and PRs, and acts only after a spoken "yes". It hands long work to **goal agents** that run in parallel on their own sandboxed git branches and report back by voice. Speech-to-text and text-to-speech stay on-premises.
 - **Governance**: OIDC with delegated identity for bots and MCP gateways, audit events in PostgreSQL/JSONL, Langfuse traces, and a security sweep that blocks P0/P1 findings on every PR.
 
-In one picture: [data → knowledge chunks → ontology → grounded chat → Slack agent → resident secretary](docs/images/baryon-ax-ladder.svg), roughly Glean + Palantir's ontology + ChatGPT Enterprise + Slack AI + Siri and Claude Code, all running on your own servers.
+<p align="center"><img src="docs/images/baryon-ax-figure1-en.png" width="920" alt="Figure 1. (a) Composition: Glean + Palantir Ontology + ChatGPT Enterprise + Slack AI + Siri + Claude Code ≈ Baryon AX. (b) One on-premises stack: data, knowledge chunks, ontology, grounded chat, Slack agent and resident voice secretary on the company server, with an ask-the-expert loop back to the ontology."></p>
+
+In one picture: roughly Glean + Palantir's ontology + ChatGPT Enterprise + Slack AI + Siri and Claude Code, all running on your own servers.
 
 Start with one line (Docker only, no GPU or API key): see [Quick start](#quick-start). The English website is at [baryon-ax.baryon.ai/en](https://baryon-ax.baryon.ai/en/).
 
