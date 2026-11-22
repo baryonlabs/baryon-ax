@@ -37,6 +37,30 @@ document Q&A model is replaced by an agent session that has your tools.
 | "아이디어인데, …" | Restates the idea briefly and offers to save it as a to-do. |
 | "멈춰" / start speaking | Stops talking and cancels the current step. |
 
+## Goal agents: parallel background work
+
+The secretary is the **resident agent**: it stays up between calls and keeps the list of
+goals. Long work goes to **goal agents**, which work on their own while the conversation goes on:
+
+```
+"로그인 버그 고쳐서 테스트 통과시켜 줘" → start_goal (spoken yes) → goal agent #1 ─┐
+"문서 오타도 정리해 줘"               → start_goal               → goal agent #2 ─┤ in parallel (SECRETARY_MAX_GOALS, default 3)
+"지금 뭐 하고 있어?"                  → list_goals                                 │
+                       ◀── "목표 '로그인 버그' 작업이 끝났어요. …" (spoken as soon as the line is free)
+```
+
+- **Isolated branches:** each goal gets its own git worktree and branch (`goal/<id>-<slug>`), next to the repository in `.baryon-goals/`. Parallel agents never touch each other's files or your checkout.
+- **Goal-driven:** the agent gets the goal and the "done when" criteria. It plans, makes changes, checks them against the criteria and commits to its branch. Its last message is a 2–3 sentence spoken report.
+- **Confined:** shell commands run in the Claude Code sandbox. Writes stay in the worktree, and network access is limited to package registries. File edits outside the worktree are refused. A goal agent never pushes, opens a PR or sends anything. When the report says "push 필요", ask the secretary, which publishes with a spoken confirmation as usual.
+- **Questions:** when a goal agent is stuck it calls `ask_user` and its status becomes `needs_input`. The secretary asks you as soon as the line is free, and your answer goes back through `answer_goal`.
+- **Resident:** goals are stored in `SECRETARY_STATE_DIR` (default `~/.baryon-secretary/goals.json`). After a restart, unfinished goals show as `interrupted`, and their branches and worktrees are kept. `GET /v1/goals` lists them, and the app shows each one as a background task card.
+
+A real run started two goals on a test repository at once ("fix add", "make average handle an empty list"):
+
+- Both finished in about 25 s, for about $0.24 each.
+- Each fixed the right function and committed on its own branch. The main checkout was unchanged.
+- Neither could run pytest in the sandbox: pytest was not installed, and the attempt to install it failed. Both said so in their reports and checked the test functions directly instead.
+
 ## Confirmations
 
 Confirmations are enforced in code, not left to the model. Every tool call
@@ -83,6 +107,8 @@ You also need [voice](voice.md) with a dictation model and Supertonic 3 installe
 | `SECRETARY_MAX_SESSIONS` | `2` | Number of conversations at once. |
 | `SECRETARY_IDLE_SECONDS` | `900` | Idle conversations are closed after this long. |
 | `SECRETARY_CONFIRM_TIMEOUT` | `120` | A question unanswered for this long counts as "no". |
+| `SECRETARY_MAX_GOALS` | `3` | Goal agents running at once. Others wait as `queued`. |
+| `SECRETARY_STATE_DIR` | `~/.baryon-secretary` | Where the goal list is kept. |
 
 Mail, calendar and drive come from the Claude account's connectors when they are
 enabled there.

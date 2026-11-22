@@ -98,6 +98,21 @@ jobs:
       - name: Gateway tests (fake Asterisk over a real socket, fake speech and secretary)
         run: uv run --no-project --with-requirements requirements.txt --with pytest python -m pytest -q test_gateway.py
 
+  voice-app:
+    name: voice app (Flutter)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/voice_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        # Pinned: newer stable releases deprecate package:flutter/material.dart; move with an explicit upgrade.
+        with: { channel: stable, flutter-version: "3.44.0", cache: true }
+      - run: flutter pub get
+      - run: flutter analyze --no-pub
+      - run: flutter test
+
   locks:
     name: lockfile check
     runs-on: ubuntu-latest
