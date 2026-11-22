@@ -200,10 +200,11 @@ def test_other_reply_denies_and_becomes_next_request() -> None:
         await session.start()
         await session.turn("메일 보내")
         await drain(session, until="confirm")
-        assert await session.turn("잠깐, 받는 사람 다시 확인해줘") == "queued"
-        await drain(session)  # first turn ends after the denial
+        assert await session.turn("잠깐, 받는 사람 다시 확인해줘") == "answer"
         assert FakeClient.results[-1][1].behavior == "deny"
-        events = await drain(session)  # the reply ran as the next request
+        events = await drain(session)  # first turn ends after the denial
+        if not any(e.get("delta") == "echo 잠깐, 받는 사람 다시 확인해줘" for e in events):
+            events = await drain(session)  # the reply ran as the next request
         assert any(e.get("delta") == "echo 잠깐, 받는 사람 다시 확인해줘" for e in events)
     asyncio.run(run())
 
@@ -271,3 +272,35 @@ def test_session_limit_reuses_idle_session_of_same_owner(api, monkeypatch) -> No
     second = api.post("/v1/sessions", headers=AUTH, json={"owner": "me"}).json()["id"]
     assert first != second and list(server.sessions) == [second]
     assert api.post("/v1/sessions", headers=AUTH, json={"owner": "someone-else"}).status_code == 429
+
+
+def test_newest_request_wins_while_busy() -> None:
+    async def run() -> None:
+        FakeClient.scripts = {"길게 설명해": ["slow", "slow", StreamEvent("옛날 답"), ResultMessage()]}
+        session = new_session()
+        await session.start()
+        await session.turn("길게 설명해")
+        await asyncio.sleep(0.05)
+        assert await session.turn("아니 그거 말고 메일 알려줘") == "answer"  # not queued behind the old answer
+        assert session._client.interrupted
+        events = []
+        while not any(e.get("delta") == "echo 아니 그거 말고 메일 알려줘" for e in events):
+            events.append(await asyncio.wait_for(session.events.get(), 3))
+        assert session.backlog == []
+    asyncio.run(run())
+
+
+def test_one_spoken_filler_per_turn() -> None:
+    async def run() -> None:
+        FakeClient.scripts = {"다 확인해": [
+            AssistantMessage(ToolUseBlock("Bash", {"command": "gh pr list"})),
+            StreamEvent("PR 없어요."),
+            AssistantMessage(ToolUseBlock("mcp__claude_ai_Gmail__search_threads", {"query": "x"})),
+            StreamEvent("메일 두 통."), ResultMessage(),
+        ]}
+        session = new_session()
+        await session.start()
+        await session.turn("다 확인해")
+        events = await drain(session)
+        assert [e["type"] for e in events].count("status") == 1
+    asyncio.run(run())

@@ -52,6 +52,7 @@ A side effect asks first:
    PHONE_PASSWORD=<openssl rand -hex 16>
    PHONE_BIND=<server tailnet IP>              # SIP must never face the internet
    PHONE_EXTERNAL_ADDRESS=<server tailnet IP>  # the address put in SDP for the phone's audio
+   PHONE_DOCKER_NET=<docker network subnet>    # only the container network, never the phone's Wi-Fi range
    SECRETARY_URL=http://<workstation tailnet IP>:8765
    SECRETARY_API_KEY=<same key as the secretary>
    ```
@@ -62,8 +63,26 @@ A side effect asks first:
    docker compose -f docker-compose.yml -f docker-compose.voice.yml -f docker-compose.phone.yml up -d --build
    ```
 
-The ports are UDP 5060 for SIP and UDP 10000–10049 for audio. The password must be at
+The ports are UDP 5060 for SIP and UDP 10000–10019 for audio (ten calls). The password must be at
 least 16 characters, and Asterisk refuses to start otherwise.
+
+Optional: let the phone also connect on the same Wi-Fi with `PHONE_LAN_ADDRESS=<server LAN IP>`.
+This adds a second SIP transport that advertises the LAN address, so the audio stays on the
+LAN. Docker Desktop cannot publish one container port on two host addresses, so publish the audio
+range on all interfaces (`-p 10000-10019:10000-10019/udp`) and SIP once per address. Strict RTP
+only accepts audio from the call's own peer.
+
+## Joining a self-hosted control server (headscale)
+
+The Tailscale app can join a headscale tailnet next to your existing account:
+
+1. In Tailscale, open **Accounts**, tap **⋮**, then **Use an alternate server**.
+2. Enter your headscale URL and tap **Add account**. A browser page shows
+   `headscale auth register --auth-id hskey-authreq-… --user USERNAME`.
+3. Run that command on the headscale server with your user. The phone joins and gets a `100.64.x.x` address.
+
+Alternatively, **⋮ → Use an auth key** accepts a one-time preauth key
+(`headscale preauthkeys create --user <user> --expiration 1h`).
 
 ## Android (Linphone)
 
@@ -73,14 +92,14 @@ least 16 characters, and Asterisk refuses to start otherwise.
    - Password: `PHONE_PASSWORD`
    - Domain: `<server tailnet IP>`
    - Transport: **UDP**
-3. Go to **Settings → Calls** and turn on the option that uses the Android Telecom manager (its exact label varies by Linphone version). The call then behaves like a normal phone call, including car Bluetooth.
+3. Linphone 6 registers itself with Android's call system (a self-managed phone account with Bluetooth, earpiece, speaker and wired routes), so calls already behave like normal phone calls in the car. Older versions have a Telecom manager switch under **Settings → Calls**.
 4. Add a contact named **비서** with the SIP address `sip:100@<server tailnet IP>`. Put it in favourites or add a home-screen shortcut, so starting a call is one tap.
 
 In the car, connect Bluetooth as usual and call **비서**. You hear "네, 비서입니다. 말씀하세요."
 
 ## Tips
 
-- **Speak after the greeting.** Talking over any answer stops it ("barge-in"). "멈춰" stops what the secretary is doing.
+- **Interrupt any time.** Speaking for about 0.16 s while the secretary talks stops it at once, and your newest sentence replaces the old request instead of waiting in a queue. "멈춰" stops what it is doing.
 - **Answer questions with yes or no.** When it asks "~할까요?", say "응", "네" or "보내줘" to go ahead, or "아니" or "취소" to stop. Anything else counts as no and is taken as your next request.
 - **Latency.** Whisper turbo takes about 1–2.5 s to understand you on CPU, and the first spoken filler follows about 2 s later. A GPU or a faster model shortens this. `PHONE_STT_MODEL=sensevoice-ko` answers in about 0.1 s but mishears more on phone audio.
 - **Privacy.** The gateway logs only call start and end, utterance lengths and timings. It never logs what was said. The call carries audio only between your phone, Asterisk and the gateway, inside your tailnet.

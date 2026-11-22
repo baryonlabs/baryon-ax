@@ -16,10 +16,12 @@ services:
       PHONE_PASSWORD: ${PHONE_PASSWORD:?set PHONE_PASSWORD (16+ random characters)}
       SECRETARY_EXTENSION: ${SECRETARY_EXTENSION:-100}
       EXTERNAL_ADDRESS: ${PHONE_EXTERNAL_ADDRESS:-}
+      LAN_ADDRESS: ${PHONE_LAN_ADDRESS:-}
+      LOCAL_NET: ${PHONE_DOCKER_NET:-172.16.0.0/12}
       GATEWAY_ADDRESS: phone-gateway:9092
     ports:
       - "${PHONE_BIND:-127.0.0.1}:5060:5060/udp"
-      - "${PHONE_BIND:-127.0.0.1}:10000-10049:10000-10049/udp"
+      - "${PHONE_BIND:-127.0.0.1}:10000-10019:10000-10019/udp"
     depends_on:
       - phone-gateway
     restart: unless-stopped

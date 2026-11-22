@@ -29,6 +29,7 @@ from .policy import confirmation_prompt, decide, parse_answer, status_label
 logger = logging.getLogger("secretary")
 
 CONFIRM_TIMEOUT = float(os.getenv("SECRETARY_CONFIRM_TIMEOUT", "120"))
+INTERRUPT_GRACE = 5.0  # seconds to let an interrupted turn wind down before the next starts
 SILENT_TOOLS = {"ToolSearch", "TodoWrite"}  # internal bookkeeping: nothing worth saying aloud
 STOP_WORDS = {"멈춰", "그만", "중지", "스톱", "stop", "취소"}
 
@@ -123,11 +124,15 @@ class Session:
                 return "confirm"
             self._resolve_pending(False)  # anything else counts as "no", then becomes the next request
         if self.busy:
+            await self.interrupt()
             if text.replace(" ", "").rstrip(".!") in STOP_WORDS:
-                await self.interrupt()
                 return "interrupt"
-            self.backlog.append(text)
-            return "queued"
+            # In a conversation the newest request wins: the old answer is dropped, not queued.
+            if self._task:
+                try:
+                    await asyncio.wait_for(asyncio.shield(self._task), INTERRUPT_GRACE)
+                except (asyncio.TimeoutError, Exception):
+                    pass
         self._task = asyncio.create_task(self._run(text))
         return "answer"
 
@@ -172,7 +177,6 @@ class Session:
                     delta = "\n" + delta  # text resumed after a tool call: keep sentences apart
                 self._after_tool = False
                 self.emit({"type": "text", "delta": delta})
-                self._last_status = ""
         elif kind == "AssistantMessage":
             for block in message.content:
                 if type(block).__name__ == "ToolUseBlock":
@@ -180,7 +184,7 @@ class Session:
                     if block.name in SILENT_TOOLS:
                         continue
                     label = status_label(block.name, block.input or {})
-                    if label != self._last_status:
+                    if not self._last_status:  # one spoken filler per turn is enough
                         self.emit({"type": "status", "text": label, "tool": block.name})
                         self._last_status = label
         elif kind == "ResultMessage":
