@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:baryon_voice/cards.dart';
 import 'package:baryon_voice/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -70,6 +71,10 @@ void main() {
             };
           }
           if (call.method == 'alerts') alertsOn = call.arguments['on'] as bool;
+          if (call.method == 'recordStart') return null; // started
+          if (call.method == 'recordState') {
+            return {'recording': false, 'seconds': 0.0, 'lastPath': null};
+          }
           return call.method == 'config'
               ? {
                   'server': 'ws://127.0.0.1:9093/v1/voice/call',
@@ -362,5 +367,139 @@ void main() {
       'on': false,
     });
     expect(find.byKey(const Key('test-alarm')), findsNothing);
+  });
+
+  testWidgets('cards: what is shown, not said, under the spoken sentence', (
+    tester,
+  ) async {
+    await open(tester);
+    await emit(tester, {'type': 'heard', 'text': '이번 주 비용 보여 줘'});
+    await emit(tester, {
+      'type': 'card',
+      'card': {
+        'kind': 'bar',
+        'title': '팀별 비용',
+        'unit': '만원',
+        'items': [
+          {'label': '개발', 'value': 1200},
+          {'label': '영업', 'value': 800.5},
+        ],
+      },
+    });
+    await emit(tester, {'type': 'said', 'text': '개발팀이 가장 많아요.'});
+    await emit(tester, {
+      'type': 'card',
+      'card': {
+        'kind': 'table',
+        'title': '일정',
+        'columns': ['시간', '제목'],
+        'rows': [
+          ['15:00', '미팅'],
+        ],
+      },
+    });
+    await emit(tester, {'type': 'agent_done'});
+    await emit(tester, {'type': 'idle'});
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('card-bar')), findsOneWidget);
+    expect(find.text('1,200만원'), findsOneWidget);
+    expect(find.text('800.5만원'), findsOneWidget);
+    expect(find.byKey(const Key('card-table')), findsOneWidget);
+    expect(
+      find.text('개발팀이 가장 많아요.'),
+      findsOneWidget,
+    ); // the words, in the same answer
+    await emit(tester, {
+      'type': 'card',
+      'card': {
+        'kind': 'line',
+        'title': '방문자',
+        'items': [
+          {'label': '월', 'value': 10},
+          {'label': '화', 'value': 14},
+          {'label': '수', 'value': 9},
+        ],
+      },
+    });
+    await emit(tester, {
+      'type': 'card',
+      'card': {
+        'kind': 'stats',
+        'title': '오늘',
+        'items': [
+          {'label': '메일', 'value': 3, 'detail': '읽지 않음'},
+          {'label': '회의', 'detail': '2건'},
+        ],
+      },
+    });
+    await emit(tester, {
+      'type': 'card',
+      'card': {'kind': 'text', 'title': '요약', 'body': '첫 줄\n- 할 일 하나'},
+    });
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('card-line')), findsOneWidget);
+    expect(find.text('2건'), findsOneWidget);
+    expect(find.text('할 일 하나'), findsOneWidget);
+    expect(SecretaryCard.number(1234567), '1,234,567');
+  });
+
+  testWidgets('a recording becomes text and goes to the secretary', (
+    tester,
+  ) async {
+    await open(tester);
+    await tester.tap(find.byKey(const Key('attach')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('attach-record')));
+    await tester.pumpAndSettle();
+    expect(methods(), contains('recordStart'));
+    await emit(tester, {'type': 'recording', 'seconds': 65.0, 'level': 0.05});
+    expect(find.text('녹음 중 1:05'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('record-stop')));
+    await emit(tester, {
+      'type': 'recorded',
+      'path': '/cache/rec.pcm',
+      'seconds': 192.0,
+    });
+    expect(calls.lastWhere((call) => call.method == 'upload').arguments, {
+      'path': '/cache/rec.pcm',
+    });
+    await emit(tester, {
+      'type': 'upload',
+      'stage': 'transcribing',
+      'done': 3,
+      'total': 8,
+    });
+    expect(find.text('글로 옮기는 중'), findsOneWidget);
+    await emit(tester, {
+      'type': 'transcript',
+      'text': '[00:00] 다음 주 화요일에 출시합니다',
+      'seconds': 192.0,
+      'path': '/cache/rec.pcm',
+    });
+    await tester.pump();
+    final sent =
+        jsonDecode(
+              calls
+                      .lastWhere((call) => call.method == 'attach')
+                      .arguments['message']
+                  as String,
+            )
+            as Map;
+    expect(sent['text'], startsWith('[녹음 3분 12초 · 받아쓴 글]'));
+    expect(sent['text'], contains('다음 주 화요일에 출시합니다'));
+    expect(sent['shown'], {'kind': 'recording', 'seconds': 192.0});
+    expect(find.text('녹음 3분 12초'), findsOneWidget);
+    expect(find.byKey(const Key('record-bar')), findsNothing);
+    // The gateway's "heard" for it does not add a second bubble.
+    await emit(tester, {
+      'type': 'heard',
+      'text': sent['text'],
+      'shown': sent['shown'],
+    });
+    expect(find.text('녹음 3분 12초'), findsOneWidget);
+    await emit(tester, {'type': 'agent_done'});
+    await tester.tap(find.byKey(const Key('transcript')));
+    await tester.pumpAndSettle();
+    expect(find.text('[00:00] 다음 주 화요일에 출시합니다'), findsOneWidget);
   });
 }

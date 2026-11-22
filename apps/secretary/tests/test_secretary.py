@@ -75,7 +75,9 @@ class FakeClient:
     async def disconnect(self) -> None:
         self.connected = False
 
-    async def query(self, text: str) -> None:
+    async def query(self, text) -> None:
+        if not isinstance(text, str):  # a turn with photos: the SDK's streaming input
+            text = "".join(block.get("text", "") async for message in text for block in message["message"]["content"])
         self.queries.append(text)
         self._current = list(self.scripts.get(text, [StreamEvent(f"echo {text}"), ResultMessage()]))
 
@@ -561,3 +563,61 @@ def test_notification_http_api(api) -> None:
 def test_ringing_the_owners_phone_needs_no_spoken_yes() -> None:
     for tool in ("mcp__phone__notify_phone", "mcp__phone__list_reminders", "mcp__phone__cancel_reminder"):
         assert policy.decide(tool, {"title": "회의"}).action == "auto"
+
+
+# --- what is shown, not said --------------------------------------------------------------
+
+def test_cards_are_cleaned_and_checked() -> None:
+    from secretary.screen import card
+
+    shown = card({"kind": "bar", "title": "  팀별   비용 ", "unit": "만원",
+                  "items": [{"label": "개발", "value": "1,200"}, {"label": "영업", "value": 800}], "extra": "x"})
+    assert shown == {"kind": "bar", "title": "팀별 비용", "unit": "만원",
+                     "items": [{"label": "개발", "value": 1200.0}, {"label": "영업", "value": 800.0}]}
+    assert card({"kind": "list", "title": "할 일", "items": ["PR 리뷰", {"label": "메일", "badge": "긴급"}]})["items"] == [
+        {"label": "PR 리뷰"}, {"label": "메일", "badge": "긴급"}]
+    assert card({"kind": "table", "title": "일정", "columns": ["시간", "제목"], "rows": [["15:00", "미팅", "넘침"]]})["rows"] == [
+        ["15:00", "미팅"]]
+    for bad in ({"kind": "pie", "title": "x"}, {"kind": "bar", "title": "x", "items": [{"label": "a"}]},
+                {"kind": "line", "title": "x", "items": [{"label": "a", "value": 1}]}, {"kind": "text", "title": "x"}):
+        with pytest.raises(ValueError):
+            card(bad)
+
+
+def test_a_card_becomes_a_screen_event_and_is_never_spoken() -> None:
+    seen: dict = {}
+
+    def capture(can_use_tool, **kwargs):
+        seen.update(kwargs)
+        return {"can_use_tool": can_use_tool}
+
+    async def run() -> None:
+        session = Session(FakeClient, owner="me", cwd=".", model="test", mcp_names=[], options_factory=capture)
+        seen["show"]({"kind": "stats", "title": "오늘", "items": [{"label": "메일", "value": 3.0}]})
+        assert session.events.get_nowait() == {"type": "card", "card": {"kind": "stats", "title": "오늘",
+                                                                        "items": [{"label": "메일", "value": 3.0}]}}
+    asyncio.run(run())
+    assert "mcp__screen__show" in __import__("secretary.session", fromlist=["SILENT_TOOLS"]).SILENT_TOOLS
+    assert policy.decide("mcp__screen__show", {"kind": "list"}).action == "auto"
+
+
+def test_a_photo_goes_to_the_agent_as_an_image_block() -> None:
+    from secretary.session import user_message
+
+    async def run() -> list:
+        return [message async for message in user_message("영수증 금액 알려 줘", [
+            {"media_type": "image/jpeg", "data": "QUJD" * 8}, {"media_type": "text/html", "data": "x" * 20}])]
+    [message] = asyncio.run(run())
+    content = message["message"]["content"]
+    assert [block["type"] for block in content] == ["image", "text"]  # the html "image" is dropped
+    assert content[0]["source"] == {"type": "base64", "media_type": "image/jpeg", "data": "QUJD" * 8}
+    assert content[1]["text"] == "영수증 금액 알려 줘"
+
+
+def test_http_turn_takes_photos(api) -> None:
+    FakeClient.scripts = {}
+    session_id = api.post("/v1/sessions", headers=AUTH, json={"owner": "me"}).json()["id"]
+    body = {"text": "이거 뭐야?", "images": [{"media_type": "image/png", "data": "iVBORw0KGgo" * 4}]}
+    assert api.post(f"/v1/sessions/{session_id}/turn", headers=AUTH, json=body).json() == {"used": "answer"}
+    bad = {"text": "x", "images": [{"media_type": "application/pdf", "data": "JVBERi0" * 4}]}
+    assert api.post(f"/v1/sessions/{session_id}/turn", headers=AUTH, json=bad).status_code == 422

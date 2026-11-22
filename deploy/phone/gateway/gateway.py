@@ -43,6 +43,7 @@ import httpx
 import numpy as np
 
 from earcons import earcon
+from recording import receive_upload
 from voicefilter import MODES as FILTER_MODES, VoiceFilter
 from audio import (FRAME_BYTES, FRAME_MS, KIND_AUDIO, KIND_ERROR, KIND_HANGUP, KIND_UUID, PHONE_RATE,
                    SentenceChunker, float_to_pcm, frame, from_wav, pcm_to_float, read_frame, resample, speakable, to_wav)
@@ -63,7 +64,8 @@ PHANTOM_PHRASES = re.compile(
 STOP_WORDS = re.compile(r"^(?:멈춰|그만|중지|스톱|stop)[.!?\s]*$", re.I)
 # Secretary events shown on the app's screen (renamed so they do not clash with call events).
 SCREEN_EVENTS = {"activity": "activity", "activity_done": "activity_done", "task": "task",
-                 "text": "agent_text", "done": "agent_done", "confirmed": "confirmed"}
+                 "text": "agent_text", "done": "agent_done", "confirmed": "confirmed",
+                 "card": "card"}  # a list, table or chart the secretary shows instead of reading it out
 # Measured on a real call: speech segments had RMS ~0.015 and peaks ~0.5, while room noise that
 # Silero let through (and Whisper turned into "다음 영상에서 만나요") stayed under RMS 0.0025 and
 # peak 0.12. Segments that quiet are dropped before speech-to-text.
@@ -149,8 +151,11 @@ class HttpSecretary:
         response.raise_for_status()
         self.id = response.json()["id"]
 
-    async def turn(self, text: str) -> str:
-        response = await self.client.post(f"{self.settings.secretary_url}/v1/sessions/{self.id}/turn", json={"text": text})
+    async def turn(self, text: str, images: list[dict] | None = None) -> str:
+        body: dict[str, Any] = {"text": text}
+        if images:
+            body["images"] = images
+        response = await self.client.post(f"{self.settings.secretary_url}/v1/sessions/{self.id}/turn", json=body)
         response.raise_for_status()
         return response.json().get("used", "")
 
@@ -278,8 +283,8 @@ class WebSocketTransport:
                 continue
             if command.get("type") == "hangup":
                 return None
-            if command.get("type") == "text" and str(command.get("text", "")).strip():
-                return {"text": str(command["text"])[:2000]}  # typed, or a tapped answer such as "응"
+            if command.get("type") == "text" and (str(command.get("text", "")).strip() or command.get("images")):
+                return typed_message(command)  # typed, a tapped answer such as "응", a photo, or a recording
             if command.get("type") == "dictate":
                 return {"dictate": bool(command.get("on"))}  # speech to text for the input box only
             if command.get("type") == "prefs":  # the caller's settings: earcons on/off, voice, speed
@@ -369,7 +374,8 @@ class Call:
                 elif isinstance(payload, dict) and "dictate" in payload:
                     await self._dictate(payload["dictate"])
                 elif isinstance(payload, dict):
-                    self.tasks.append(asyncio.create_task(self._handle_text(payload["text"], typed=True)))
+                    self.tasks.append(asyncio.create_task(self._handle_text(
+                        payload["text"], typed=True, images=payload.get("images"), shown=payload.get("shown"))))
                 elif self.dictating:
                     self.dictation.append(pcm_to_float(payload))
                 else:
@@ -443,8 +449,9 @@ class Call:
         (folder / f"{name}.wav").write_bytes(to_wav(samples, VAD_RATE))
         (folder / f"{name}.txt").write_text(text, encoding="utf-8")
 
-    async def _handle_text(self, text: str, *, typed: bool = False, started: float | None = None) -> None:
-        if len(re.sub(r"[\s.,!?]", "", text)) < 1:
+    async def _handle_text(self, text: str, *, typed: bool = False, started: float | None = None,
+                           images: list[dict] | None = None, shown: dict | None = None) -> None:
+        if len(re.sub(r"[\s.,!?]", "", text)) < 1 and not images:
             return
         if not typed and self._is_echo(text):
             logger.info("call %s ignored %d chars of its own echo", self.id, len(text))
@@ -461,7 +468,8 @@ class Call:
         if not typed:
             self.cue("heard")
         self.log.append(f"heard: {text}")
-        await self.transport.send_event({"type": "heard", "text": text})
+        # A photo or a recording shows as what the caller attached, not as the text sent with it.
+        await self.transport.send_event({"type": "heard", "text": text, **({"shown": shown} if shown else {})})
         if self.settings.debug_transcripts:
             logger.info("call %s heard: %s", self.id, text)
         logger.info("call %s %s %d chars%s", self.id, "got typed" if typed else "heard", len(text),
@@ -475,7 +483,7 @@ class Call:
         self.agent_busy = True
         self.chunker = SentenceChunker()
         try:
-            await self.secretary.turn(text)
+            await (self.secretary.turn(text, images) if images else self.secretary.turn(text))
         except Exception:
             logger.exception("secretary turn failed")
             self.agent_busy = False
@@ -677,6 +685,27 @@ async def settings_request(client: httpx.AsyncClient, base_url: str, message: st
 
 
 NOTIFY_PATH = "/v1/voice/notify"
+UPLOAD_PATH = "/v1/voice/upload"
+IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+MAX_IMAGE_CHARS = 7_000_000  # base64 of about 5 MB
+
+
+def typed_message(command: dict) -> dict:
+    """A typed message from the app, with any photos and the record of what the bubble shows.
+    A transcribed recording may be long; anything else is cut at 2000 characters."""
+    limit = 40000 if isinstance(command.get("shown"), dict) and command["shown"].get("kind") == "recording" else 2000
+    message: dict[str, Any] = {"text": str(command.get("text", ""))[:limit]}
+    images = [{"media_type": image["media_type"], "data": image["data"]}
+              for image in (command.get("images") or [])[:4]
+              if isinstance(image, dict) and image.get("media_type") in IMAGE_TYPES
+              and isinstance(image.get("data"), str) and 16 <= len(image["data"]) <= MAX_IMAGE_CHARS]
+    if images:
+        message["images"] = images
+    shown = command.get("shown")
+    if isinstance(shown, dict) and shown.get("kind") in {"image", "recording"}:
+        message["shown"] = {key: shown[key] for key in ("kind", "ref", "seconds", "label") if key in shown
+                            and isinstance(shown[key], (str, int, float)) and len(str(shown[key])) <= 300}
+    return message
 
 
 class NotifyRelay:
@@ -781,7 +810,7 @@ async def serve(settings: Settings | None = None) -> None:
         from websockets.asyncio.server import serve as ws_serve
 
         def check(connection, request):
-            if request.path.split("?")[0] not in {"/v1/voice/call", SETTINGS_PATH, NOTIFY_PATH}:
+            if request.path.split("?")[0] not in {"/v1/voice/call", SETTINGS_PATH, NOTIFY_PATH, UPLOAD_PATH}:
                 return connection.respond(404, "not found\n")
             if not token_allowed(request.headers.get("Authorization"), settings.app_tokens):
                 return connection.respond(401, "invalid token\n")
@@ -797,6 +826,9 @@ async def serve(settings: Settings | None = None) -> None:
             if websocket.request.path.split("?")[0] == NOTIFY_PATH:
                 await relay.phone(websocket)
                 return
+            if websocket.request.path.split("?")[0] == UPLOAD_PATH:
+                await receive_upload(websocket, speech.transcribe, PHANTOM_PHRASES)
+                return
             if websocket.request.path.split("?")[0] == SETTINGS_PATH:
                 async for message in websocket:  # the app's settings screen: request in, answer out
                     await websocket.send(json.dumps(
@@ -806,8 +838,9 @@ async def serve(settings: Settings | None = None) -> None:
 
         ws_host, _, ws_port = ws_listen.rpartition(":")
         servers.append(await ws_serve(app_call, ws_host or "0.0.0.0", int(ws_port), process_request=check,
-                                      max_size=1 << 16, ping_interval=20))
-        logger.info("WebSocket (voice app) on %s/v1/voice/call, %s and %s", ws_listen, SETTINGS_PATH, NOTIFY_PATH)
+                                      max_size=8 << 20, ping_interval=20))  # 8 MB: a photo in one message
+        logger.info("WebSocket (voice app) on %s/v1/voice/call, %s, %s and %s", ws_listen, SETTINGS_PATH, NOTIFY_PATH,
+                    UPLOAD_PATH)
     await asyncio.gather(*(server.serve_forever() for server in servers))
 
 

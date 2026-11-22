@@ -194,6 +194,33 @@ class MainActivity : FlutterActivity() {
                     } else NotifyService.stop(applicationContext)
                     result.success(true)
                 }
+                "attach" -> {
+                    // A photo (or a transcribed recording) with its words, as one message to the secretary.
+                    if (!VoiceEngine.isRunning) startTyped()
+                    VoiceEngine.sendRaw(call.argument<String>("message").orEmpty())
+                    result.success(true)
+                }
+                "recordStart" -> {
+                    if (VoiceEngine.isRunning && VoiceEngine.audioCall) {
+                        result.success("통화 중에는 녹음할 수 없어요. 통화를 끊고 녹음해 주세요.")
+                    } else withPermissions {
+                        RecordService.start(applicationContext)
+                        result.success(null)
+                    }
+                }
+                "recordStop" -> { RecordService.stop(applicationContext); result.success(true) }
+                "recordState" -> result.success(mapOf(
+                    "recording" to RecordService.recording,
+                    "seconds" to RecordService.seconds,
+                    "lastPath" to RecordService.lastPath,
+                ))
+                "upload" -> {
+                    val token = prefs().getString("token", "").orEmpty()
+                    val path = call.argument<String>("path").orEmpty()
+                    RecordService.lastPath = null
+                    RecordService.upload(prefs().getString("server", DEFAULT_SERVER).orEmpty(), token, path)
+                    result.success(true)
+                }
                 "fixAlerts" -> { fixAlerts(call.argument<String>("what").orEmpty()); result.success(true) }
                 "typing" -> { VoiceEngine.typing(); result.success(true) }
                 "callPrefs" -> {

@@ -11,7 +11,7 @@ ADD --checksum=sha256:9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09c
 # GTCRN speech denoiser (voicefilter.py): drops room noise and distant voices before speech-to-text
 ADD --checksum=sha256:e77603ac0c23dac3227dd2d7135b3a585cbee2679048aecfa886657d3ae1b534 https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx /models/gtcrn_simple.onnx
 RUN chmod 644 /models/silero_vad.onnx /models/gtcrn_simple.onnx
-COPY audio.py earcons.py voicefilter.py gateway.py ./
+COPY audio.py earcons.py recording.py voicefilter.py gateway.py ./
 USER gateway
 EXPOSE 9092
 CMD ["python", "gateway.py"]

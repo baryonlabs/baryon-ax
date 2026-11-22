@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'alerts_settings.dart';
+import 'cards.dart';
 import 'secretary_page.dart';
 
 /// 바리온 비서: talk to your voice secretary hands-free, or type to it.
@@ -196,21 +199,43 @@ class _BaryonVoiceAppState extends State<BaryonVoiceApp> {
 enum Line { idle, connecting, typing, connected, muted, ended }
 
 class Message {
-  Message(this.fromMe, this.text, {DateTime? at}) : at = at ?? DateTime.now();
+  Message(
+    this.fromMe,
+    this.text, {
+    DateTime? at,
+    this.shown,
+    List<Map<String, dynamic>>? cards,
+  }) : at = at ?? DateTime.now(),
+       cards = cards ?? [];
   final bool fromMe;
   String text;
   final DateTime at;
+
+  /// What the owner attached: {kind: image, ref: path} or {kind: recording, seconds, transcript}.
+  final Map<String, dynamic>? shown;
+
+  /// What the secretary showed with its answer: lists, tables and charts (cards.dart).
+  final List<Map<String, dynamic>> cards;
 
   Map<String, dynamic> toJson() => {
     'me': fromMe,
     'text': text,
     'at': at.toIso8601String(),
+    if (shown != null) 'shown': shown,
+    if (cards.isNotEmpty) 'cards': cards,
   };
 
   static Message fromJson(Map<String, dynamic> json) => Message(
     json['me'] == true,
     json['text'] as String? ?? '',
     at: DateTime.tryParse(json['at'] as String? ?? ''),
+    shown: json['shown'] is Map
+        ? Map<String, dynamic>.from(json['shown'] as Map)
+        : null,
+    cards: [
+      for (final card in (json['cards'] as List? ?? const []))
+        if (card is Map) Map<String, dynamic>.from(card),
+    ],
   );
 }
 
@@ -298,6 +323,13 @@ class _CallScreenState extends State<CallScreen> {
   StreamSubscription<dynamic>? subscription;
   Timer? saveTimer;
   Map<String, dynamic> config = {};
+  // Recording for the secretary (+ > 녹음): seconds so far, input level, and what happens after.
+  bool recording = false;
+  double recordSeconds = 0;
+  double recordLevel = 0;
+  String? uploadStage; // sending | transcribing, while a recording becomes text
+  double uploadShare = 0;
+  String recordAsk = '';
 
   bool get inCall =>
       line == Line.connecting || line == Line.connected || line == Line.muted;
@@ -317,6 +349,24 @@ class _CallScreenState extends State<CallScreen> {
       jumpToEnd();
     });
     loadConfig();
+    checkRecording();
+  }
+
+  /// A recording stopped from its notification while the app was away is sent now.
+  Future<void> checkRecording() async {
+    try {
+      final state =
+          await _channel.invokeMapMethod<String, dynamic>('recordState') ?? {};
+      if (!mounted) return;
+      setState(() {
+        recording = state['recording'] == true;
+        recordSeconds = (state['seconds'] as num? ?? 0).toDouble();
+      });
+      final path = state['lastPath'] as String?;
+      if (!recording && path != null && path.isNotEmpty) uploadRecording(path);
+    } catch (_) {
+      // not on Android
+    }
   }
 
   @override
@@ -432,9 +482,51 @@ class _CallScreenState extends State<CallScreen> {
         case 'ignored':
           event['reason'] == 'distant' ? distant++ : ignored++;
         case 'heard':
-          messages.add(Message(true, event['text'] as String? ?? ''));
+          final heard = event['text'] as String? ?? '';
+          final last = messages.isNotEmpty ? messages.last : null;
+          // A photo or recording, or a typed line, is already in the conversation.
+          final shownAlready =
+              event['shown'] != null ||
+              (last != null &&
+                  last.fromMe &&
+                  last.text == heard &&
+                  DateTime.now().difference(last.at).inSeconds < 60);
+          if (!shownAlready) messages.add(Message(true, heard));
           startWork();
           remember();
+        case 'card':
+          final card = event['card'];
+          if (card is Map) {
+            final shown = Map<String, dynamic>.from(card);
+            if (replyOpen && messages.isNotEmpty && !messages.last.fromMe) {
+              messages.last.cards.add(shown);
+            } else {
+              messages.add(Message(false, '', cards: [shown]));
+              replyOpen = true;
+            }
+            remember();
+          }
+        case 'recording':
+          recording = true;
+          recordSeconds = (event['seconds'] as num? ?? 0).toDouble();
+          recordLevel = (event['level'] as num? ?? 0).toDouble();
+        case 'recorded':
+          recording = false;
+          uploadRecording(event['path'] as String? ?? '');
+        case 'upload':
+          uploadStage = event['stage'] as String?;
+          final total = (event['total'] as num? ?? 0).toDouble();
+          uploadShare = total > 0 ? (event['done'] as num? ?? 0) / total : 0;
+        case 'transcript':
+          uploadStage = null;
+          sendRecording(
+            (event['text'] as String? ?? '').trim(),
+            (event['seconds'] as num? ?? 0).toDouble(),
+          );
+        case 'upload_error':
+          uploadStage = null;
+          recording = false;
+          error = event['message'] as String? ?? '녹음을 보내지 못했어요.';
         case 'activity':
           steps.add(
             Step(
@@ -474,7 +566,9 @@ class _CallScreenState extends State<CallScreen> {
         case 'said':
           final text = event['text'] as String? ?? '';
           if (replyOpen && messages.isNotEmpty && !messages.last.fromMe) {
-            messages.last.text = '${messages.last.text} $text';
+            messages.last.text = messages.last.text.isEmpty
+                ? text
+                : '${messages.last.text} $text';
           } else {
             messages.add(Message(false, text));
           }
@@ -553,6 +647,214 @@ class _CallScreenState extends State<CallScreen> {
     });
     jumpToEnd();
     await _channel.invokeMethod('text', {'text': text});
+  }
+
+  // --- photos and recordings ---------------------------------------------------------------
+
+  Future<void> openAttach() async {
+    haptic();
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              key: const Key('attach-camera'),
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('사진 찍기'),
+              subtitle: const Text('영수증, 명함, 문서, 화이트보드'),
+              onTap: () => Navigator.pop(context, 'camera'),
+            ),
+            ListTile(
+              key: const Key('attach-gallery'),
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('사진 고르기'),
+              subtitle: const Text('갤러리, 화면 캡처'),
+              onTap: () => Navigator.pop(context, 'gallery'),
+            ),
+            ListTile(
+              key: const Key('attach-record'),
+              leading: const Icon(Icons.mic_none),
+              title: const Text('녹음하기'),
+              subtitle: const Text('회의, 강의, 메모 · 멈추면 글로 옮겨 비서가 정리해요'),
+              onTap: () => Navigator.pop(context, 'record'),
+            ),
+          ],
+        ),
+      ),
+    );
+    switch (choice) {
+      case 'camera':
+        await sendImage(ImageSource.camera);
+      case 'gallery':
+        await sendImage(ImageSource.gallery);
+      case 'record':
+        await startRecording();
+    }
+  }
+
+  Future<void> sendImage(ImageSource source) async {
+    final XFile? file;
+    try {
+      // About 1600 px on the long side is plenty to read text and keeps the upload under a megabyte.
+      file = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 82,
+      );
+    } on PlatformException catch (problem) {
+      setState(() => error = '사진을 열 수 없어요: ${problem.message ?? problem.code}');
+      return;
+    }
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    final lower = file.path.toLowerCase();
+    final type = lower.endsWith('.png')
+        ? 'image/png'
+        : lower.endsWith('.webp')
+        ? 'image/webp'
+        : 'image/jpeg';
+    final caption = input.text.trim();
+    final shown = {'kind': 'image', 'ref': file.path};
+    setState(() {
+      messages.add(Message(true, caption, shown: shown));
+      input.clear();
+      question = null;
+      error = null;
+      startWork();
+    });
+    remember();
+    jumpToEnd();
+    await _channel.invokeMethod('attach', {
+      'message': jsonEncode({
+        'type': 'text',
+        'text': caption.isEmpty ? '이 사진을 봐 줘.' : caption,
+        'images': [
+          {'media_type': type, 'data': base64Encode(bytes)},
+        ],
+        'shown': shown,
+      }),
+    });
+  }
+
+  Future<void> startRecording() async {
+    final problem = await _channel.invokeMethod<String>('recordStart');
+    if (!mounted) return;
+    setState(() {
+      if (problem != null) {
+        error = problem;
+      } else {
+        recording = true;
+        recordSeconds = 0;
+        recordAsk = input.text
+            .trim(); // what to do with it, if the owner already typed it
+        input.clear();
+      }
+    });
+  }
+
+  Future<void> stopRecording() async {
+    haptic(true);
+    await _channel.invokeMethod('recordStop');
+  }
+
+  Future<void> uploadRecording(String path) async {
+    if (path.isEmpty) return;
+    setState(() {
+      uploadStage = 'sending';
+      uploadShare = 0;
+    });
+    await _channel.invokeMethod('upload', {'path': path});
+  }
+
+  Future<void> sendRecording(String transcript, double seconds) async {
+    final ask = recordAsk.isNotEmpty ? recordAsk : input.text.trim();
+    recordAsk = '';
+    if (transcript.isEmpty) {
+      setState(() => error = '녹음에서 말소리를 찾지 못했어요.');
+      return;
+    }
+    final length = AttachmentView.duration(seconds);
+    final shown = {
+      'kind': 'recording',
+      'seconds': seconds,
+      'transcript': transcript,
+    };
+    setState(() {
+      messages.add(Message(true, ask, shown: shown));
+      if (ask.isNotEmpty && input.text.trim() == ask) input.clear();
+      question = null;
+      error = null;
+      startWork();
+    });
+    remember();
+    jumpToEnd();
+    await _channel.invokeMethod('attach', {
+      'message': jsonEncode({
+        'type': 'text',
+        'text':
+            '[녹음 $length · 받아쓴 글]\n$transcript\n\n'
+            '요청: ${ask.isEmpty ? '핵심 요약, 결정된 것, 할 일을 정리해 줘.' : ask}',
+        'shown': {'kind': 'recording', 'seconds': seconds},
+      }),
+    });
+  }
+
+  Widget recordBar(ColorScheme scheme) {
+    final uploading = uploadStage != null;
+    final minutes = recordSeconds ~/ 60;
+    final rest = (recordSeconds % 60).floor().toString().padLeft(2, '0');
+    return Container(
+      key: const Key('record-bar'),
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: uploading ? scheme.secondaryContainer : scheme.errorContainer,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            uploading ? Icons.cloud_upload_outlined : Icons.fiber_manual_record,
+            color: uploading ? scheme.onSecondaryContainer : scheme.error,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  uploading
+                      ? (uploadStage == 'sending' ? '녹음 보내는 중' : '글로 옮기는 중')
+                      : '녹음 중 $minutes:$rest',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 4),
+                LinearProgressIndicator(
+                  value: uploading
+                      ? (uploadShare > 0
+                            ? uploadShare.clamp(0, 1).toDouble()
+                            : null)
+                      : (recordLevel * 8).clamp(0, 1).toDouble(),
+                  minHeight: 4,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ],
+            ),
+          ),
+          if (!uploading)
+            TextButton(
+              key: const Key('record-stop'),
+              onPressed: stopRecording,
+              child: const Text('멈추고 보내기'),
+            ),
+        ],
+      ),
+    );
   }
 
   Future<void> toggleDictation() async {
@@ -934,10 +1236,19 @@ class _CallScreenState extends State<CallScreen> {
                         ),
                 ),
                 // Input: typing, with on-prem dictation.
+                if (recording || uploadStage != null) recordBar(scheme),
                 Padding(
-                  padding: EdgeInsets.fromLTRB(12, 4, keyboard ? 12 : 84, 10),
+                  padding: EdgeInsets.fromLTRB(4, 4, keyboard ? 12 : 84, 10),
                   child: Row(
                     children: [
+                      IconButton(
+                        key: const Key('attach'),
+                        onPressed: recording || uploadStage != null
+                            ? null
+                            : openAttach,
+                        icon: const Icon(Icons.add_circle_outline),
+                        tooltip: '사진 · 녹음',
+                      ),
                       Expanded(
                         child: TextField(
                           key: const Key('input'),
@@ -1246,30 +1557,99 @@ class _Bubble extends StatelessWidget {
               ),
             ),
           ),
-        Container(
-          margin: const EdgeInsets.symmetric(vertical: 3),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.82,
-          ),
-          decoration: BoxDecoration(
-            color: me ? scheme.primaryContainer : scheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(16),
-              topRight: const Radius.circular(16),
-              bottomLeft: Radius.circular(me ? 16 : 4),
-              bottomRight: Radius.circular(me ? 4 : 16),
+        if (message.text.isNotEmpty || message.shown != null)
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.82,
+            ),
+            decoration: BoxDecoration(
+              color: me ? scheme.primaryContainer : scheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(16),
+                topRight: const Radius.circular(16),
+                bottomLeft: Radius.circular(me ? 16 : 4),
+                bottomRight: Radius.circular(me ? 4 : 16),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (message.shown != null)
+                  Padding(
+                    padding: EdgeInsets.only(
+                      bottom: message.text.isEmpty ? 0 : 6,
+                    ),
+                    child: AttachmentView(
+                      shown: message.shown!,
+                      image:
+                          message.shown!['kind'] == 'image' &&
+                              File(
+                                message.shown!['ref'] as String? ?? '',
+                              ).existsSync()
+                          ? Image.file(
+                              File(message.shown!['ref'] as String),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
+                    ),
+                  ),
+                if (message.text.isNotEmpty)
+                  SelectableText(
+                    message.text,
+                    style: TextStyle(
+                      fontSize: 16,
+                      height: 1.4,
+                      color: me ? scheme.onPrimaryContainer : scheme.onSurface,
+                    ),
+                  ),
+                if ((message.shown?['transcript'] as String? ?? '').isNotEmpty)
+                  TextButton.icon(
+                    key: const Key('transcript'),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => showModalBottomSheet<void>(
+                      context: context,
+                      showDragHandle: true,
+                      isScrollControlled: true,
+                      builder: (_) => DraggableScrollableSheet(
+                        expand: false,
+                        initialChildSize: 0.7,
+                        builder: (_, controller) => ListView(
+                          controller: controller,
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                          children: [
+                            Text(
+                              '받아쓴 글',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 8),
+                            SelectableText(
+                              message.shown!['transcript'] as String,
+                              style: const TextStyle(fontSize: 15, height: 1.5),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.subject, size: 18),
+                    label: const Text('받아쓴 글 보기'),
+                  ),
+              ],
             ),
           ),
-          child: SelectableText(
-            message.text,
-            style: TextStyle(
-              fontSize: 16,
-              height: 1.4,
-              color: me ? scheme.onPrimaryContainer : scheme.onSurface,
+        // What the secretary shows rather than says: full width, under its words.
+        for (final card in message.cards)
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.94,
             ),
+            child: SecretaryCard(card: card),
           ),
-        ),
       ],
     );
   }

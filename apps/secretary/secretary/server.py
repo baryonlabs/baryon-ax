@@ -168,8 +168,15 @@ class NotifyBody(BaseModel):
     alarm: bool = False
 
 
+class ImageBody(BaseModel):
+    media_type: str = Field(pattern=r"^image/(jpeg|png|webp|gif)$")
+    data: str = Field(min_length=16, max_length=7_000_000)  # base64, about 5 MB of image
+
+
 class TurnBody(BaseModel):
-    text: str = Field(min_length=1, max_length=2000)
+    # Long enough for a transcribed recording (about 40 minutes of speech).
+    text: str = Field(min_length=1, max_length=40000)
+    images: list[ImageBody] = Field(default_factory=list, max_length=4)
 
 
 @app.get("/health")
@@ -256,7 +263,8 @@ async def start(body: StartBody, authorization: str | None = Header(None)) -> di
 @app.post("/v1/sessions/{session_id}/turn")
 async def turn(session_id: str, body: TurnBody, authorization: str | None = Header(None)) -> dict:
     require_key(authorization)
-    used = await get_session(session_id).turn(body.text)
+    images = [image.model_dump() for image in body.images]
+    used = await get_session(session_id).turn(body.text, images) if images else await get_session(session_id).turn(body.text)
     return {"used": used}
 
 
