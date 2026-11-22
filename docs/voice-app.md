@@ -10,6 +10,8 @@ apps/voice_app (Flutter UI + native Kotlin call engine)
                                                            VAD → STT → secretary → TTS
 ```
 
+Design rules: [voice-app-design.md](voice-app-design.md). Architecture in UML: [voice-architecture.md](voice-architecture.md).
+
 ## What it does
 
 - **One-tap call:** the **비서에게 전화** home-screen shortcut, or the green button. The call is
@@ -29,7 +31,9 @@ apps/voice_app (Flutter UI + native Kotlin call engine)
   transcribes, and the text goes into the box to edit before sending.
 - **Confirmations:** "응, 진행해 / 아니" buttons answer the secretary's yes/no questions. Saying it works too.
 - **Speaker and route:** a speaker button. The current route (수화부, 스피커, 블루투스, 이어폰) and whether the echo canceller is on are shown.
-- **Look:** five colour themes and text size 85–160%, set from the floating gear and saved on the phone.
+- **Layout:** the conversation fills the screen. Status is a top-right chip with an ear that moves while it listens, call buttons float, and history (the last 200 messages) stays on the phone.
+- **Settings:** theme, text size, steps on or off, earcons, voice 1–10, speaking speed, call on open, keep the screen on, haptics, home-screen shortcut, clear history and server. All are saved on the phone. Earcons, voice and speed are sent to the gateway for each call.
+- **Noise handling:** quiet segments, one-syllable fragments, phantom phrases and echoes never reach the secretary. The status tooltip shows how many were dropped.
 
 ## Server side
 

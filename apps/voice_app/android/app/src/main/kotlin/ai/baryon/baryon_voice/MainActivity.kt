@@ -113,6 +113,20 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "pinShortcut" -> result.success(pinShortcut())
+                "typing" -> { VoiceEngine.typing(); result.success(true) }
+                "callPrefs" -> {
+                    VoiceEngine.prefsJson = org.json.JSONObject().put("type", "prefs")
+                        .put("earcons", call.argument<Boolean>("earcons") ?: true)
+                        .put("voice", call.argument<Int>("voice") ?: 0)
+                        .put("speed", call.argument<Double>("speed") ?: 1.05).toString()
+                    result.success(true)
+                }
+                "keepAwake" -> {
+                    val on = call.argument<Boolean>("on") == true
+                    if (on) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    result.success(true)
+                }
                 "stop" -> { CallConnectionService.hangUp(applicationContext); result.success(true) }
                 "text" -> {
                     // Typing works with or without a call: without one, open a text-only conversation.

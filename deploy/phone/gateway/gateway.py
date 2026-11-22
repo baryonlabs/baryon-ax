@@ -61,6 +61,12 @@ STOP_WORDS = re.compile(r"^(?:멈춰|그만|중지|스톱|stop)[.!?\s]*$", re.I)
 # Secretary events shown on the app's screen (renamed so they do not clash with call events).
 SCREEN_EVENTS = {"activity": "activity", "activity_done": "activity_done", "task": "task",
                  "text": "agent_text", "done": "agent_done", "confirmed": "confirmed"}
+# Measured on a real call: speech segments had RMS ~0.015 and peaks ~0.5, while room noise that
+# Silero let through (and Whisper turned into "다음 영상에서 만나요") stayed under RMS 0.0025 and
+# peak 0.12. Segments that quiet are dropped before speech-to-text.
+MIN_SPEECH_RMS = float(os.getenv("GATEWAY_MIN_SPEECH_RMS", "0.004"))
+MIN_SPEECH_PEAK = float(os.getenv("GATEWAY_MIN_SPEECH_PEAK", "0.1"))
+BARGE_IN_FRAME_RMS = 0.01   # only frames this loud count toward interrupting the secretary
 BARGE_IN_MS = 350           # this much speech while the secretary talks interrupts it (echo bursts are shorter)
 ECHO_WINDOW_SECONDS = 15.0  # what the secretary said this recently may come back as echo
 ECHO_SIMILARITY = 0.6
@@ -94,7 +100,7 @@ class Settings:
 
 class Speech(Protocol):
     async def transcribe(self, samples: np.ndarray, rate: int) -> str: ...
-    async def synthesize(self, text: str) -> tuple[np.ndarray, int]: ...  # float32 samples and their rate
+    async def synthesize(self, text: str, voice: int | None = None, speed: float | None = None) -> tuple[np.ndarray, int]: ...
 
 
 class Secretary(Protocol):
@@ -117,9 +123,10 @@ class HttpSpeech:
         response.raise_for_status()
         return str(response.json().get("text") or "").strip()
 
-    async def synthesize(self, text: str) -> np.ndarray:
+    async def synthesize(self, text: str, voice: int | None = None, speed: float | None = None):
         response = await self.client.post(f"{self.settings.stt_url}/v1/audio/speech", json={
-            "input": text, "voice": self.settings.voice, "speed": self.settings.speed, "language": self.settings.language})
+            "input": text, "voice": self.settings.voice if voice is None else voice,
+            "speed": self.settings.speed if speed is None else speed, "language": self.settings.language})
         response.raise_for_status()
         return from_wav(response.content)
 
@@ -269,6 +276,8 @@ class WebSocketTransport:
                 return {"text": str(command["text"])[:2000]}  # typed, or a tapped answer such as "응"
             if command.get("type") == "dictate":
                 return {"dictate": bool(command.get("on"))}  # speech to text for the input box only
+            if command.get("type") == "prefs":  # the caller's settings: earcons on/off, voice, speed
+                return {"prefs": {key: command[key] for key in ("earcons", "voice", "speed") if key in command}}
             if command.get("type") == "typing":
                 return {"typing": True}  # the caller is on the keyboard: what the mic hears is key clicks
 
@@ -310,6 +319,11 @@ class Call:
         self.recent_said: list[tuple[float, str]] = []
         self.playing_until = 0.0
         self.last_sound = 0.0
+        self.vad_speaking = False
+        self.earcons_on = True
+        self.voice: int | None = None   # the caller's choice from the app; None = server default
+        self.speed: float | None = None
+        self.awaiting_answer = False  # a yes/no question is open: one-syllable answers ("네", "응") count
         self.audio = getattr(transport, "audio", True)
         self.dictating = False
         self.typing_until = 0.0
@@ -339,7 +353,9 @@ class Call:
                 payload = await self.transport.receive()
                 if payload is None:
                     break
-                if isinstance(payload, dict) and "typing" in payload:
+                if isinstance(payload, dict) and "prefs" in payload:
+                    self._apply_prefs(payload["prefs"])
+                elif isinstance(payload, dict) and "typing" in payload:
                     self.typing_until = time.monotonic() + TYPING_QUIET_SECONDS
                 elif isinstance(payload, dict) and "dictate" in payload:
                     await self._dictate(payload["dictate"])
@@ -368,7 +384,11 @@ class Call:
         incoming = pcm_to_float(payload)
         samples = resample(incoming, self.rate, VAD_RATE)
         speaking, utterances = self.vad.push(samples)
-        if speaking and (self.playing or self.agent_busy):
+        if speaking != self.vad_speaking:  # the app's ear moves while you speak
+            self.vad_speaking = speaking
+            self.tasks.append(asyncio.create_task(self.transport.send_event({"type": "vad", "speaking": speaking})))
+        loud = float(np.sqrt(np.mean(incoming ** 2))) >= BARGE_IN_FRAME_RMS if len(incoming) else False
+        if speaking and loud and (self.playing or self.agent_busy):
             before = self.speech_ms
             self.speech_ms += len(incoming) * 1000 / self.rate
             if before < BARGE_IN_MS <= self.speech_ms:  # once per stretch of speech
@@ -380,6 +400,12 @@ class Call:
 
     async def _utterance(self, samples: np.ndarray) -> None:
         started = time.perf_counter()
+        rms, peak = float(np.sqrt(np.mean(samples ** 2))), float(np.max(np.abs(samples)))
+        if rms < MIN_SPEECH_RMS or peak < MIN_SPEECH_PEAK:
+            logger.info("call %s dropped a quiet %.1fs segment (rms %.4f, peak %.2f)", self.id,
+                        len(samples) / VAD_RATE, rms, peak)
+            await self.transport.send_event({"type": "ignored", "reason": "quiet"})
+            return
         try:
             text = await self.speech.transcribe(samples, VAD_RATE)
         except Exception:
@@ -406,6 +432,11 @@ class Call:
         if not typed and self._is_echo(text):
             logger.info("call %s ignored %d chars of its own echo", self.id, len(text))
             return
+        if not typed and not self.awaiting_answer and len(re.sub(r"[\s.,!?~]", "", text)) <= 1:
+            logger.info("call %s dropped a one-syllable fragment", self.id)  # "아", "자", "음": not a request
+            await self.transport.send_event({"type": "ignored", "reason": "fragment"})
+            return
+        self.awaiting_answer = False
         if not typed and PHANTOM_PHRASES.match(text.strip()):
             logger.info("call %s dropped a %d char phantom transcript", self.id, len(text))
             await self.transport.send_event({"type": "phantom", "text": text})
@@ -432,6 +463,17 @@ class Call:
             logger.exception("secretary turn failed")
             self.agent_busy = False
             self.say("비서에 연결할 수 없어요.")
+
+    def _apply_prefs(self, prefs: dict) -> None:
+        if isinstance(prefs.get("earcons"), bool):
+            self.earcons_on = prefs["earcons"]
+        try:
+            if "voice" in prefs:
+                self.voice = max(0, min(9, int(prefs["voice"])))
+            if "speed" in prefs:
+                self.speed = max(0.7, min(1.5, float(prefs["speed"])))
+        except (TypeError, ValueError):
+            pass
 
     async def _dictate(self, on: bool) -> None:
         """The app's mic button in the text box: transcribe what was said and hand it back as text,
@@ -478,7 +520,7 @@ class Call:
 
     def cue(self, name: str) -> None:
         """A non-verbal sound (earcons.py) queued like speech, so it reaches the car the same way."""
-        if not self.settings.earcons or not self.audio:
+        if not self.settings.earcons or not self.earcons_on or not self.audio:
             return
         self.last_sound = time.monotonic()
         done: asyncio.Future = asyncio.get_running_loop().create_future()
@@ -506,7 +548,7 @@ class Call:
         self.queue.put_nowait((self.generation, asyncio.create_task(self._synthesize(text))))
 
     async def _synthesize(self, text: str) -> tuple[np.ndarray, str]:
-        samples, rate = await self.speech.synthesize(text)
+        samples, rate = await self.speech.synthesize(text, voice=self.voice, speed=self.speed)
         return resample(samples, rate, self.rate), text
 
     async def _listen_secretary(self) -> None:
@@ -534,6 +576,7 @@ class Call:
                 self.say(event.get("prompt", ""))
                 await self.transport.send_event({"type": "confirm", "prompt": event.get("prompt", "")})
                 self.agent_busy = False  # waiting for the caller's yes or no
+                self.awaiting_answer = True
             elif kind == "confirmed":
                 self.agent_busy = True
             elif kind == "done":
