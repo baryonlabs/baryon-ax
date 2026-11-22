@@ -34,9 +34,29 @@
 
 ---
 
+<a id="one-page"></a>
+## 한 장으로 보기
+
+**Glean + Palantir 온톨로지 + ChatGPT Enterprise + Slack AI + Siri·Claude Code ≈ Baryon AX**. 다만 전부 사내 서버 안에서 돌고, 모델은 골라 쓰며, 답하지 못한 질문은 전문가에게 먼저 묻습니다.
+
+<p align="center"><img src="docs/images/baryon-ax-ladder.svg" width="900" alt="데이터 → 조각 지식 → 온톨로지 → 근거 대화 → 슬랙 에이전트 → 상주형 비서. 각 단계 옆에 비슷한 상용 제품: Google Drive·SharePoint, Glean, Palantir 온톨로지, ChatGPT Enterprise, Slack AI, Siri + Claude Code. 답하지 못한 질문은 전문가를 거쳐 온톨로지와 지식으로 돌아간다."></p>
+
+| 단계 | 하는 일 | 비슷한 상용 제품 |
+| --- | --- | --- |
+| 1. 데이터 | HWP·PDF·Office·위키·메일을 그대로 넣고 내용으로 판별해 파싱 | Google Drive · SharePoint |
+| 2. 조각 지식 | 구조를 살려 나누고 권한이 붙은 채 의미·단어로 검색 | Glean |
+| 3. 온톨로지 | 사람·업무·용어의 관계, 문서에 없는 암묵지를 전문가 답으로 채움 | Palantir 온톨로지 |
+| 4. 근거 대화 | 출처·인용을 단 답, 근거 없으면 지어내지 않음 | ChatGPT Enterprise |
+| 5. 슬랙 에이전트 | 멘션하면 출처와 함께 답하고, 모르면 담당자에게 먼저 질문 | Slack AI |
+| 6. 상주형 비서 | 전화로 요약·메일·일정, 코딩·조사는 목표 에이전트가 병렬로 | Siri + Claude Code |
+
+<sub>제품명은 이해를 돕기 위한 비유이며 각 회사의 상표입니다. Baryon AX는 이 회사들과 관계가 없습니다.</sub>
+
+---
+
 ## 목차
 
-- [왜 Baryon AX인가](#why) · [무엇을 할 수 있나](#features) · [What's new](#whats-new)
+- [한 장으로 보기](#one-page) · [왜 Baryon AX인가](#why) · [무엇을 할 수 있나](#features) · [What's new](#whats-new)
 - [빠른 시작](#quick-start) · [기존 설치 업데이트](#updating-an-existing-install) · [실행 구성](#profiles)
 - [음성 비서: 말로 일하기](#voice-secretary) · [아키텍처](#architecture) · [암묵지 지식화 사이클](#tacit--explicit-cycle)
 - [연동: API · 메신저 봇 · MCP](#integrations) · [설정](#configuration) · [API](#api)
@@ -857,6 +877,8 @@ API_BASE=http://127.0.0.1:8000 REQUIRE_FULL=1 python3 scripts/smoke_full_stack.p
 - **Integrations**: OpenAI-compatible `/v1/chat/completions`, an MCP server at `POST /mcp`, an MCP tool picker, Slack and Discord bots, and Apache Ossie import/export.
 - **Voice secretary**: dictation, interruptible live conversation, and a resident secretary you can phone, by SIP or from the **바리온 비서** Android app. It shows up as a normal call, so car Bluetooth works. The secretary summarizes mail, calendar, to-dos and PRs, and acts only after a spoken "yes". It hands long work to **goal agents** that run in parallel on their own sandboxed git branches and report back by voice. Speech-to-text and text-to-speech stay on-premises.
 - **Governance**: OIDC with delegated identity for bots and MCP gateways, audit events in PostgreSQL/JSONL, Langfuse traces, and a security sweep that blocks P0/P1 findings on every PR.
+
+In one picture: [data → knowledge chunks → ontology → grounded chat → Slack agent → resident secretary](docs/images/baryon-ax-ladder.svg), roughly Glean + Palantir's ontology + ChatGPT Enterprise + Slack AI + Siri and Claude Code, all running on your own servers.
 
 Start with one line (Docker only, no GPU or API key): see [Quick start](#quick-start). The English website is at [baryon-ax.baryon.ai/en](https://baryon-ax.baryon.ai/en/).
 
