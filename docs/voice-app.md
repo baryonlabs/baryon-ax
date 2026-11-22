@@ -34,6 +34,13 @@ Design rules: [voice-app-design.md](voice-app-design.md). Architecture in UML: [
 - **Layout:** the conversation fills the screen. Status is a top-right chip with an ear that moves while it listens, call buttons float, and history (the last 200 messages) stays on the phone.
 - **Settings:** theme, text size, steps on or off, earcons, voice 1–10, speaking speed, call on open, keep the screen on, haptics, home-screen shortcut, clear history and server. All are saved on the phone. Earcons, voice, speed and the voice filter are sent to the gateway for each call (`{"type": "prefs", "earcons": true, "voice": 0, "speed": 1.05, "filter": "strict"}`).
 - **Noise handling:** quiet segments, one-syllable fragments, phantom phrases and echoes never reach the secretary. The status tooltip shows how many were dropped.
+- **비서에게 알려 주기 (Settings, top):** a short introduction of what the secretary does, then four things it keeps on the server and reads at the start of every call:
+  - **나에 대해:** who you are (name, role, what you work on).
+  - **이렇게 써 줘:** how you want it to work (answer length, tone, what to check first).
+  - **기억:** short facts. Saying "이거 기억해 줘" in a call adds one too.
+  - **연결 (MCP):** which of the MCP servers configured in Claude Code on the workstation it may use. Names only; their commands and credentials stay on the workstation.
+
+  Changes apply from the next call.
 - **Your voice only:** Settings → 듣기 → 주변 소리 거르기. 내 목소리만 (default) denoises each utterance and passes only a voice close to the phone, so people talking nearby are not taken as requests. 또렷한 말 passes any clear voice, and 끄기 turns the filter off. Dropped voices are counted as "주변 말소리 N건 거름".
 
 ## Server side
@@ -83,6 +90,15 @@ Messages from the client:
 | `{"type":"dictate","on":true\|false}` | Dictation into the input box |
 | `{"type":"typing"}` | The caller is typing: mic input is not speech |
 | `{"type":"hangup"}` | End the call |
+
+Settings channel: `wss://…/v1/voice/settings`, same device token. One JSON request per message, answered with `{"id", "ok", "data" | "error"}`. The gateway relays only these to the secretary:
+
+| `op` | Secretary call |
+| --- | --- |
+| `profile.get` | `GET /v1/profile` |
+| `profile.put` (`about`, `usage`, `mcp`) | `PUT /v1/profile` |
+| `memory.add` (`text`) | `POST /v1/memories` |
+| `memory.delete` (`memory`) | `DELETE /v1/memories/{id}` |
 
 Messages from the server:
 

@@ -18,6 +18,33 @@ void main() {
           call,
         ) async {
           calls.add(call);
+          if (call.method == 'secretary') {
+            final request =
+                jsonDecode(call.arguments['request'] as String) as Map;
+            final data = switch (request['op']) {
+              'memory.add' => {
+                'id': 'b1',
+                'text': request['text'],
+                'source': 'app',
+              },
+              _ => {
+                'about': '음성 비서를 만드는 사람',
+                'usage': '',
+                'memories': [
+                  {'id': 'a1', 'text': '아침엔 PR부터', 'source': 'voice'},
+                ],
+                'mcp': [
+                  {
+                    'name': 'kb-baryon',
+                    'kind': 'stdio',
+                    'enabled': true,
+                    'installed': true,
+                  },
+                ],
+              },
+            };
+            return jsonEncode({'id': 1, 'ok': true, 'data': data});
+          }
           return call.method == 'config'
               ? {
                   'server': 'ws://127.0.0.1:9093/v1/voice/call',
@@ -169,6 +196,8 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('palette'), 'light');
 
+      await tester.ensureVisible(find.byKey(const Key('earcons')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('earcons')));
       await tester.pumpAndSettle();
       expect(prefs.getBool('earcons'), isFalse);
@@ -216,4 +245,53 @@ void main() {
       expect(methods(), contains('pinShortcut'));
     },
   );
+
+  testWidgets('비서에게 알려 주기: profile, memories and MCP from the phone', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 7000);
+    tester.view.devicePixelRatio = 2.6;
+    addTearDown(tester.view.reset);
+    await open(tester);
+    await tester.tap(find.byKey(const Key('settings')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('secretary')));
+    await tester.pumpAndSettle();
+    expect(find.text('음성 비서를 만드는 사람'), findsOneWidget);
+    expect(find.text('아침엔 PR부터'), findsOneWidget);
+    expect(find.text('말로 기억함'), findsOneWidget);
+
+    await tester.enterText(find.byKey(const Key('usage')), '답은 두 문장으로');
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('save-profile')));
+    await tester.pumpAndSettle();
+    Map request(int back) =>
+        jsonDecode(
+              calls
+                      .where((c) => c.method == 'secretary')
+                      .toList()
+                      .reversed
+                      .elementAt(back)
+                      .arguments['request']
+                  as String,
+            )
+            as Map;
+    expect(request(0)['op'], 'profile.put');
+    expect(request(0)['usage'], '답은 두 문장으로');
+
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('mcp-kb-baryon')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.byKey(const Key('mcp-kb-baryon')));
+    await tester.pumpAndSettle();
+    expect(request(0)['mcp'], isEmpty);
+
+    await tester.enterText(find.byKey(const Key('memory-input')), '회의록은 노션에');
+    await tester.tap(find.byKey(const Key('memory-add')));
+    await tester.pumpAndSettle();
+    expect(request(0), {'op': 'memory.add', 'text': '회의록은 노션에'});
+    expect(find.text('회의록은 노션에'), findsOneWidget);
+  });
 }

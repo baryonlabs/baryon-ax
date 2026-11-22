@@ -35,6 +35,7 @@ AUTO_MCP_SUFFIXES = (
     "__kb_query", "__kb_documents", "__notion-search", "__notion-fetch",
     "__list_issues", "__get_issue", "__list_comments",
     "__list_goals", "__answer_goal", "__cancel_goal",  # the user's own background agents
+    "__memory__remember", "__memory__list_memories", "__memory__forget",  # the secretary's own notes about its owner (profile.py)
 )
 
 DENY_BASH = re.compile(

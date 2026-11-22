@@ -8,6 +8,10 @@ signed in) and is reached only by the Baryon AX API, which authenticates the own
     GET    /v1/sessions/{id}/events         server-sent events the voice client speaks
     POST   /v1/sessions/{id}/interrupt      barge-in: stop the current answer
     DELETE /v1/sessions/{id}
+    GET    /v1/profile                      about me, how to work for me, memories, MCP on/off (profile.py)
+    PUT    /v1/profile                      {about?, usage?, mcp?: [names]}
+    POST   /v1/memories                     {text}                    -> the new memory
+    DELETE /v1/memories/{id}
     GET    /health
 
 Environment:
@@ -15,7 +19,8 @@ Environment:
     SECRETARY_CWD          working directory, e.g. the repository you code in
     SECRETARY_MODEL        Claude model alias (default sonnet)
     SECRETARY_MCP          comma-separated MCP server names to import from ~/.claude.json
-                           (for example dureclaw,baryon-todo,kb-baryon)
+                           (for example dureclaw,baryon-todo,kb-baryon); the first default of the
+                           profile's MCP list, which the owner then changes from the app
     SECRETARY_MAX_SESSIONS concurrent conversations (default 2)
     SECRETARY_IDLE_SECONDS close idle conversations after this long (default 900)
 """
@@ -37,6 +42,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from .goals import Goal, GoalManager
+from .profile import Profile
 from .session import Session
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -64,6 +70,7 @@ def default_client_factory(options: Any) -> Any:
 client_factory: Callable[[Any], Any] = default_client_factory
 session_kwargs: dict[str, Any] = {}
 goal_manager: GoalManager | None = None
+profile: Profile | None = None
 
 GOAL_SPOKEN = {
     "done": "목표 '{title}' 작업이 끝났어요. 보고: {summary}",
@@ -96,7 +103,9 @@ async def reap_idle() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global goal_manager
+    global goal_manager, profile
+    if profile is None:
+        profile = Profile(STATE_DIR, MCP_NAMES)
     if goal_manager is None and "options_factory" not in session_kwargs:
         goal_manager = GoalManager(STATE_DIR, client_factory, on_goal, model=MODEL, max_parallel=MAX_GOALS)
     reaper = asyncio.create_task(reap_idle())
@@ -127,6 +136,16 @@ class StartBody(BaseModel):
     owner: str = Field(min_length=1, max_length=200)
 
 
+class ProfileBody(BaseModel):
+    about: str | None = Field(None, max_length=2000)
+    usage: str | None = Field(None, max_length=2000)
+    mcp: list[str] | None = Field(None, max_length=50)
+
+
+class MemoryBody(BaseModel):
+    text: str = Field(min_length=1, max_length=300)
+
+
 class TurnBody(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
 
@@ -145,6 +164,42 @@ async def goals(authorization: str | None = Header(None)) -> dict:
     return {"data": [goal.brief() for goal in goal_manager.list()] if goal_manager else []}
 
 
+def get_profile() -> Profile:
+    if profile is None:
+        raise HTTPException(503, "profile not loaded")
+    return profile
+
+
+@app.get("/v1/profile")
+async def read_profile(authorization: str | None = Header(None)) -> dict:
+    require_key(authorization)
+    return get_profile().public()
+
+
+@app.put("/v1/profile")
+async def write_profile(body: ProfileBody, authorization: str | None = Header(None)) -> dict:
+    require_key(authorization)
+    get_profile().update(about=body.about, usage=body.usage, mcp=body.mcp)
+    return get_profile().public()
+
+
+@app.post("/v1/memories")
+async def add_memory(body: MemoryBody, authorization: str | None = Header(None)) -> dict:
+    require_key(authorization)
+    try:
+        return get_profile().remember(body.text, source="app")
+    except ValueError as error:
+        raise HTTPException(422, "empty memory") from error
+
+
+@app.delete("/v1/memories/{memory_id}")
+async def delete_memory(memory_id: str, authorization: str | None = Header(None)) -> dict:
+    require_key(authorization)
+    if not get_profile().forget(memory_id):
+        raise HTTPException(404, "no such memory")
+    return {"ok": True}
+
+
 @app.post("/v1/sessions")
 async def start(body: StartBody, authorization: str | None = Header(None)) -> dict:
     require_key(authorization)
@@ -156,8 +211,11 @@ async def start(body: StartBody, authorization: str | None = Header(None)) -> di
         oldest = min(idle, key=lambda s: s.last_active)
         sessions.pop(oldest.id, None)
         await oldest.close()
-    extra = {"goals": goal_manager} if goal_manager is not None else {}
-    session = Session(client_factory, owner=body.owner, cwd=CWD, model=MODEL, mcp_names=MCP_NAMES, **extra, **session_kwargs)
+    extra: dict[str, Any] = {"goals": goal_manager} if goal_manager is not None else {}
+    if profile is not None:
+        extra["profile"] = profile
+    mcp_names = profile.mcp_enabled if profile is not None else MCP_NAMES
+    session = Session(client_factory, owner=body.owner, cwd=CWD, model=MODEL, mcp_names=mcp_names, **extra, **session_kwargs)
     try:
         await session.start()
     except Exception as error:

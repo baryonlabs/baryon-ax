@@ -26,6 +26,7 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from .policy import confirmation_prompt, decide, parse_answer, status_label
+from .profile import claude_mcp_servers, memory_tools
 
 logger = logging.getLogger("secretary")
 
@@ -44,7 +45,9 @@ PERSONA = """너는 사용자의 음성 비서다. 사용자는 운전 중일 �
 - 조회는 빠르게: gh, git 명령은 한 줄로 쓰고 결과 가공은 jq, head, grep까지만 쓴다. python이나 스크립트로 가공하지 않는다(확인 절차가 생겨 느려진다). PR과 CI는 `gh pr list`와 `gh run list --limit 5`로 충분하다.
 - 아이디어를 말하면 짧게 정리해 되읽어 주고, 저장을 원하면 할 일로 만든다.
 - 잘 못 알아들었으면 짐작하지 말고 짧게 되묻는다.
-오늘은 {today}이다."""
+- "너 누구야", "뭘 할 수 있어" 같은 질문에는 바리온 비서라고 소개하고 세 가지로 답한다: 첫째, 메일·일정·할 일·PR과 CI 요약. 둘째, 코딩과 조사는 목표 에이전트에게 맡기고 끝나면 먼저 알려 줌. 셋째, 다른 머신 일은 DureClaw 플릿에 보냄. 앱 설정의 '비서에게 알려 주기'에서 소개, 원하는 방식, 기억, 연결(MCP)을 바꿀 수 있다고 덧붙인다.
+- 사용자가 "기억해 줘"라고 하거나 오래 갈 선호(호칭, 말투, 자주 보는 저장소, 함께 일하는 사람)를 말하면 remember로 짧게 저장하고 "기억했어요"라고 말한다. 잊으라고 하면 forget을 쓴다.
+오늘은 {today}이다.{profile}"""
 
 
 def imported_mcp_servers(names: list[str]) -> dict[str, dict]:
@@ -52,16 +55,9 @@ def imported_mcp_servers(names: list[str]) -> dict[str, dict]:
     so credentials stay where they are and nothing secret lives in this repository."""
     if not names:
         return {}
-    path = Path(os.getenv("SECRETARY_CLAUDE_CONFIG", str(Path.home() / ".claude.json")))
-    try:
-        data = json.loads(path.read_text())
-    except (OSError, ValueError):
-        logger.warning("cannot read %s; no MCP servers imported", path)
-        return {}
-    found: dict[str, dict] = dict(data.get("mcpServers", {}))
-    for project in data.get("projects", {}).values():
-        for name, spec in project.get("mcpServers", {}).items():
-            found.setdefault(name, spec)
+    found = claude_mcp_servers()
+    if not found:
+        logger.warning("no MCP servers found in the Claude Code config; none imported")
     return {name: found[name] for name in names if name in found}
 
 
@@ -96,7 +92,8 @@ def goal_tools(manager: Any, repo: str):
     return create_sdk_mcp_server("goals", tools=[start_goal, list_goals, answer_goal, cancel_goal])
 
 
-def build_options(can_use_tool: Callable, *, cwd: str, model: str, mcp_names: list[str], goals: Any = None):
+def build_options(can_use_tool: Callable, *, cwd: str, model: str, mcp_names: list[str], goals: Any = None,
+                  profile: Any = None):
     from claude_agent_sdk import ClaudeAgentOptions
 
     today = datetime.now(ZoneInfo(os.getenv("SECRETARY_TZ", "Asia/Seoul"))).strftime("%Y년 %m월 %d일 %A %H시 %M분")
@@ -106,9 +103,16 @@ def build_options(can_use_tool: Callable, *, cwd: str, model: str, mcp_names: li
         include_partial_messages=True,
         can_use_tool=can_use_tool,
         setting_sources=[],  # lean: no user hooks/plugins/CLAUDE.md, which add seconds and cost per turn
-        mcp_servers={**imported_mcp_servers(mcp_names), **({"goals": goal_tools(goals, cwd)} if goals else {})},
-        system_prompt={"type": "preset", "preset": "claude_code", "append": PERSONA.format(today=today)},
+        mcp_servers={**imported_mcp_servers(mcp_names), **({"goals": goal_tools(goals, cwd)} if goals else {}),
+                     **({"memory": memory_tools(profile)} if profile else {})},
+        system_prompt={"type": "preset", "preset": "claude_code",
+                       "append": PERSONA.format(today=today, profile=owner_block(profile))},
     )
+
+
+def owner_block(profile: Any) -> str:
+    text = profile.prompt() if profile else ""
+    return f"\n\n{text}" if text else ""
 
 
 def spoken_summary(text: object, limit: int = 80) -> str:
@@ -126,7 +130,7 @@ def result_text(content: object) -> str:
 
 class Session:
     def __init__(self, client_factory: Callable[[Any], Any], *, owner: str, cwd: str, model: str, mcp_names: list[str],
-                 options_factory: Callable[..., Any] = build_options, goals: Any = None) -> None:
+                 options_factory: Callable[..., Any] = build_options, goals: Any = None, profile: Any = None) -> None:
         self.id = uuid.uuid4().hex
         self.owner = owner
         self.created = self.last_active = time.time()
@@ -142,6 +146,8 @@ class Session:
         self._tasks: dict[str, dict] = {}
         self.notices: list[str] = []
         extra = {"goals": goals} if goals is not None else {}
+        if profile is not None:
+            extra["profile"] = profile
         self._client = client_factory(options_factory(self._can_use_tool, cwd=cwd, model=model, mcp_names=mcp_names, **extra))
 
     async def start(self) -> None:

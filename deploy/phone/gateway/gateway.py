@@ -638,6 +638,42 @@ class Call:
                 await self.transport.send_event({"type": "idle"})  # finished talking: the app shows "listening"
 
 
+SETTINGS_PATH = "/v1/voice/settings"
+SETTINGS_OPS = {  # app request -> secretary HTTP call (apps/secretary/secretary/profile.py)
+    "profile.get": ("GET", "/v1/profile"),
+    "profile.put": ("PUT", "/v1/profile"),
+    "memory.add": ("POST", "/v1/memories"),
+    "memory.delete": ("DELETE", "/v1/memories/{id}"),
+}
+
+
+async def settings_request(client: httpx.AsyncClient, base_url: str, message: str) -> dict:
+    """One request from the app's "비서에게 알려 주기" screen, relayed to the secretary.
+    Only these operations pass; the device token never reaches the secretary, and the secretary
+    key never reaches the phone."""
+    try:
+        request = json.loads(message)
+    except ValueError:
+        return {"ok": False, "error": "bad json"}
+    request_id = request.get("id")
+    op = SETTINGS_OPS.get(str(request.get("op", "")))
+    if not op:
+        return {"id": request_id, "ok": False, "error": "unknown op"}
+    method, path = op
+    memory_id = re.sub(r"[^0-9a-f]", "", str(request.get("memory", "")))[:32]
+    if "{id}" in path and not memory_id:
+        return {"id": request_id, "ok": False, "error": "memory id required"}
+    body = {key: request[key] for key in ("about", "usage", "mcp", "text") if key in request}
+    try:
+        response = await client.request(method, base_url + path.format(id=memory_id),
+                                        json=body if method in {"PUT", "POST"} else None)
+    except httpx.HTTPError:
+        return {"id": request_id, "ok": False, "error": "secretary unreachable"}
+    if response.status_code >= 400:
+        return {"id": request_id, "ok": False, "error": f"secretary said {response.status_code}"}
+    return {"id": request_id, "ok": True, "data": response.json()}
+
+
 def token_allowed(header: str | None, tokens: tuple[str, ...]) -> bool:
     supplied = (header or "").removeprefix("Bearer ").strip().encode()
     return bool(supplied) and any(hmac.compare_digest(supplied, token.encode()) for token in tokens)
@@ -669,19 +705,27 @@ async def serve(settings: Settings | None = None) -> None:
         from websockets.asyncio.server import serve as ws_serve
 
         def check(connection, request):
-            if request.path != "/v1/voice/call":
+            if request.path.split("?")[0] not in {"/v1/voice/call", SETTINGS_PATH}:
                 return connection.respond(404, "not found\n")
             if not token_allowed(request.headers.get("Authorization"), settings.app_tokens):
                 return connection.respond(401, "invalid token\n")
             return None
 
+        settings_client = httpx.AsyncClient(timeout=15.0,
+                                            headers={"Authorization": f"Bearer {settings.secretary_key}"})
+
         async def app_call(websocket) -> None:
+            if websocket.request.path.split("?")[0] == SETTINGS_PATH:
+                async for message in websocket:  # the app's settings screen: request in, answer out
+                    await websocket.send(json.dumps(
+                        await settings_request(settings_client, settings.secretary_url, str(message)), ensure_ascii=False))
+                return
             await new_call(WebSocketTransport(websocket)).run()
 
         ws_host, _, ws_port = ws_listen.rpartition(":")
         servers.append(await ws_serve(app_call, ws_host or "0.0.0.0", int(ws_port), process_request=check,
                                       max_size=1 << 16, ping_interval=20))
-        logger.info("WebSocket (voice app) on %s/v1/voice/call", ws_listen)
+        logger.info("WebSocket (voice app) on %s/v1/voice/call and %s", ws_listen, SETTINGS_PATH)
     await asyncio.gather(*(server.serve_forever() for server in servers))
 
 

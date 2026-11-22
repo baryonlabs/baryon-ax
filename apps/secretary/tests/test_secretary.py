@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from secretary import policy, server
+from secretary.profile import Profile
 from secretary.session import Session
 
 KEY = "secretary-test-key"
@@ -254,8 +255,9 @@ def test_stop_word_interrupts_a_running_turn() -> None:
 # --- HTTP -------------------------------------------------------------------------------
 
 @pytest.fixture()
-def api(monkeypatch):
+def api(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "API_KEY", KEY)
+    monkeypatch.setattr(server, "profile", Profile(tmp_path, ["kb-baryon"]))
     monkeypatch.setattr(server, "client_factory", FakeClient)
     monkeypatch.setattr(server, "session_kwargs", {"options_factory": fake_options})
     server.sessions.clear()
@@ -339,3 +341,46 @@ def test_dispatched_work_shows_up_as_a_background_task() -> None:
                         "summary": "열기 naver.com 확인", "status": "sent", "result": "태스크 전송 완료 (task_id: mcp-1)"}
         assert {"type": "activity_done", "id": "t1", "error": False} in events
     asyncio.run(run())
+
+
+# --- the owner's profile: about me, how to work for me, memories, MCP on/off -----------------
+
+def test_profile_from_the_app_reaches_the_next_call(api, monkeypatch, tmp_path) -> None:
+    config = tmp_path / "claude.json"
+    config.write_text(json.dumps({"mcpServers": {"kb-baryon": {"command": "kb", "env": {"TOKEN": "secret"}}},
+                                  "projects": {"/w": {"mcpServers": {"dureclaw": {"type": "http", "url": "http://x"}}}}}))
+    monkeypatch.setenv("SECRETARY_CLAUDE_CONFIG", str(config))
+    assert api.get("/v1/profile").status_code == 401
+    profile = api.get("/v1/profile", headers=AUTH).json()
+    assert profile["mcp"] == [{"name": "dureclaw", "kind": "http", "enabled": False, "installed": True},
+                              {"name": "kb-baryon", "kind": "stdio", "enabled": True, "installed": True}]
+    assert "secret" not in json.dumps(profile) and "http://x" not in json.dumps(profile)  # names only
+
+    updated = api.put("/v1/profile", headers=AUTH, json={"about": "바리온랩스 대표, 음성 비서를 만든다",
+                                                          "usage": "답은 두 문장으로", "mcp": ["dureclaw", "unknown"]}).json()
+    assert updated["about"].startswith("바리온랩스") and [m["name"] for m in updated["mcp"] if m["enabled"]] == ["dureclaw"]
+    memory = api.post("/v1/memories", headers=AUTH, json={"text": "  아침엔 PR부터  확인 "}).json()
+    assert memory["text"] == "아침엔 PR부터 확인" and memory["source"] == "app"
+
+    seen: dict = {}
+
+    def capture(can_use_tool, **kwargs):
+        seen.update(kwargs)
+        return {"can_use_tool": can_use_tool}
+
+    monkeypatch.setattr(server, "session_kwargs", {"options_factory": capture})
+    api.post("/v1/sessions", headers=AUTH, json={"owner": "me"})
+    assert seen["mcp_names"] == ["dureclaw"]
+    prompt = seen["profile"].prompt()
+    assert "바리온랩스 대표" in prompt and "두 문장" in prompt and f"{memory['id']}: 아침엔 PR부터 확인" in prompt
+
+    assert api.delete(f"/v1/memories/{memory['id']}", headers=AUTH).json() == {"ok": True}
+    assert api.delete(f"/v1/memories/{memory['id']}", headers=AUTH).status_code == 404
+    reloaded = Profile(tmp_path, [])  # saved on disk, private
+    assert reloaded.data["about"].startswith("바리온랩스") and reloaded.data["memories"] == []
+    assert oct((tmp_path / "profile.json").stat().st_mode & 0o777) == "0o600"
+
+
+def test_memory_tools_are_auto_allowed_only_for_the_secretarys_own_server() -> None:
+    assert policy.decide("mcp__memory__remember", {"text": "x"}).action == "auto"
+    assert policy.decide("mcp__other__forget", {"id": "x"}).action != "auto"
