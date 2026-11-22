@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1120" width="1200" height="1120" role="img" aria-labelledby="t d">
+  <title id="t">Baryon AX 한 장 요약: 데이터에서 상주형 비서까지</title>
+  <desc id="d">여섯 단계. 데이터, 조각 지식, 온톨로지, 근거 대화, 슬랙 에이전트, 상주형 음성 비서. 각 단계 옆에 비슷한 상용 제품을 적었다. 답하지 못한 질문은 전문가에게 물어 온톨로지와 지식으로 돌아간다.</desc>
+  <defs>
+    <style>
+      text { font-family: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif; fill: #1d2433; }
+      .h1 { font-size: 30px; font-weight: 800; }
+      .sub { font-size: 16px; fill: #5b6475; }
+      .formula { font-size: 19px; font-weight: 700; fill: #ffffff; }
+      .formula-sub { font-size: 14px; fill: #cfe3dc; }
+      .num { font-size: 20px; font-weight: 800; fill: #ffffff; }
+      .name { font-size: 22px; font-weight: 800; }
+      .tag { font-size: 13px; fill: #6b7385; }
+      .line { font-size: 15.5px; fill: #2c3446; }
+      .like { font-size: 12px; font-weight: 700; fill: #6b7385; letter-spacing: 1px; }
+      .prod { font-size: 17px; font-weight: 800; }
+      .loop { font-size: 14px; font-weight: 700; fill: #b4541a; }
+      .foot { font-size: 12.5px; fill: #7a8294; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#9aa3b5"/>
+    </marker>
+    <marker id="arrow-loop" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d06a2b"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="1120" fill="#f6f7f9"/>
+
+  <!-- title -->
+  <text x="40" y="58" class="h1">데이터에서 상주형 비서까지, 한 장으로 보는 Baryon AX</text>
+  <text x="40" y="88" class="sub">아래로 내려갈수록 사람에게 가까워집니다. 모든 단계는 우리 회사 서버 안에서 돌아갑니다.</text>
+
+  <!-- formula -->
+  <rect x="40" y="108" width="1120" height="76" rx="14" fill="#1f6f5c"/>
+  <text x="64" y="142" class="formula">Glean + Palantir 온톨로지 + ChatGPT Enterprise + Slack AI + Siri·Claude Code  ≈  Baryon AX</text>
+  <text x="64" y="168" class="formula-sub">다만 전부 사내 설치 · 모델은 골라 쓰고 · 답 못한 질문은 전문가에게 먼저 묻고 · 소스 공개</text>
+
+  <!-- connectors between rows -->
+  <g stroke="#9aa3b5" stroke-width="2.5" fill="none" marker-end="url(#arrow)">
+    <line x1="80" y1="314" x2="80" y2="336"/>
+    <line x1="80" y1="464" x2="80" y2="486"/>
+    <line x1="80" y1="614" x2="80" y2="636"/>
+    <line x1="80" y1="764" x2="80" y2="786"/>
+    <line x1="80" y1="914" x2="80" y2="936"/>
+  </g>
+
+  <!-- tacit-knowledge loop: unanswered questions go back up to the ontology -->
+  <path d="M1162,1009 C1194,1009 1194,559 1168,559" fill="none" stroke="#d06a2b" stroke-width="2.5" stroke-dasharray="7 6" marker-end="url(#arrow-loop)"/>
+  <g fill="#d06a2b"><circle cx="1182" cy="709" r="4"/><circle cx="1186" cy="859" r="4"/><circle cx="1172" cy="1009" r="4"/></g>
+
+  <!-- row template: card, stripe, number, name, tag, two lines, product pill -->
+  <!-- 1 data -->
+  <g>
+    <rect x="40" y="204" width="1120" height="110" rx="14" fill="#ffffff" stroke="#e3e6ec"/>
+    <rect x="40" y="204" width="8" height="110" rx="4" fill="#64748b"/>
+    <circle cx="80" cy="259" r="20" fill="#64748b"/><text x="80" y="266" text-anchor="middle" class="num">1</text>
+    <text x="116" y="250" class="name">데이터</text>
+    <text x="116" y="276" class="tag">있는 그대로의 자료</text>
+    <text x="330" y="248" class="line">HWP · PDF · Office · 이미지 · 위키 · 메일을 그대로 넣으면</text>
+    <text x="330" y="276" class="line">파일 내용으로 판별해 알맞은 파서로 (kordoc · docling · Tika)</text>
+    <rect x="860" y="222" width="284" height="74" rx="12" fill="#eef1f5"/>
+    <text x="878" y="246" class="like">비슷한 상용 제품</text>
+    <text x="878" y="276" class="prod" fill="#475569">Google Drive · SharePoint</text>
+  </g>
+
+  <!-- 2 chunks -->
+  <g>
+    <rect x="40" y="354" width="1120" height="110" rx="14" fill="#ffffff" stroke="#e3e6ec"/>
+    <rect x="40" y="354" width="8" height="110" rx="4" fill="#2f6fe4"/>
+    <circle cx="80" cy="409" r="20" fill="#2f6fe4"/><text x="80" y="416" text-anchor="middle" class="num">2</text>
+    <text x="116" y="400" class="name">조각 지식</text>
+    <text x="116" y="426" class="tag">찾을 수 있는 단위로</text>
+    <text x="330" y="398" class="line">문서 구조를 살려 잘게 나누고 의미로 찾게 임베딩</text>
+    <text x="330" y="426" class="line">조직 · 역할 권한이 붙은 채 검색 (의미 + 단어, 하이브리드)</text>
+    <rect x="860" y="372" width="284" height="74" rx="12" fill="#e8f0fd"/>
+    <text x="878" y="396" class="like">비슷한 상용 제품</text>
+    <text x="878" y="426" class="prod" fill="#1f56b8">Glean · 사내 검색 AI</text>
+  </g>
+
+  <!-- 3 ontology -->
+  <g>
+    <rect x="40" y="504" width="1120" height="110" rx="14" fill="#ffffff" stroke="#e3e6ec"/>
+    <rect x="40" y="504" width="8" height="110" rx="4" fill="#7c4dcc"/>
+    <circle cx="80" cy="559" r="20" fill="#7c4dcc"/><text x="80" y="566" text-anchor="middle" class="num">3</text>
+    <text x="116" y="550" class="name">온톨로지</text>
+    <text x="116" y="576" class="tag">관계로 엮은 지식 지도</text>
+    <text x="330" y="548" class="line">사람 · 업무 · 용어 · 규칙이 어떻게 이어지는지 (엔티티와 관계)</text>
+    <text x="330" y="576" class="line">문서에 없는 암묵지는 전문가 답변으로 채우고 Ossie로 주고받기</text>
+    <rect x="860" y="522" width="284" height="74" rx="12" fill="#f1ebfb"/>
+    <text x="878" y="546" class="like">비슷한 상용 제품</text>
+    <text x="878" y="576" class="prod" fill="#5b2fa8">Palantir 온톨로지</text>
+  </g>
+
+  <!-- 4 grounded chat -->
+  <g>
+    <rect x="40" y="654" width="1120" height="110" rx="14" fill="#ffffff" stroke="#e3e6ec"/>
+    <rect x="40" y="654" width="8" height="110" rx="4" fill="#1f6f5c"/>
+    <circle cx="80" cy="709" r="20" fill="#1f6f5c"/><text x="80" y="716" text-anchor="middle" class="num">4</text>
+    <text x="116" y="700" class="name">근거 대화</text>
+    <text x="116" y="726" class="tag">출처를 단 답변</text>
+    <text x="330" y="698" class="line">답마다 출처 문서 · 인용 구절, 근거가 없으면 지어내지 않고 경고</text>
+    <text x="330" y="726" class="line">웹 채팅 · OpenAI 호환 API · MCP로 어디서나 같은 답</text>
+    <rect x="860" y="672" width="284" height="74" rx="12" fill="#e6f3ef"/>
+    <text x="878" y="696" class="like">비슷한 상용 제품</text>
+    <text x="878" y="726" class="prod" fill="#17594a">ChatGPT Enterprise</text>
+  </g>
+
+  <!-- 5 slack agent -->
+  <g>
+    <rect x="40" y="804" width="1120" height="110" rx="14" fill="#ffffff" stroke="#e3e6ec"/>
+    <rect x="40" y="804" width="8" height="110" rx="4" fill="#c2410c"/>
+    <circle cx="80" cy="859" r="20" fill="#c2410c"/><text x="80" y="866" text-anchor="middle" class="num">5</text>
+    <text x="116" y="850" class="name">슬랙 에이전트</text>
+    <text x="116" y="876" class="tag">일하는 곳에서 바로</text>
+    <text x="330" y="848" class="line">@멘션하면 출처와 함께 답하고 스레드에서 이어서 대화</text>
+    <text x="330" y="876" class="line">모르는 건 담당자에게 먼저 물어 다음 사람은 바로 답을 받음</text>
+    <rect x="860" y="822" width="284" height="74" rx="12" fill="#fbeee6"/>
+    <text x="878" y="846" class="like">비슷한 상용 제품</text>
+    <text x="878" y="876" class="prod" fill="#9a3412">Slack AI</text>
+  </g>
+
+  <!-- 6 resident voice secretary -->
+  <g>
+    <rect x="40" y="954" width="1120" height="110" rx="14" fill="#ffffff" stroke="#e3e6ec"/>
+    <rect x="40" y="954" width="8" height="110" rx="4" fill="#0e7490"/>
+    <circle cx="80" cy="1009" r="20" fill="#0e7490"/><text x="80" y="1016" text-anchor="middle" class="num">6</text>
+    <text x="116" y="1000" class="name">상주형 비서</text>
+    <text x="116" y="1026" class="tag">전화 한 통으로 일하기</text>
+    <text x="330" y="998" class="line">운전 중에도 말로 요약 · 메일 · 일정, 끼어들면 바로 멈춤</text>
+    <text x="330" y="1026" class="line">코딩 · 조사는 목표 에이전트가 병렬로 하고 끝나면 먼저 보고</text>
+    <rect x="860" y="972" width="284" height="74" rx="12" fill="#e3f3f6"/>
+    <text x="878" y="996" class="like">비슷한 상용 제품</text>
+    <text x="878" y="1026" class="prod" fill="#0b5566">Siri + Claude Code</text>
+  </g>
+
+  <!-- loop label -->
+  <text x="40" y="1094" class="loop">↺ 주황 점선: 4 · 5 · 6에서 답하지 못한 질문은 전문가에게 먼저 묻고, 그 답이 3(온톨로지)과 지식으로 돌아가 다음엔 바로 답합니다</text>
+  <text x="40" y="1112" class="foot">제품명은 이해를 돕기 위한 비유이며 각 회사의 상표입니다. Baryon AX는 이 회사들과 관계가 없습니다.</text>
+</svg>
