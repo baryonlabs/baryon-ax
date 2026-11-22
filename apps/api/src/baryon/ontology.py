@@ -26,7 +26,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 logger = logging.getLogger("baryon.ontology")
 
-EntityType = Literal["사람·조직", "시스템", "문서·규정", "절차", "자산·대상", "금액", "기간", "개념"]
+# Amounts and durations are the *values* a slot asks for, not entities.
+EntityType = Literal["사람·조직", "시스템", "문서·규정", "절차", "자산·대상", "개념"]
 RelationType = Literal["한도", "기한", "승인자", "신고처", "담당", "제출처", "근거"]
 ValueType = Literal["금액", "기간", "사람·조직", "시스템", "문서·규정"]
 
@@ -42,6 +43,8 @@ class Entity(BaseModel):
                       description="A noun phrase the question is about, as written (법인카드, 연차 휴가). "
                                   "Never a verb form (분실하면, 신고해) or a question word (얼마, 누구).")
     type: EntityType = Field("개념", description="What kind of thing it is.")
+    synonyms: list[str] = Field(default_factory=list, max_length=10,
+                                description="Other names for the same thing, merged from earlier packs.")
 
 
 class Slot(BaseModel):
@@ -68,7 +71,7 @@ _SLOT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("승인자", re.compile(r"승인|결재")),
     ("신고처", re.compile(r"신고|연락|보고(?!서)")),  # 보고해 = report to; 보고서 = a report (a document)
     ("한도", re.compile(r"한도|상한|얼마")),
-    ("기한", re.compile(r"언제|마감|며칠|기한|까지|걸려|걸리")),
+    ("기한", re.compile(r"언제|마감|며칠|기한|일정|까지|걸려|걸리")),
     ("담당", re.compile(r"요청|문의|담당|누구한테|누구에게")),
     ("제출처", re.compile(r"시스템|어디서|어디에|올려|올리|제출|신청")),
 )
@@ -163,6 +166,8 @@ Rules:
   relation says which value (한도 = a limit or amount, 기한 = a deadline or duration, 승인자 = who approves,
   신고처 = whom to report or contact, 담당 = who handles a request, 제출처 = which system or place to submit to,
   근거 = which rule or document defines it), value_type is its kind.
+- an entity is the thing itself: leave out situations and attributes (in "출장 중 회사 차량 주유비 한도는?" the
+  entity is 회사 차량 주유비, not "출장 중 회사 차량 주유비"). Amounts and durations are never entities.
 - keep the thing that owns a value apart from the words that describe the value: in "사내 식당 쿠폰 월 지급
   한도는 얼마야?" the entities are 사내 식당 쿠폰 and 월 지급, and the slot subject is 사내 식당 쿠폰 (not the whole
   phrase); in "복지 포인트 사용 기준 문서는 어디 있어?" the subject is 복지 포인트, and 기준 문서 is the missing
@@ -187,6 +192,10 @@ def parse_model_output(text: str, questions: list[str]) -> Extraction | None:
         raw = json.loads(match.group(0))
         # Small models often list entities as bare names; accept those as untyped entities.
         entities_in = [item if isinstance(item, dict) else {"name": str(item)} for item in raw.get("entities", [])]
+        for item in entities_in:  # an unknown type (금액, "object", …) is not worth losing the entity over
+            if item.get("type") not in EntityType.__args__:  # type: ignore[attr-defined]
+                item["type"] = "개념"
+            item.pop("synonyms", None)
         extraction = Extraction(entities=entities_in, slots=raw.get("slots", []), method="model")
     except (ValueError, ValidationError, AttributeError) as error:
         logger.info("model extraction rejected: %s", type(error).__name__)
@@ -199,6 +208,23 @@ def parse_model_output(text: str, questions: list[str]) -> Extraction | None:
     if not entities:
         return None
     return Extraction(entities=entities, slots=slots, method="model")
+
+
+async def model_extract_each(questions: list[str], complete: Callable[[list[dict[str, str]]], Awaitable[str]],
+                             concurrency: int = 4) -> Extraction:
+    """One model call per question, as the evaluation scores it; several questions in one prompt made
+    the model keep whole phrases ("회사카드 해외 결제") as entities. Results are merged."""
+    import asyncio
+
+    gate = asyncio.Semaphore(concurrency)
+
+    async def one(question: str) -> Extraction:
+        async with gate:
+            return await model_extract([question], complete)
+
+    parts = await asyncio.gather(*(one(question) for question in questions[:20]))
+    methods = {part.method for part in parts}
+    return merge(list(parts), "model+rules" if "model+rules" in methods else "rules")
 
 
 async def model_extract(questions: list[str], complete: Callable[[list[dict[str, str]]], Awaitable[str]]) -> Extraction:
@@ -240,10 +266,67 @@ def with_rule_relations(extraction: Extraction, questions: list[str]) -> Extract
     return Extraction(entities=extraction.entities, slots=slots, method="model+rules")
 
 
+# --- merging with earlier packs ------------------------------------------------------------------
+
+_MERGE_SYSTEM = """You keep one name per business concept across ontology drafts.
+For each NEW name, decide whether it is the same real-world thing as one EXISTING name (another word for it,
+an abbreviation, or a spacing variant), not merely related. 법인카드 and 회사카드 are the same thing; 법인카드
+and 법인카드 한도 are not (the second is an attribute); 연차 and 연차 휴가 are the same thing.
+Return JSON only: {"same": [{"new": str, "existing": str}]}. Use names exactly as listed. Leave out names that
+have no match."""
+
+
+def _key(name: str) -> str:
+    return re.sub(r"\s+", "", name or "").lower()
+
+
+def _rename(extraction: Extraction, renames: dict[str, str]) -> Extraction:
+    entities: dict[str, Entity] = {}
+    for entity in extraction.entities:
+        target = renames.get(entity.name)
+        if target and target != entity.name:
+            merged = entities.get(_key(target)) or Entity(name=target, type=entity.type)
+            merged.synonyms = sorted(set(merged.synonyms) | {entity.name})
+            entities[_key(target)] = merged
+        elif _key(entity.name) not in entities:
+            entities[_key(entity.name)] = entity
+    slots = [slot.model_copy(update={"subject": renames.get(slot.subject, slot.subject)}) for slot in extraction.slots]
+    return Extraction(entities=list(entities.values()), slots=slots, method=extraction.method)
+
+
+async def resolve_synonyms(extraction: Extraction, existing: list[str],
+                           complete: Callable[[list[dict[str, str]]], Awaitable[str]] | None = None) -> Extraction:
+    """Name entities the way earlier packs already do, so one concept is not split across packs.
+
+    Spacing variants are merged without a model (연차휴가 → 연차 휴가). With a model, other words for the same
+    thing are merged too (회사카드 → 법인카드), following NVIDIA Auto Ontology's merge decisions: the model only
+    picks from the listed names, and anything else in its answer is ignored."""
+    existing = [name for name in dict.fromkeys(existing) if name.strip()][:80]
+    if not existing:
+        return extraction
+    by_key = {_key(name): name for name in existing}
+    renames = {entity.name: by_key[_key(entity.name)] for entity in extraction.entities
+               if _key(entity.name) in by_key and by_key[_key(entity.name)] != entity.name}
+    pending = [entity.name for entity in extraction.entities if _key(entity.name) not in by_key]
+    if complete and pending:
+        try:
+            text = await complete([{"role": "system", "content": _MERGE_SYSTEM},
+                                   {"role": "user", "content": "NEW: " + json.dumps(pending, ensure_ascii=False)
+                                    + "\nEXISTING: " + json.dumps(existing, ensure_ascii=False)}])
+            match = re.search(r"\{.*\}", text or "", re.S)
+            for pair in (json.loads(match.group(0)).get("same", []) if match else []):
+                new, old = str(pair.get("new", "")), str(pair.get("existing", ""))
+                if new in pending and old in existing and _key(new) != _key(old):
+                    renames[new] = old
+        except Exception as error:  # noqa: BLE001 - merging is an improvement, never a reason to fail
+            logger.info("synonym merge skipped: %s", type(error).__name__)
+    return _rename(extraction, renames) if renames else extraction
+
+
 def pack_structure(extraction: Extraction) -> dict[str, Any]:
     """Pack fields: typed entities, relations (each slot as a relation to its missing value) and slots."""
     return {
-        "entities": [{"name": entity.name, "type": entity.type, "synonyms": [], "source": "knowledge_gap"}
+        "entities": [{"name": entity.name, "type": entity.type, "synonyms": entity.synonyms, "source": "knowledge_gap"}
                      for entity in extraction.entities],
         "relations": [{"from": slot.subject, "type": slot.relation, "to": f"?{slot.value_type}",
                        "confidence": "missing"} for slot in extraction.slots],

@@ -614,3 +614,13 @@ details.trace[open] summary::before { transform: rotate(90deg); }
 .live-mode button.active { background: var(--surface); color: var(--text); font-weight: 600; }
 .live-question { margin: 0; font-size: 13px; color: #f0c27a; }
 .live-question span { margin-right: 6px; padding: 1px 6px; border-radius: 999px; background: rgba(240, 194, 122, .16); font-size: 11px; }
+
+/* ontology pack: entity types and open slots (values nobody has answered yet) */
+.chip-type { opacity: .7; font-size: 10px; }
+.pack .slots { margin: 8px 0 4px; }
+.pack .slots ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; }
+.pack .slots li { font-size: 12px; padding: 4px 8px; border-radius: 8px; border: 1px dashed #c08a2c; background: rgba(192, 138, 44, .08); }
+.pack .slots .slot-rel { color: #c9a35a; margin: 0 2px; }
+.pack .slots .slot-rel::before { content: "—"; }
+.pack .slots .slot-rel::after { content: "→"; }
+.pack .slots .slot-value { font-weight: 600; color: #e0b464; }

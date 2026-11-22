@@ -37,7 +37,7 @@ from .ingest.parsers import ParseError
 from .ingest.pipeline import PipelineConfig, PermanentError, run_pipeline
 from .feedback import FeedbackStore
 from .gaps import GapStore, PackStore, build_pack, cluster_gaps, verify_pack
-from .ontology import Extraction as OntologyExtraction, model_extract as ontology_model_extract, rule_extract as ontology_rule_extract
+from .ontology import Extraction as OntologyExtraction, model_extract_each as ontology_model_extract_each, resolve_synonyms as ontology_resolve_synonyms, rule_extract as ontology_rule_extract
 from .mcp import MCPClient, MCPGatewayError
 from .mcp_server import MCPServer, Tool, ToolError, parse_body
 from .open_source import open_source_payload
@@ -1963,11 +1963,19 @@ def ossie_model_for_pack(pack: dict) -> dict:
     for entity in pack.get("entities") or []:
         name = str(entity.get("name") or "").strip()
         if name:
-            fields.append({"name": name, "expression": {"sql": name}, "dimension": {}, "datatype": "String", "description": str(entity.get("type") or "Business concept")})
+            synonyms = [str(item) for item in entity.get("synonyms") or [] if str(item).strip()]
+            description = str(entity.get("type") or "Business concept") + (f" (also: {', '.join(synonyms)})" if synonyms else "")
+            fields.append({"name": name, "expression": {"sql": name}, "dimension": {}, "datatype": "String", "description": description})
+    open_slots = [f"{slot.get('subject')} —{slot.get('relation')}→ ?{slot.get('value_type')}"
+                  for slot in pack.get("slots") or [] if slot.get("status", "open") == "open"]
     return {
         "version": "0.3.0.dev0", "name": f"baryon_{pack['id']}",
         "description": f"Draft Apache Ossie semantic model for knowledge gap: {pack.get('name', '')}",
-        "ai_context": {"instructions": "Complete the source and expressions with authoritative data, then import this model into Baryon AX.", "examples": pack.get("acceptance_questions") or []},
+        "ai_context": {
+            "instructions": "Complete the source and expressions with authoritative data, then import this model into Baryon AX."
+            + (" Values nobody has answered yet: " + "; ".join(open_slots) + "." if open_slots else ""),
+            "examples": pack.get("acceptance_questions") or [],
+        },
         "datasets": [{"name": "knowledge_gap", "source": "baryon.knowledge_gaps", "primary_key": ["gap_id"], "fields": fields}],
         "relationships": [], "metrics": [],
         "nonportable_extensions": [{"vendor_name": "Baryon AX", "data": {"ontology_pack": pack}}],
@@ -3041,23 +3049,30 @@ async def gap_clusters(
     }
 
 
-async def ontology_extraction(questions: list[str]) -> OntologyExtraction:
+def ontology_model_ready() -> bool:
+    return os.getenv("ONTOLOGY_EXTRACTOR", "auto").lower() != "rules" and bool(model_adapter.base_url)
+
+
+async def ontology_complete(messages: list[dict[str, str]]) -> str:
+    body = {"model": model_adapter.model, "messages": messages, "temperature": 0, "stream": False,
+            "response_format": {"type": "json_object"}}
+    if os.getenv("MODEL_DISABLE_THINKING", "false").lower() == "true":
+        body["chat_template_kwargs"] = {"enable_thinking": False}
+    async with httpx.AsyncClient(timeout=MODEL_TIMEOUT_SECONDS) as client:
+        response = await client.post(f"{model_adapter.base_url}/chat/completions", headers=model_adapter.headers(), json=body)
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
+
+
+async def ontology_extraction(questions: list[str], organization_id: str) -> OntologyExtraction:
     """Typed entities and slots for a pack: the configured model when there is one (validated, with
-    question-pattern relations), the rules otherwise. ONTOLOGY_EXTRACTOR=rules forces the rules."""
-    if os.getenv("ONTOLOGY_EXTRACTOR", "auto").lower() == "rules" or not model_adapter.base_url:
-        return ontology_rule_extract(questions)
-
-    async def complete(messages: list[dict[str, str]]) -> str:
-        async with httpx.AsyncClient(timeout=MODEL_TIMEOUT_SECONDS) as client:
-            body = {"model": model_adapter.model, "messages": messages, "temperature": 0, "stream": False,
-                    "response_format": {"type": "json_object"}}
-            if os.getenv("MODEL_DISABLE_THINKING", "false").lower() == "true":
-                body["chat_template_kwargs"] = {"enable_thinking": False}
-            response = await client.post(f"{model_adapter.base_url}/chat/completions", headers=model_adapter.headers(), json=body)
-            response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
-
-    return await ontology_model_extract(questions, complete)
+    question-pattern relations), the rules otherwise; then entity names are aligned with the
+    organization's earlier packs. ONTOLOGY_EXTRACTOR=rules forces the rules."""
+    model = ontology_model_ready()
+    extraction = await ontology_model_extract_each(questions, ontology_complete) if model else ontology_rule_extract(questions)
+    existing = [str(entity.get("name") or "") for pack in pack_store.list(organization_id, 50)
+                for entity in pack.get("entities") or []]
+    return await ontology_resolve_synonyms(extraction, existing, ontology_complete if model else None)
 
 
 @app.post("/v1/admin/ontology-packs")
@@ -3077,7 +3092,7 @@ async def create_ontology_pack(
         name=payload.name or (cluster.suggested_pack_name if cluster else ""),
         gaps=gaps,
         cluster=cluster,
-        extraction=await ontology_extraction([gap.question for gap in gaps]),
+        extraction=await ontology_extraction([gap.question for gap in gaps], principal.organization_id),
     )
     pack_store.save(pack)
     gap_store.mark_converted(principal.organization_id, [gap.id for gap in gaps], pack["id"])
