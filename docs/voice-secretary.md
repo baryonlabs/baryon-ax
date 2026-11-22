@@ -102,15 +102,9 @@ The setup was sonnet with dureclaw and baryon-todo, on an Apple M-series worksta
 - Only `SECRETARY_OWNERS` can start a conversation. A session can be used only by the user who started it; even an admin cannot use someone else's.
 - Audio is transcribed and synthesized on-prem as described in [voice.md](voice.md). The agent's reasoning uses the Claude model you configured.
 
-## Next: phone call mode
+## Phone call mode
 
-For driving, the conversation will run as a phone call. A SIP app on the phone
-(for example Linphone) is treated by iOS CallKit and Android ConnectionService
-as a normal call, so the car's Bluetooth hands-free works. The plan:
-
-1. An Asterisk container connects calls over AudioSocket to a gateway.
-2. The gateway runs VAD, STT, this secretary and TTS for each call.
-3. The phone reaches Asterisk over the tailnet.
+To talk to the secretary while driving, call it. See [phone.md](phone.md).
 
 ## Tests
 

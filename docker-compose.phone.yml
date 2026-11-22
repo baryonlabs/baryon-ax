@@ -1,0 +1,40 @@
+name: baryon-ax
+
+# Optional phone profile: call the voice secretary from a SIP app on your phone.
+# Android (Linphone) and iOS SIP apps register calls with the OS, so they show up as
+# normal phone calls and the car's Bluetooth hands-free works.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.voice.yml -f docker-compose.phone.yml up -d --build
+#
+# Requires the voice profile (STT + Supertonic) and apps/secretary running on your
+# workstation. Expose SIP only on a private network such as your tailnet. See docs/phone.md.
+services:
+  asterisk:
+    build: ./deploy/phone/asterisk
+    environment:
+      PHONE_USER: ${PHONE_USER:?set PHONE_USER}
+      PHONE_PASSWORD: ${PHONE_PASSWORD:?set PHONE_PASSWORD (16+ random characters)}
+      SECRETARY_EXTENSION: ${SECRETARY_EXTENSION:-100}
+      EXTERNAL_ADDRESS: ${PHONE_EXTERNAL_ADDRESS:-}
+      GATEWAY_ADDRESS: phone-gateway:9092
+    ports:
+      - "${PHONE_BIND:-127.0.0.1}:5060:5060/udp"
+      - "${PHONE_BIND:-127.0.0.1}:10000-10049:10000-10049/udp"
+    depends_on:
+      - phone-gateway
+    restart: unless-stopped
+
+  phone-gateway:
+    build: ./deploy/phone/gateway
+    environment:
+      STT_URL: http://stt:8000
+      STT_API_KEY: ${STT_API_KEY}
+      STT_MODEL: ${PHONE_STT_MODEL:-whisper-turbo}
+      SECRETARY_URL: ${SECRETARY_URL:?set SECRETARY_URL (apps/secretary on your workstation)}
+      SECRETARY_API_KEY: ${SECRETARY_API_KEY:?set SECRETARY_API_KEY}
+      SECRETARY_OWNER: ${PHONE_USER}
+      VOICE_ID: ${PHONE_VOICE_ID:-0}
+      VOICE_SPEED: ${PHONE_VOICE_SPEED:-1.05}
+    depends_on:
+      - stt
+    restart: unless-stopped

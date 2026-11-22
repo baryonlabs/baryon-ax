@@ -88,15 +88,22 @@ def _short(value: object, limit: int = 60) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def _spoken_steps(value: object) -> str:
+    """Make task markers and URLs readable aloud: "[OPEN] https://www.naver.com" -> "열기 naver.com"."""
+    text = re.sub(r"\[(?:OPEN|NAV)\]\s*", "열기 ", str(value or ""))
+    text = re.sub(r"\[(?:SHELL)\]\s*", "명령 ", text)
+    text = re.sub(r"\[[A-Z]+\]\s*", "", text)
+    return re.sub(r"https?://(?:www\.)?([^/\s]+)\S*", r"\1", text)
+
+
 def confirmation_prompt(tool: str, tool_input: dict) -> str:
     """One short spoken question that says what will happen."""
     name = tool.rsplit("__", 1)[-1]
     if name == "send_task":
         target = tool_input.get("to") or "플릿"
-        return f"{target}에게 이 작업을 보낼까요? {_short(tool_input.get('instructions'))}"
+        return f"{target}에게 이 작업을 보낼까요? {_short(_spoken_steps(tool_input.get('instructions')))}"
     if name in {"browser_run", "browser_screenshot"}:
-        steps = re.sub(r"\[(?:OPEN|NAV)\]\s*(?:https?://)?(?:www\.)?", "열기 ", str(tool_input.get("instructions") or tool_input.get("url") or ""))
-        steps = re.sub(r"\[[A-Z]+\]\s*", "", steps)
+        steps = _spoken_steps(tool_input.get("instructions") or tool_input.get("url"))
         return f"브라우저 노드에서 이 작업을 할까요? {_short(steps)}"
     if name in {"create_task", "create_dynamic_task"}:
         return f"할 일을 만들까요? {_short(tool_input.get('title') or tool_input.get('description'))}"
