@@ -69,7 +69,7 @@ class Extraction(BaseModel):
 _SLOT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("근거", re.compile(r"기준|규정|지침|근거")),
     ("승인자", re.compile(r"승인|결재")),
-    ("신고처", re.compile(r"신고|연락|보고(?!서)")),  # 보고해 = report to; 보고서 = a report (a document)
+    ("신고처", re.compile(r"신고|연락|알려|알리|보고(?!서)")),  # 보고해 = report to; 보고서 = a report (a document)
     ("한도", re.compile(r"한도|상한|얼마")),
     ("기한", re.compile(r"언제|마감|며칠|기한|일정|까지|걸려|걸리")),
     ("담당", re.compile(r"요청|문의|담당|누구한테|누구에게")),

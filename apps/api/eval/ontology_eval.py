@@ -20,6 +20,7 @@ import asyncio
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -78,9 +79,13 @@ def summarize(rows: list[dict]) -> dict:
 async def run(args: argparse.Namespace) -> int:
     gold = json.loads(Path(args.gold).read_text(encoding="utf-8"))["questions"]
     arms: dict[str, list[dict]] = {"legacy": [], "rules": []}
+    seconds: dict[str, list[float]] = {"legacy": [], "rules": []}
     for item in gold:
-        arms["legacy"].append(score_question(item, legacy_extract(item["q"])))
-        arms["rules"].append(score_question(item, rule_extract_question(item["q"])))
+        for arm, extract in (("legacy", legacy_extract), ("rules", rule_extract_question)):
+            started = time.perf_counter()
+            extraction = extract(item["q"])
+            seconds[arm].append(time.perf_counter() - started)
+            arms[arm].append(score_question(item, extraction))
     if args.model_url:
         import httpx
 
@@ -94,15 +99,21 @@ async def run(args: argparse.Namespace) -> int:
                 response.raise_for_status()
                 return response.json()["choices"][0]["message"]["content"]
 
-        arms["model"] = []
+        arms["model"], seconds["model"] = [], []
         fallbacks = 0
         for item in gold:  # one question per call, as a pack of one gap would be built
+            started = time.perf_counter()
             extraction = await model_extract([item["q"]], complete)
+            seconds["model"].append(time.perf_counter() - started)
             fallbacks += extraction.method == "rules"
             arms["model"].append(score_question(item, extraction))
         print(f"model: {args.model} (fell back to rules on {fallbacks}/{len(gold)} questions)")
 
     metrics = {arm: summarize(rows) for arm, rows in arms.items()}
+    for arm, values in seconds.items():  # time per question, as a pack waits for it
+        ordered = sorted(values)
+        metrics[arm]["ms_per_question_median"] = round(1000 * ordered[len(ordered) // 2], 1) if ordered else 0
+        metrics[arm]["ms_per_question_max"] = round(1000 * ordered[-1], 1) if ordered else 0
     keys = list(next(iter(metrics.values())))
     print("| metric | " + " | ".join(metrics) + " |")
     print("| --- | " + " | ".join("---" for _ in metrics) + " |")

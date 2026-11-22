@@ -130,3 +130,25 @@ pack view does not show slots yet.
 
 Still open: aligning the Ossie export with Auto Ontology's `ModelConcept` / `ModelTerm` (their interchange is built
 around database columns and SQL; ours has no columns), and growing both question sets from real gaps.
+
+### 2026-11-23: third round (re-evaluation after deploying main)
+
+A second held-out set (`eval/ontology_holdout2_ko.json`, 10 new questions) was written after the second round and
+scored once, untouched. The scorer now also reports time per question.
+
+| set | legacy | rules | model+rules (first run) |
+| --- | --- | --- | --- |
+| tuning, 20 | 0/20 | 16/20 | 20/20 |
+| held-out 1, 10 (seen: used to find a bug in round one) | 0/10 | 7/10 | 10/10 |
+| **held-out 2, 10 (unseen)** | 0/10 | 7/10 | **9/10** |
+
+Held-out 2 detail (model+rules, first run): entity precision 1.00, recall 1.00, noise 0, slot recall/precision 0.90.
+The miss: "노트북 분실하면 누구한테 **알려야** 해?" was read as 담당 (who handles) instead of 신고처 (whom to notify),
+because 알리다 was not in the 신고처 pattern. After adding it, held-out 2 scores 10/10 (rules 8/10), and held-out 2 is
+no longer unseen either; the next re-evaluation needs new questions again.
+
+Time per question (model+rules on the B300, one call each): median about 1.1 s, max about 1.3 s. A pack from N gaps
+runs four calls at a time. The rules take well under a millisecond.
+
+Headline to quote: on questions it had not seen, model+rules got 9 of 10 fully right with no noise; the old extractor
+got 0 of 10 and a quarter of its entities were verb forms or question words.
