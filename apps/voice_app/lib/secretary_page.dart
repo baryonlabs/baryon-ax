@@ -25,6 +25,10 @@ class _SecretaryPageState extends State<SecretaryPage> {
   final memory = TextEditingController();
   List<Map<String, dynamic>> memories = [];
   List<Map<String, dynamic>> connections = [];
+  List<Map<String, dynamic>> brains = [];
+  List<Map<String, dynamic>> goalBrains = [];
+  String brain = 'default';
+  String goalBrain = 'deep';
   bool loading = true;
   bool saving = false;
   bool dirty = false;
@@ -70,7 +74,25 @@ class _SecretaryPageState extends State<SecretaryPage> {
       for (final item in profile['mcp'] as List? ?? const [])
         Map<String, dynamic>.from(item as Map),
     ];
+    List<Map<String, dynamic>> list(Object? items) => [
+      for (final item in items as List? ?? const [])
+        Map<String, dynamic>.from(item as Map),
+    ];
+    brains = list(profile['brains']);
+    goalBrains = list(profile['goal_brains']);
+    brain = profile['brain'] as String? ?? 'default';
+    goalBrain = profile['goal_brain'] as String? ?? 'deep';
     dirty = false;
+  }
+
+  Future<void> choose(String field, String value) async {
+    final before = field == 'brain' ? brain : goalBrain;
+    setState(() => field == 'brain' ? brain = value : goalBrain = value);
+    final profile = await ask({'op': 'profile.put', field: value});
+    if (!mounted) return;
+    if (profile == null) {
+      setState(() => field == 'brain' ? brain = before : goalBrain = before);
+    }
   }
 
   Future<void> load() async {
@@ -220,6 +242,56 @@ class _SecretaryPageState extends State<SecretaryPage> {
                       label: Text(saving ? '저장 중' : '저장'),
                     ),
                   ),
+                  if (brains.isNotEmpty) ...[
+                    section('두뇌', '다음 통화부터 적용. 높을수록 똑똑하지만 첫마디가 늦고 비용이 커요'),
+                    const Text('대화'),
+                    const SizedBox(height: 6),
+                    SegmentedButton<String>(
+                      key: const Key('brain'),
+                      showSelectedIcon: false,
+                      emptySelectionAllowed: true,
+                      segments: [
+                        for (final item in brains)
+                          ButtonSegment(
+                            value: item['id'] as String,
+                            label: Text(item['label'] as String),
+                          ),
+                      ],
+                      selected: {if (brain != 'default') brain},
+                      onSelectionChanged: (value) {
+                        if (value.isNotEmpty) choose('brain', value.first);
+                      },
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, bottom: 12),
+                      child: Text(switch (brain) {
+                        'fast' => '첫마디 약 1초. 운전 중 대화에 알맞아요',
+                        'smart' => '첫마디 2~3초. 판단이 더 깊어요',
+                        'best' => '첫마디 약 1초, 가장 똑똑하지만 비용이 가장 커요',
+                        _ => '서버 기본 모델을 써요',
+                      }, style: small),
+                    ),
+                    const Text('목표 에이전트 (백그라운드 작업)'),
+                    const SizedBox(height: 6),
+                    SegmentedButton<String>(
+                      key: const Key('goal-brain'),
+                      showSelectedIcon: false,
+                      segments: [
+                        for (final item in goalBrains)
+                          ButtonSegment(
+                            value: item['id'] as String,
+                            label: Text(item['label'] as String),
+                          ),
+                      ],
+                      selected: {goalBrain},
+                      onSelectionChanged: (value) =>
+                          choose('goal_brain', value.first),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text('기다리지 않는 일이라 깊게 생각할수록 결과가 좋아요', style: small),
+                    ),
+                  ],
                   section('기억', '통화 중에 "이거 기억해 줘"라고 말해도 여기에 쌓여요'),
                   Row(
                     children: [

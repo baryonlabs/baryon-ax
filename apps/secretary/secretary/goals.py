@@ -108,11 +108,13 @@ def goal_permission(goal: Goal, tool: str, tool_input: dict) -> tuple[str, str]:
 class GoalManager:
     def __init__(self, state_dir: Path, client_factory: Callable[[Any], Any], notify: Callable[[Goal, str], None], *,
                  model: str = "sonnet", max_parallel: int = 3, options_factory: Callable[..., Any] | None = None,
-                 make_worktree: Callable[[Goal], None] | None = None) -> None:
+                 make_worktree: Callable[[Goal], None] | None = None,
+                 brain: Callable[[], dict] | None = None) -> None:
         self.state_file = state_dir / "goals.json"
         self.client_factory = client_factory
         self.notify = notify  # (goal, event) -> None; event: started | step | needs_input | done | failed | cancelled
         self.model = model
+        self.brain = brain  # () -> {"model", "effort", "fallback"}: the owner's choice in the app, read per goal
         self.slots = asyncio.Semaphore(max_parallel)
         self.options_factory = options_factory or self._options
         self.make_worktree = make_worktree or self._make_worktree
@@ -261,8 +263,11 @@ class GoalManager:
         git_dir = subprocess.run(["git", "-C", goal.repo, "rev-parse", "--git-common-dir"], capture_output=True,
                                  text=True).stdout.strip()
         git_dir = git_dir if os.path.isabs(git_dir) else os.path.join(goal.repo, git_dir)
+        choice = self.brain() if self.brain else {"model": self.model, "effort": None, "fallback": None}
         return ClaudeAgentOptions(
-            model=self.model,
+            model=choice["model"],
+            effort=choice["effort"],
+            fallback_model=choice["fallback"],
             cwd=goal.worktree,
             add_dirs=[git_dir],  # commits write into the main repository's .git
             setting_sources=[],

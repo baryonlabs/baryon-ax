@@ -384,3 +384,31 @@ def test_profile_from_the_app_reaches_the_next_call(api, monkeypatch, tmp_path) 
 def test_memory_tools_are_auto_allowed_only_for_the_secretarys_own_server() -> None:
     assert policy.decide("mcp__memory__remember", {"text": "x"}).action == "auto"
     assert policy.decide("mcp__other__forget", {"id": "x"}).action != "auto"
+
+
+def test_brain_choice_picks_the_model_for_the_next_call_and_for_goal_agents(api, monkeypatch) -> None:
+    seen: dict = {}
+
+    def capture(can_use_tool, **kwargs):
+        seen.clear()
+        seen.update(kwargs)
+        return {"can_use_tool": can_use_tool}
+
+    monkeypatch.setattr(server, "session_kwargs", {"options_factory": capture})
+    profile = api.get("/v1/profile", headers=AUTH).json()
+    assert profile["brain"] == "default" and profile["goal_brain"] == "deep"
+    assert [b["id"] for b in profile["brains"]] == ["fast", "smart", "best"]
+
+    started = api.post("/v1/sessions", headers=AUTH, json={"owner": "me"}).json()
+    assert started["model"] == server.MODEL and "effort" not in seen  # untouched until the owner chooses
+
+    api.put("/v1/profile", headers=AUTH, json={"brain": "smart", "goal_brain": "best"})
+    started = api.post("/v1/sessions", headers=AUTH, json={"owner": "me"}).json()
+    assert (started["model"], seen["model"], seen["effort"], seen["fallback"]) == (
+        "claude-opus-5-5", "claude-opus-5-5", "low", "claude-sonnet-5-5")
+    assert server.profile.goal_agent_brain("sonnet") == {"model": "claude-fable-5-2", "effort": "high",
+                                                         "fallback": "claude-sonnet-5-5"}
+
+    api.put("/v1/profile", headers=AUTH, json={"brain": "fast", "goal_brain": "nonsense"})
+    assert server.profile.conversation_brain("sonnet")["fallback"] is None  # no fallback to itself
+    assert server.profile.data["goal_brain"] == "best"                       # unknown choices are ignored

@@ -69,6 +69,16 @@ A real run started two goals on a test repository at once ("fix add", "make aver
 - `memories`: short facts. The owner adds them in the app, or by voice ("이거 기억해 줘" → the `remember` tool). The 60 newest go into the instructions with their ids, so "그건 잊어" can delete one. The memory tools run without a confirmation, because they only touch this file.
 - `mcp`: which MCP servers from `~/.claude.json` the secretary loads. It starts as `SECRETARY_MCP`, and then the app owns it. The API returns names and kinds only, never commands, URLs or keys.
 
+- `brain` and `goal_brain`: the model behind the conversation and behind goal agents, chosen in the app. Measured with the secretary's instructions on spoken questions, time to the first word:
+
+  | Choice | Model, effort | First word |
+  | --- | --- | --- |
+  | 빠르게 | Sonnet 5.5, low | 0.7–1.6 s |
+  | 똑똑하게 | Opus 5.5, low | 2.3–3.5 s |
+  | 최고 | Fable 5.2, low | 0.8–1.3 s (highest price) |
+
+  Until the owner chooses, the conversation uses `SECRETARY_MODEL`. Goal agents default to 깊게 (Opus 5.5, high effort), because background work is not waiting on a first word; 기본 is Sonnet 5.5 and 최고 is Fable 5.2, both at high effort. Any choice other than Sonnet falls back to Sonnet 5.5 if that model is unavailable.
+
 API (same bearer key): `GET/PUT /v1/profile`, `POST /v1/memories`, `DELETE /v1/memories/{id}`. A running conversation keeps its tools and instructions; changes apply from the next call. The phone app reaches this through the gateway's settings channel ([voice-app.md](voice-app.md#protocol)).
 
 ## Confirmations

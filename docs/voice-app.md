@@ -38,6 +38,7 @@ Design rules: [voice-app-design.md](voice-app-design.md). Architecture in UML: [
   - **나에 대해:** who you are (name, role, what you work on).
   - **이렇게 써 줘:** how you want it to work (answer length, tone, what to check first).
   - **기억:** short facts. Saying "이거 기억해 줘" in a call adds one too.
+  - **두뇌:** the model for the conversation (빠르게 / 똑똑하게 / 최고) and for goal agents (기본 / 깊게 / 최고). See [voice-secretary.md](voice-secretary.md#what-it-knows-about-you-profile-memory-connections).
   - **연결 (MCP):** which of the MCP servers configured in Claude Code on the workstation it may use. Names only; their commands and credentials stay on the workstation.
 
   Changes apply from the next call.
