@@ -70,7 +70,9 @@ def test_search_and_ask_respect_document_permissions() -> None:
     answered = call("ask", {"question": "연차휴가는 며칠이야?", "thread_id": "mcp:test"}, headers=admin)
     assert answered["isError"] is False
     assert answered["structuredContent"]["citations"][0]["title"] == "leave-policy.md"
-    assert "Sources:" in answered["content"][0]["text"]
+    # The demo model quotes the passage it used, so it is listed as a source the answer used.
+    assert "Sources used in the answer:" in answered["content"][0]["text"]
+    assert answered["structuredContent"]["cited"] == ["leave-policy.md · chunk 1"]
 
 
 def test_gap_answer_loop_and_tool_errors() -> None:
