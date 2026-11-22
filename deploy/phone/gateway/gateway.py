@@ -644,6 +644,7 @@ SETTINGS_OPS = {  # app request -> secretary HTTP call (apps/secretary/secretary
     "profile.put": ("PUT", "/v1/profile"),
     "memory.add": ("POST", "/v1/memories"),
     "memory.delete": ("DELETE", "/v1/memories/{id}"),
+    "notify.add": ("POST", "/v1/notifications"),  # the app's "알림 테스트": a real notification, end to end
 }
 
 
@@ -663,7 +664,7 @@ async def settings_request(client: httpx.AsyncClient, base_url: str, message: st
     memory_id = re.sub(r"[^0-9a-f]", "", str(request.get("memory", "")))[:32]
     if "{id}" in path and not memory_id:
         return {"id": request_id, "ok": False, "error": "memory id required"}
-    body = {key: request[key] for key in ("about", "usage", "mcp", "text", "brain", "goal_brain")
+    body = {key: request[key] for key in ("about", "usage", "mcp", "text", "brain", "goal_brain", "title", "when", "alarm")
             if key in request}
     try:
         response = await client.request(method, base_url + path.format(id=memory_id),
@@ -673,6 +674,80 @@ async def settings_request(client: httpx.AsyncClient, base_url: str, message: st
     if response.status_code >= 400:
         return {"id": request_id, "ok": False, "error": f"secretary said {response.status_code}"}
     return {"id": request_id, "ok": True, "data": response.json()}
+
+
+NOTIFY_PATH = "/v1/voice/notify"
+
+
+class NotifyRelay:
+    """Secretary notifications -> every phone listening on /v1/voice/notify.
+
+    The phone keeps this socket open in the background (its own foreground service, no FCM), shows each
+    notification, rings, and for an alarm wakes the screen; then it sends {"type": "ack", "id"}. Until a
+    phone acknowledges one, the relay keeps it and sends it again to the next phone that connects, so a
+    notification due while the phone was out of coverage arrives when it is back."""
+
+    def __init__(self, client: httpx.AsyncClient, base_url: str) -> None:
+        self.client = client
+        self.base_url = base_url
+        self.phones: set[Any] = set()
+        self.unacked: dict[str, dict] = {}
+
+    async def deliver(self, event: dict) -> None:
+        if event.get("type") != "notify" or not event.get("id"):
+            return
+        self.unacked[str(event["id"])] = event
+        for phone in list(self.phones):
+            try:
+                await phone.send(json.dumps(event, ensure_ascii=False))
+            except Exception:  # noqa: BLE001 - a dropped phone reconnects and gets it again
+                self.phones.discard(phone)
+        logger.info("notification %s to %d phone(s)%s", event["id"], len(self.phones), " (alarm)" if event.get("alarm") else "")
+
+    async def ack(self, notification_id: str) -> None:
+        if self.unacked.pop(notification_id, None) is None:
+            return
+        try:
+            await self.client.post(f"{self.base_url}/v1/notifications/{notification_id}/ack")
+        except httpx.HTTPError:
+            logger.warning("could not acknowledge notification %s to the secretary", notification_id)
+
+    async def phone(self, websocket) -> None:
+        self.phones.add(websocket)
+        try:
+            await websocket.send(json.dumps({"type": "ready"}))
+            for event in list(self.unacked.values()):
+                await websocket.send(json.dumps(event, ensure_ascii=False))
+            async for message in websocket:
+                try:
+                    request = json.loads(message)
+                except ValueError:
+                    continue
+                if isinstance(request, dict) and request.get("type") == "ack":
+                    await self.ack(re.sub(r"[^0-9a-f]", "", str(request.get("id", "")))[:32])
+        finally:
+            self.phones.discard(websocket)
+
+    async def follow(self) -> None:
+        """Listen to the secretary's notification stream for as long as the gateway runs."""
+        delay = 1.0
+        while True:
+            try:
+                async with self.client.stream("GET", f"{self.base_url}/v1/notifications/stream",
+                                              timeout=httpx.Timeout(10.0, read=60.0)) as response:
+                    if response.status_code != 200:
+                        raise httpx.HTTPError(f"secretary said {response.status_code}")
+                    delay = 1.0
+                    async for line in response.aiter_lines():
+                        if line.startswith("data: "):
+                            try:
+                                await self.deliver(json.loads(line[6:]))
+                            except ValueError:
+                                continue
+            except (httpx.HTTPError, OSError) as error:
+                logger.debug("notification stream: %s", error)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30.0)
 
 
 def token_allowed(header: str | None, tokens: tuple[str, ...]) -> bool:
@@ -706,7 +781,7 @@ async def serve(settings: Settings | None = None) -> None:
         from websockets.asyncio.server import serve as ws_serve
 
         def check(connection, request):
-            if request.path.split("?")[0] not in {"/v1/voice/call", SETTINGS_PATH}:
+            if request.path.split("?")[0] not in {"/v1/voice/call", SETTINGS_PATH, NOTIFY_PATH}:
                 return connection.respond(404, "not found\n")
             if not token_allowed(request.headers.get("Authorization"), settings.app_tokens):
                 return connection.respond(401, "invalid token\n")
@@ -715,7 +790,13 @@ async def serve(settings: Settings | None = None) -> None:
         settings_client = httpx.AsyncClient(timeout=15.0,
                                             headers={"Authorization": f"Bearer {settings.secretary_key}"})
 
+        relay = NotifyRelay(settings_client, settings.secretary_url)
+        relay_task = asyncio.create_task(relay.follow())  # noqa: RUF006 - runs as long as the gateway
+
         async def app_call(websocket) -> None:
+            if websocket.request.path.split("?")[0] == NOTIFY_PATH:
+                await relay.phone(websocket)
+                return
             if websocket.request.path.split("?")[0] == SETTINGS_PATH:
                 async for message in websocket:  # the app's settings screen: request in, answer out
                     await websocket.send(json.dumps(
@@ -726,7 +807,7 @@ async def serve(settings: Settings | None = None) -> None:
         ws_host, _, ws_port = ws_listen.rpartition(":")
         servers.append(await ws_serve(app_call, ws_host or "0.0.0.0", int(ws_port), process_request=check,
                                       max_size=1 << 16, ping_interval=20))
-        logger.info("WebSocket (voice app) on %s/v1/voice/call and %s", ws_listen, SETTINGS_PATH)
+        logger.info("WebSocket (voice app) on %s/v1/voice/call, %s and %s", ws_listen, SETTINGS_PATH, NOTIFY_PATH)
     await asyncio.gather(*(server.serve_forever() for server in servers))
 
 

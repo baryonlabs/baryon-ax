@@ -26,6 +26,7 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from .policy import confirmation_prompt, decide, parse_answer, status_label
+from .notify import notify_tools
 from .profile import claude_mcp_servers, memory_tools
 from .slack_tools import slack_tools
 
@@ -63,6 +64,7 @@ PERSONA = """너는 사용자의 음성 비서다. 사용자는 운전 중일 �
   4) 회신: 요청이 온 곳으로 답한다(메일 gog gmail send --thread-id, 슬랙 post_message, 카톡 "[KAKAO] send \"방\" \"내용\" --yes").
      보내기 전에 내용을 짧게 되읽는다. 회신 없이 끝내지 말고, 하지 않을 거면 "회신은 안 할게요"라고 말한다.
   시간은 항상 한국 시간으로 말하고, 날짜는 "11월 25일 화요일"처럼 요일을 붙인다. 모르는 사람 이메일은 지어내지 말고 묻는다.
+- "몇 시에 알려 줘", "내일 7시에 깨워 줘", "끝나면 폰으로 알려 줘" 같은 요청은 notify_phone으로 폰에 알림을 예약한다. 깨우기, 놓치면 안 되는 일은 alarm을 true로 해서 알람처럼 울리고 화면을 켠다. when은 'HH:MM', 'YYYY-MM-DD HH:MM', 또는 몇 분 뒤 숫자로 쓴다. 예약한 뒤 "내일 아침 7시에 깨워 드릴게요"처럼 시간을 되읽는다. 목록은 list_reminders, 취소는 cancel_reminder.
 - 사용자가 "기억해 줘"라고 하거나 오래 갈 선호(호칭, 말투, 자주 보는 저장소, 함께 일하는 사람)를 말하면 remember로 짧게 저장하고 "기억했어요"라고 말한다. 잊으라고 하면 forget을 쓴다.
 오늘은 {today}이다.{profile}"""
 
@@ -110,7 +112,7 @@ def goal_tools(manager: Any, repo: str):
 
 
 def build_options(can_use_tool: Callable, *, cwd: str, model: str, mcp_names: list[str], goals: Any = None,
-                  profile: Any = None, effort: str | None = None, fallback: str | None = None):
+                  profile: Any = None, effort: str | None = None, fallback: str | None = None, notifier: Any = None):
     from claude_agent_sdk import ClaudeAgentOptions
 
     today = datetime.now(ZoneInfo(os.getenv("SECRETARY_TZ", "Asia/Seoul"))).strftime("%Y년 %m월 %d일 %A %H시 %M분")
@@ -124,6 +126,7 @@ def build_options(can_use_tool: Callable, *, cwd: str, model: str, mcp_names: li
         setting_sources=[],  # lean: no user hooks/plugins/CLAUDE.md, which add seconds and cost per turn
         mcp_servers={**imported_mcp_servers(mcp_names), **({"goals": goal_tools(goals, cwd)} if goals else {}),
                      **({"memory": memory_tools(profile)} if profile else {}),
+                     **({"phone": notify_tools(notifier)} if notifier is not None else {}),
                      **({"slack": slack_tools()} if os.getenv("SECRETARY_SLACK_TOKEN") else {})},
         system_prompt={"type": "preset", "preset": "claude_code",
                        "append": PERSONA.format(today=today, profile=owner_block(profile))},
@@ -151,7 +154,7 @@ def result_text(content: object) -> str:
 class Session:
     def __init__(self, client_factory: Callable[[Any], Any], *, owner: str, cwd: str, model: str, mcp_names: list[str],
                  options_factory: Callable[..., Any] = build_options, goals: Any = None, profile: Any = None,
-                 effort: str | None = None, fallback: str | None = None) -> None:
+                 effort: str | None = None, fallback: str | None = None, notifier: Any = None) -> None:
         self.id = uuid.uuid4().hex
         self.owner = owner
         self.created = self.last_active = time.time()
@@ -169,6 +172,8 @@ class Session:
         extra = {"goals": goals} if goals is not None else {}
         if profile is not None:
             extra["profile"] = profile
+        if notifier is not None:
+            extra["notifier"] = notifier
         if effort:
             extra["effort"] = effort
         if fallback:

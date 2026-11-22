@@ -9,9 +9,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final calls = <MethodCall>[];
+  var alertsOn = true;
 
   setUp(() {
     calls.clear();
+    alertsOn = true;
     SharedPreferences.setMockInitialValues({});
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('baryon/voice'), (
@@ -57,6 +59,17 @@ void main() {
             };
             return jsonEncode({'id': 1, 'ok': true, 'data': data});
           }
+          if (call.method == 'alertsState') {
+            return {
+              'on': alertsOn,
+              'connected': true,
+              'status': '알림 기다리는 중',
+              'notificationsAllowed': true,
+              'fullScreenAllowed': false,
+              'batteryExempt': true,
+            };
+          }
+          if (call.method == 'alerts') alertsOn = call.arguments['on'] as bool;
           return call.method == 'config'
               ? {
                   'server': 'ws://127.0.0.1:9093/v1/voice/call',
@@ -208,7 +221,11 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('palette'), 'light');
 
-      await tester.ensureVisible(find.byKey(const Key('earcons')));
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('earcons')),
+        150,
+        scrollable: find.byType(Scrollable).last,
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('earcons')));
       await tester.pumpAndSettle();
@@ -310,5 +327,40 @@ void main() {
     await tester.pumpAndSettle();
     expect(request(0), {'op': 'memory.add', 'text': '회의록은 노션에'});
     expect(find.text('회의록은 노션에'), findsOneWidget);
+  });
+
+  testWidgets('알림: connected, what to allow, and a real test notification', (
+    tester,
+  ) async {
+    await open(tester);
+    await tester.tap(find.byKey(const Key('settings')));
+    await tester.pumpAndSettle();
+    expect(find.text('연결됨 · 화면이 꺼져 있어도 울려요'), findsOneWidget);
+    expect(find.byKey(const Key('fix-fullScreen')), findsOneWidget);
+    expect(
+      find.byKey(const Key('fix-battery')),
+      findsNothing,
+    ); // already allowed
+
+    await tester.tap(find.byKey(const Key('test-alarm')));
+    await tester.pumpAndSettle();
+    final sent =
+        jsonDecode(
+              calls
+                      .lastWhere((call) => call.method == 'secretary')
+                      .arguments['request']
+                  as String,
+            )
+            as Map;
+    expect(sent['op'], 'notify.add');
+    expect(sent['alarm'], isTrue);
+    expect(find.textContaining('15초 뒤에 울려요'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('alerts')));
+    await tester.pumpAndSettle();
+    expect(calls.lastWhere((call) => call.method == 'alerts').arguments, {
+      'on': false,
+    });
+    expect(find.byKey(const Key('test-alarm')), findsNothing);
   });
 }

@@ -599,3 +599,51 @@ def test_settings_requests_are_relayed_to_the_secretary_and_nothing_else() -> No
         assert (await relay('{"id": 5, "op": "sessions.delete"}')) == {"id": 5, "ok": False, "error": "unknown op"}
         assert (await relay("not json"))["ok"] is False
     asyncio.run(run())
+
+
+def test_notifications_reach_every_phone_and_wait_for_an_ack() -> None:
+    import httpx
+
+    acked: list = []
+    stream = ('data: {"type": "notify", "id": "a1b2", "title": "기상", "text": "7시예요", "alarm": true}\n\n'
+              ': ping\n\ndata: not json\n\n')
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/notifications/stream":
+            return httpx.Response(200, text=stream)
+        acked.append(request.url.path)
+        return httpx.Response(200, json={"ok": True})
+
+    class Phone:
+        def __init__(self, replies: list[str]) -> None:
+            self.sent: list[dict] = []
+            self.replies = replies
+
+        async def send(self, text: str) -> None:
+            self.sent.append(json.loads(text))
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self) -> str:
+            await asyncio.sleep(0)
+            if not self.replies:
+                raise StopAsyncIteration
+            return self.replies.pop(0)
+
+    async def run() -> None:
+        relay = gateway.NotifyRelay(httpx.AsyncClient(transport=httpx.MockTransport(handler)), "http://secretary")
+        follower = asyncio.create_task(relay.follow())
+        for _ in range(50):
+            await asyncio.sleep(0.01)
+            if relay.unacked:
+                break
+        follower.cancel()
+        assert list(relay.unacked) == ["a1b2"]  # due while no phone was connected: kept
+        late = Phone(['{"type": "ack", "id": "a1b2"}'])
+        await relay.phone(late)
+        assert [event["type"] for event in late.sent] == ["ready", "notify"] and late.sent[1]["alarm"] is True
+        assert acked == ["/v1/notifications/a1b2/ack"] and relay.unacked == {} and relay.phones == set()
+        await relay.ack("a1b2")  # a second ack (two phones) is not sent again
+        assert acked == ["/v1/notifications/a1b2/ack"]
+    asyncio.run(run())

@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from secretary import policy, server
+from secretary.notify import Notifier, parse_when
 from secretary.profile import Profile
 from secretary.session import Session
 
@@ -258,6 +259,7 @@ def test_stop_word_interrupts_a_running_turn() -> None:
 def api(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "API_KEY", KEY)
     monkeypatch.setattr(server, "profile", Profile(tmp_path, ["kb-baryon"]))
+    monkeypatch.setattr(server, "notifier", Notifier(tmp_path))
     monkeypatch.setattr(server, "client_factory", FakeClient)
     monkeypatch.setattr(server, "session_kwargs", {"options_factory": fake_options})
     server.sessions.clear()
@@ -510,3 +512,52 @@ def test_slack_reader_reads_names_and_explains_missing_search_scope() -> None:
     text = reader.read("DM 김대표")
     assert text.splitlines() == ["[1] 김대표: 미팅 하시죠", "[2] 김대표: 화요일 3시 어때요?"]  # oldest first
     assert "사용자 토큰" in reader.search("미팅")
+
+
+# --- phone notifications -----------------------------------------------------------------
+
+def test_when_a_reminder_rings() -> None:
+    now = 1_795_000_000.0  # 2026-11-18 (Asia/Seoul)
+    assert parse_when(None, now) == now and parse_when("10", now) == now + 600 and parse_when(5, now) == now + 300
+    at = parse_when("2026-11-24 07:00", now)
+    assert at == parse_when("2026-11-24T07:00:00+09:00", now)
+    morning = parse_when("07:00", now)
+    assert now < morning <= now + 86400
+
+
+def test_notifications_wait_ring_and_repeat_until_acknowledged(tmp_path) -> None:
+    async def run() -> None:
+        notifier = Notifier(tmp_path)
+        later = notifier.add("회의", "김 대표와 미팅", "30", alarm=True)
+        assert later["status"] == "scheduled" and notifier.tick() == []
+        queue = notifier.listen()
+        now = notifier.add("빌드 끝", "테스트 통과")  # now: published at once
+        assert (await queue.get())["title"] == "빌드 끝"
+        assert notifier.tick(later["at"] + 1)[0]["id"] == later["id"]
+        rung = await queue.get()
+        assert rung == {"type": "notify", "id": later["id"], "title": "회의", "text": "김 대표와 미팅", "alarm": True,
+                        "at": later["at"]}
+        notifier.unlisten(queue)
+        # A gateway that reconnects gets what the phone has not acknowledged yet.
+        assert notifier.ack(now["id"]) and not notifier.ack(now["id"])
+        again = notifier.listen()
+        assert [again.get_nowait()["id"]] == [later["id"]] and again.empty()
+        # Kept across a restart.
+        assert [item["id"] for item in Notifier(tmp_path).unacked()] == [later["id"]]
+        assert notifier.cancel(later["id"]) and notifier.pending() == []
+    asyncio.run(run())
+
+
+def test_notification_http_api(api) -> None:
+    assert api.post("/v1/notifications", json={"title": "x"}).status_code == 401
+    item = api.post("/v1/notifications", headers=AUTH, json={"title": "기상", "when": "600", "alarm": True}).json()
+    assert item["status"] == "scheduled" and item["alarm"] is True
+    assert [row["id"] for row in api.get("/v1/notifications", headers=AUTH).json()["data"]] == [item["id"]]
+    assert api.post(f"/v1/notifications/{item['id']}/ack", headers=AUTH).json() == {"ok": False}  # not rung yet
+    assert api.delete(f"/v1/notifications/{item['id']}", headers=AUTH).json() == {"ok": True}
+    assert api.delete(f"/v1/notifications/{item['id']}", headers=AUTH).status_code == 404
+
+
+def test_ringing_the_owners_phone_needs_no_spoken_yes() -> None:
+    for tool in ("mcp__phone__notify_phone", "mcp__phone__list_reminders", "mcp__phone__cancel_reminder"):
+        assert policy.decide(tool, {"title": "회의"}).action == "auto"
