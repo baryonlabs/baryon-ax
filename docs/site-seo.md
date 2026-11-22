@@ -23,7 +23,7 @@
 | | 한국어 (`/`) | English (`/en/`) |
 | --- | --- | --- |
 | title | `Baryon AX — 먼저 물어보는 온프레미스 AI \| 암묵지 수집·RAG 근거 인용` | `Baryon AX — The on-prem AI that asks first \| Tacit knowledge capture` |
-| description | 유휴 시간 암묵지 질문, RAG 출처, HWP·PDF·Office, ACL·감사, MIT/Docker | Idle-time expert questions, grounded RAG citations, parsing, ACL/audit, MIT/Docker |
+| description | 유휴 시간 암묵지 질문, RAG 출처, HWP·PDF·Office, ACL·감사, 소스 공개(10인 미만 무료)/Docker | Idle-time expert questions, grounded RAG citations, parsing, ACL/audit, source-available (free under 10)/Docker |
 | OG image | `/assets/og.jpg` (1200×630, ~61KB) | `/assets/og-en.jpg` (1200×630, ~79KB) |
 | canonical | `https://baryon-ax.baryon.ai/` | `https://baryon-ax.baryon.ai/en/` |
 | hreflang | ko · en · x-default | ko · en · x-default |
@@ -40,7 +40,7 @@ OG/Twitter 제목·설명은 `<title>`/description과 **자동 동기화**됩니
 | --- | --- |
 | `Organization` | Baryon Labs 엔터티, GitHub `sameAs` |
 | `SoftwareApplication` | 제품명, 버전, 라이선스, 무료 offer, 저장소, 스크린샷 |
-| `SoftwareSourceCode` | 코드 저장소, MIT, Python/TypeScript, Docker/Kubernetes |
+| `SoftwareSourceCode` | 코드 저장소, Community License 1.0, Python/TypeScript, Docker/Kubernetes |
 | `WebSite` | 사이트 엔터티, 언어 |
 | `WebPage` | 페이지 제목·설명·대표 이미지·언어 |
 | `HowTo` | Docker 빠른 시작 4단계 |
