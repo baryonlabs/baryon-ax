@@ -33,12 +33,14 @@ import os
 import re
 import time
 import uuid
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import httpx
 import numpy as np
 
+from earcons import earcon
 from audio import (FRAME_BYTES, FRAME_MS, KIND_AUDIO, KIND_ERROR, KIND_HANGUP, KIND_UUID, PHONE_RATE,
                    SentenceChunker, float_to_pcm, frame, from_wav, pcm_to_float, read_frame, resample, speakable, to_wav)
 
@@ -47,6 +49,14 @@ logger = logging.getLogger("phone-gateway")
 logging.getLogger("httpx").setLevel(logging.WARNING)  # request lines would log session ids on every utterance
 
 VAD_RATE = 16000
+# Speech models invent these sign-offs from road noise or silence (they were trained on video
+# captions). Nobody says them to a secretary, so a short utterance that is only this is dropped
+# and the app is told, so the caller can report it.
+PHANTOM_PHRASES = re.compile(
+    r"^(?:다음\s*영상에서\s*(?:만나요|뵙겠습니다)|영상\s*시청해\s*주셔서\s*감사합니다|시청해\s*주셔서\s*감사합니다|"
+    r"구독과\s*좋아요(?:\s*부탁드립니다)?|좋아요와?\s*구독(?:\s*부탁드립니다)?|감사합니다|MBC\s*뉴스.*|자막\s*제공.*)[.!?\s]*$",
+    re.I,
+)
 STOP_WORDS = re.compile(r"^(?:멈춰|그만|중지|스톱|stop)[.!?\s]*$", re.I)
 # Secretary events shown on the app's screen (renamed so they do not clash with call events).
 SCREEN_EVENTS = {"activity": "activity", "activity_done": "activity_done", "task": "task",
@@ -54,7 +64,9 @@ SCREEN_EVENTS = {"activity": "activity", "activity_done": "activity_done", "task
 BARGE_IN_MS = 350           # this much speech while the secretary talks interrupts it (echo bursts are shorter)
 ECHO_WINDOW_SECONDS = 15.0  # what the secretary said this recently may come back as echo
 ECHO_SIMILARITY = 0.6
-LEAD_SECONDS = 0.08         # how far ahead of real time audio is written to Asterisk
+TYPING_QUIET_SECONDS = 2.0  # after the last key press, the mic is not treated as speech
+LEAD_SECONDS = 0.08
+THINKING_TICK_SECONDS = 2.5  # a soft tick while the secretary works and nothing has been heard for this long         # how far ahead of real time audio is written to Asterisk
 
 
 @dataclass
@@ -72,6 +84,8 @@ class Settings:
     vad_model: str = field(default_factory=lambda: os.getenv("VAD_MODEL", "/models/silero_vad.onnx"))
     # Log what callers said. Off by default; turn on only briefly on your own machine to debug.
     debug_transcripts: bool = field(default_factory=lambda: os.getenv("GATEWAY_DEBUG_TRANSCRIPTS", "") == "1")
+    debug_audio_dir: str = field(default_factory=lambda: os.getenv("GATEWAY_DEBUG_AUDIO_DIR", ""))
+    earcons: bool = field(default_factory=lambda: os.getenv("GATEWAY_EARCONS", "1") != "0")
     app_tokens: tuple[str, ...] = field(default_factory=lambda: tuple(
         token.strip() for token in os.getenv("GATEWAY_APP_TOKENS", "").split(",") if len(token.strip()) >= 24))
 
@@ -255,6 +269,8 @@ class WebSocketTransport:
                 return {"text": str(command["text"])[:2000]}  # typed, or a tapped answer such as "응"
             if command.get("type") == "dictate":
                 return {"dictate": bool(command.get("on"))}  # speech to text for the input box only
+            if command.get("type") == "typing":
+                return {"typing": True}  # the caller is on the keyboard: what the mic hears is key clicks
 
     async def send_audio(self, pcm: bytes) -> None:
         await self.websocket.send(pcm)
@@ -293,8 +309,10 @@ class Call:
         self.speech_ms = 0.0
         self.recent_said: list[tuple[float, str]] = []
         self.playing_until = 0.0
+        self.last_sound = 0.0
         self.audio = getattr(transport, "audio", True)
         self.dictating = False
+        self.typing_until = 0.0
         self.dictation: list[np.ndarray] = []
         self.generation = 0
         self.queue: asyncio.Queue[tuple[int, asyncio.Task]] = asyncio.Queue()
@@ -313,6 +331,7 @@ class Call:
             self.id = self.transport.id
             logger.info("call %s connected (%d Hz)", self.id, self.rate)
             self.tasks.append(asyncio.create_task(self._player()))
+            self.tasks.append(asyncio.create_task(self._thinking_ticks()))
             self.say(self.settings.greeting)
             await self.secretary.start()
             self.tasks.append(asyncio.create_task(self._listen_secretary()))
@@ -320,7 +339,9 @@ class Call:
                 payload = await self.transport.receive()
                 if payload is None:
                     break
-                if isinstance(payload, dict) and "dictate" in payload:
+                if isinstance(payload, dict) and "typing" in payload:
+                    self.typing_until = time.monotonic() + TYPING_QUIET_SECONDS
+                elif isinstance(payload, dict) and "dictate" in payload:
                     await self._dictate(payload["dictate"])
                 elif isinstance(payload, dict):
                     self.tasks.append(asyncio.create_task(self._handle_text(payload["text"], typed=True)))
@@ -342,6 +363,8 @@ class Call:
     # --- hearing ---
 
     def _hear(self, payload: bytes) -> None:
+        if time.monotonic() < self.typing_until:
+            return  # key clicks, not speech
         incoming = pcm_to_float(payload)
         samples = resample(incoming, self.rate, VAD_RATE)
         speaking, utterances = self.vad.push(samples)
@@ -361,9 +384,21 @@ class Call:
             text = await self.speech.transcribe(samples, VAD_RATE)
         except Exception:
             logger.exception("transcription failed")
+            self.cue("error")
             self.say("잘 못 들었어요. 다시 말씀해 주세요.")
             return
+        if self.settings.debug_audio_dir:
+            self._keep_for_debugging(samples, text)
         await self._handle_text(text, started=started)
+
+    def _keep_for_debugging(self, samples: np.ndarray, text: str) -> None:
+        """GATEWAY_DEBUG_AUDIO_DIR: keep each utterance and its transcript to measure recognition.
+        Off by default; it records what callers say, so use it only briefly on your own machine."""
+        folder = Path(self.settings.debug_audio_dir)
+        folder.mkdir(parents=True, exist_ok=True)
+        name = f"{time.strftime('%Y%m%d-%H%M%S')}-{self.id[:8]}-{len(list(folder.glob('*.wav'))):03d}"
+        (folder / f"{name}.wav").write_bytes(to_wav(samples, VAD_RATE))
+        (folder / f"{name}.txt").write_text(text, encoding="utf-8")
 
     async def _handle_text(self, text: str, *, typed: bool = False, started: float | None = None) -> None:
         if len(re.sub(r"[\s.,!?]", "", text)) < 1:
@@ -371,6 +406,12 @@ class Call:
         if not typed and self._is_echo(text):
             logger.info("call %s ignored %d chars of its own echo", self.id, len(text))
             return
+        if not typed and PHANTOM_PHRASES.match(text.strip()):
+            logger.info("call %s dropped a %d char phantom transcript", self.id, len(text))
+            await self.transport.send_event({"type": "phantom", "text": text})
+            return
+        if not typed:
+            self.cue("heard")
         self.log.append(f"heard: {text}")
         await self.transport.send_event({"type": "heard", "text": text})
         if self.settings.debug_transcripts:
@@ -424,6 +465,7 @@ class Call:
         self.generation += 1
         self.chunker.flush()
         await self.transport.send_event({"type": "flush"})  # the app drops audio it has buffered
+        self.cue("interrupted")
         if self.agent_busy:
             self.discard_until_done = True
             try:
@@ -433,6 +475,24 @@ class Call:
         logger.info("call %s interrupted", self.id)
 
     # --- speaking ---
+
+    def cue(self, name: str) -> None:
+        """A non-verbal sound (earcons.py) queued like speech, so it reaches the car the same way."""
+        if not self.settings.earcons or not self.audio:
+            return
+        self.last_sound = time.monotonic()
+        done: asyncio.Future = asyncio.get_running_loop().create_future()
+        done.set_result((earcon(name, self.rate), ""))
+        self.queue.put_nowait((self.generation, done))
+
+    async def _thinking_ticks(self) -> None:
+        """While the secretary works with nothing to say, a soft tick every few seconds tells the
+        driver the line is alive."""
+        while True:
+            await asyncio.sleep(0.5)
+            quiet = time.monotonic() - max(self.last_sound, self.playing_until) >= THINKING_TICK_SECONDS
+            if self.agent_busy and not self.playing and self.queue.empty() and quiet:
+                self.cue("thinking")
 
     def say(self, text: str) -> None:
         text = speakable(text)
@@ -454,6 +514,8 @@ class Call:
             kind = event.get("type")
             if kind in SCREEN_EVENTS:  # progress for the app's screen: steps, background tasks, live text
                 await self.transport.send_event({**event, "type": SCREEN_EVENTS[kind]})
+            if kind == "task" and event.get("tool") == "goal" and event.get("status") in ("done", "failed"):
+                self.cue("task_done" if event["status"] == "done" else "error")
             if self.discard_until_done:
                 if kind == "done":
                     self.discard_until_done = False
@@ -468,6 +530,7 @@ class Call:
                 rest = self.chunker.flush()
                 if rest:
                     self.say(rest)
+                self.cue("question")
                 self.say(event.get("prompt", ""))
                 await self.transport.send_event({"type": "confirm", "prompt": event.get("prompt", "")})
                 self.agent_busy = False  # waiting for the caller's yes or no
@@ -479,6 +542,7 @@ class Call:
                     self.say(rest)
                 self.agent_busy = False
             elif kind == "error":
+                self.cue("error")
                 self.say("문제가 생겼어요. 다시 말씀해 주세요.")
 
     async def _player(self) -> None:
@@ -494,7 +558,8 @@ class Call:
                 continue
             pcm = float_to_pcm(samples)
             self.playing = True
-            await self.transport.send_event({"type": "said", "text": text})
+            if text:  # earcons have no words
+                await self.transport.send_event({"type": "said", "text": text})
             start = loop.time()
             step = self.frame_bytes
             for index in range(0, len(pcm), step):

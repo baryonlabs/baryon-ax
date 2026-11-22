@@ -280,6 +280,17 @@ def test_echo_of_its_own_words_is_not_a_request() -> None:
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("text,phantom", [
+    ("다음 영상에서 만나요.", True),
+    ("시청해 주셔서 감사합니다", True),
+    ("구독과 좋아요 부탁드립니다", True),
+    ("다음 영상 만들 때 쓸 일정 알려줘", False),
+    ("오늘 일정 알려줘", False),
+])
+def test_phantom_transcripts_are_recognised(text: str, phantom: bool) -> None:
+    assert bool(gateway.PHANTOM_PHRASES.match(text.strip())) is phantom
+
+
 @pytest.mark.parametrize("a,b,expected", [
     ("열려 있는 PR은 하나도", "지금 열려 있는 PR은 하나도 없어요.", True),
     ("메일 알려줘", "지금 열려 있는 PR은 하나도 없어요.", False),
@@ -376,4 +387,47 @@ def test_typed_session_dictation_and_progress_events() -> None:
                 await until(lambda e: e["type"] == "dictation")
                 assert next(e for e in events if e["type"] == "dictation")["text"] == "메일 정리해줘"
                 assert secretary.turns == ["PR 알려줘"]
+    asyncio.run(run())
+
+
+def test_earcons_mark_heard_question_and_interruption() -> None:
+    import earcons
+
+    async def run() -> None:
+        ask = [{"type": "confirm", "id": "1", "prompt": "보낼까요?"}]
+        speech, secretary = FakeSpeech(["보내줘"]), FakeSecretary({"보내줘": ask})
+        server, writer, received, collector, calls = await start_call(speech, secretary)
+        cued: list[str] = []
+        original = calls[0].cue
+        calls[0].cue = lambda name: (cued.append(name), original(name))
+        await send(writer, LOUD, 20)
+        await send(writer, QUIET, 12)
+        await wait_for(lambda: "question" in cued)
+        assert cued[:2] == ["interrupted", "heard"] or cued[0] == "heard"  # the greeting may be cut off first
+        assert "question" in cued
+        collector.cancel()
+        server.close()
+    asyncio.run(run())
+    for name in earcons.PATTERNS:
+        sound = earcons.earcon(name, 8000)
+        assert 0.05 < len(sound) / 8000 < 0.5 and float(np.max(np.abs(sound))) <= 0.25  # short and quiet
+
+
+def test_thinking_ticks_only_while_working_in_silence() -> None:
+    async def run() -> None:
+        never_done = [{"type": "activity", "id": "a", "tool": "Bash", "label": "확인"}]
+        speech, secretary = FakeSpeech(["오래 걸리는 일"]), FakeSecretary({"오래 걸리는 일": never_done})
+        gateway.THINKING_TICK_SECONDS = 0.6
+        try:
+            server, writer, received, collector, calls = await start_call(speech, secretary)
+            cued: list[str] = []
+            original = calls[0].cue
+            calls[0].cue = lambda name: (cued.append(name), original(name))
+            await send(writer, LOUD, 20)
+            await send(writer, QUIET, 12)
+            await wait_for(lambda: cued.count("thinking") >= 2, timeout=5)
+            collector.cancel()
+            server.close()
+        finally:
+            gateway.THINKING_TICK_SECONDS = 2.5
     asyncio.run(run())
