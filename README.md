@@ -7,14 +7,15 @@
 **문서에 없는 지식은, AI가 먼저 물어봅니다.**
 
 사내 문서로 근거를 들어 답하고, 답하지 못한 질문은 전문가에게 먼저 물어 조직의 지식으로 쌓는<br>
-**온프레미스 · 모델 비종속 · MIT 오픈소스** 엔터프라이즈 AI 플랫폼
+**온프레미스 · 모델 비종속 · MIT 오픈소스** 엔터프라이즈 AI 플랫폼<br>
+운전 중에도 전화 한 통으로 요약을 듣고 일을 맡기는 **음성 비서**까지 함께 공개합니다
 
 [![Release](https://img.shields.io/github/v/release/baryonlabs/baryon-ax?label=release&color=1f6f5c)](https://github.com/baryonlabs/baryon-ax/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-1f6f5c)](LICENSE)
 [![CI](https://github.com/baryonlabs/baryon-ax/actions/workflows/ci.yml/badge.svg)](https://github.com/baryonlabs/baryon-ax/actions/workflows/ci.yml)
 [![security-sweep](https://github.com/baryonlabs/baryon-ax/actions/workflows/security-sweep.yml/badge.svg)](https://github.com/baryonlabs/baryon-ax/actions/workflows/security-sweep.yml)
 
-[홈페이지](https://baryon-ax.baryon.ai/) · [빠른 시작](#quick-start) · [아키텍처](#architecture) · [연동](#integrations) · [문서](#docs) · [로드맵](docs/roadmap.md) · [English](#english)
+[홈페이지](https://baryon-ax.baryon.ai/) · [빠른 시작](#quick-start) · [음성 비서](#voice-secretary) · [아키텍처](#architecture) · [연동](#integrations) · [문서](#docs) · [로드맵](docs/roadmap.md) · [English](#english)
 
 </div>
 
@@ -26,7 +27,7 @@
 
 - [왜 Baryon AX인가](#why) · [무엇을 할 수 있나](#features) · [What's new](#whats-new)
 - [빠른 시작](#quick-start) · [기존 설치 업데이트](#updating-an-existing-install) · [실행 구성](#profiles)
-- [아키텍처](#architecture) · [암묵지 지식화 사이클](#tacit--explicit-cycle)
+- [음성 비서: 말로 일하기](#voice-secretary) · [아키텍처](#architecture) · [암묵지 지식화 사이클](#tacit--explicit-cycle)
 - [연동: API · 메신저 봇 · MCP](#integrations) · [설정](#configuration) · [API](#api)
 - [보안](#security) · [로드맵](#roadmap) · [문서 지도](#docs) · [개발·기여](#development) · [English](#english)
 
@@ -93,6 +94,26 @@
 
 </td>
 </tr>
+<tr>
+<td valign="top">
+
+**🎙 음성 비서 · 모바일 앱**
+- 받아쓰기 · 음성 명령 · 끼어들 수 있는 라이브 대화 (사내 STT · TTS)
+- 안드로이드 앱 **바리온 비서**: 일반 통화로 잡혀 차량 블루투스로 대화
+- 메일 · 일정 · 할 일 · PR/CI를 2~3문장으로 요약, 바뀌는 일은 "응"을 들어야 실행
+- 띠링 · 톡 · 뚝 · 딩동 효과음으로 화면 없이도 상태 파악
+
+</td>
+<td valign="top">
+
+**🤖 상주 비서 + 목표 에이전트**
+- 대화로 맡긴 목표를 백그라운드 에이전트가 병렬로 처리
+- 목표마다 전용 git 브랜치 · 샌드박스, push · 발송은 하지 않음
+- 막히면 질문하고, 끝나면 비서가 먼저 말로 보고
+- 진행 단계와 작업 카드가 앱 화면에 실시간으로 표시
+
+</td>
+</tr>
 </table>
 
 한국어·영어 UI, 키보드 중심 입력창, 모바일 화면, `aria-live` 상태 안내 등 접근성도 기본으로 갖췄습니다. 화면 8종은 [docs/screenshots.md](docs/screenshots.md), 기능 전체 목록은 [docs/features.md](docs/features.md)에 있습니다.
@@ -107,6 +128,13 @@
 
 <a id="whats-new"></a>
 ## What's new
+
+**다음 릴리스 (main에 반영됨) — 말로 일하는 비서**
+
+- **음성**: 받아쓰기와 음성 명령, 말하면 멈추는 라이브 대화. sherpa-onnx STT와 Supertonic TTS가 사내에서만 돕니다 ([voice.md](docs/voice.md)).
+- **음성 비서**: 메일 · 일정 · 할 일 · PR/CI를 요약하고 DureClaw 플릿에 일을 맡깁니다. 바뀌는 일은 음성 확인을 거쳐야 실행됩니다 ([voice-secretary.md](docs/voice-secretary.md)).
+- **목표 에이전트**: 대화로 맡긴 목표를 백그라운드 에이전트 여러 개가 각자 브랜치에서 병렬로 처리하고, 끝나면 비서가 먼저 알려 줍니다.
+- **바리온 비서 앱 · 전화**: Flutter 안드로이드 앱과 SIP 전화. 차량 블루투스로 쓰고, 상태는 효과음으로 알 수 있습니다 ([voice-app.md](docs/voice-app.md) · [phone.md](docs/phone.md)).
 
 **v0.7.0 — 사내 메신저 안에서 먼저 묻는 AI** · [릴리스 노트](https://github.com/baryonlabs/baryon-ax/releases/tag/v0.7.0)
 
@@ -188,6 +216,51 @@ curl -s http://localhost:8000/health             # 버전과 연결 상태 확�
 | GPU 추론 | vLLM 등 사내 GPU 모델 | 7B: RTX 4090 24 GB 1장부터 | [b300-host-deploy.md](docs/b300-host-deploy.md) |
 | AWS | ECS Fargate · RDS · Bedrock, 데모 · 멀티테넌트 · 고객 전용 | 데모 약 $130/월(업무시간) | [aws-deploy.md](docs/aws-deploy.md) |
 | Kubernetes | API 스타터 매니페스트 | — | `deploy/kubernetes` |
+
+<a id="voice-secretary"></a>
+## 음성 비서: 말로 일하기
+
+운전 중이거나 손이 바쁠 때, 전화 한 통으로 요약을 듣고 일을 맡깁니다. 음성은 사내 서버에서만 처리됩니다.
+
+<table>
+<tr>
+<td width="34%"><img src="docs/images/voice-app/home.png" alt="바리온 비서 앱: 진행 카드, 입력창, 통화 버튼"></td>
+<td width="34%"><img src="docs/images/voice-app/settings.png" alt="바리온 비서 앱 설정: 화면 테마, 글자 크기, 서버"></td>
+<td valign="top">
+
+**이렇게 말하면**
+
+- "열린 PR이랑 CI 상태 알려줘"
+- "우선순위 높은 할 일 세 개만"
+- "로그인 버그 고쳐서 테스트 통과시켜 줘" → "목표 에이전트에게 맡길까요?" → "응"
+- "지금 뭐 하고 있어?"
+- 비서가 말하는 중에 끼어들면 바로 멈춥니다
+
+</td>
+</tr>
+</table>
+
+```text
+📱 바리온 비서 앱 (Flutter · 안드로이드 통화 = 차량 블루투스)      📞 SIP 앱 (Linphone · Asterisk)
+        │ wss 16 kHz · 기기 토큰                                       │ 8 kHz
+        └──────────────────────▶ 전화 게이트웨이 ◀──────────────────────┘
+                                VAD → STT(Whisper · SenseVoice) → 상주 비서 → TTS(Supertonic)
+                                                    │
+                    조회는 바로 · 바뀌는 일은 "응" 후에 · 파괴적 명령은 차단
+                                                    ├─▶ 목표 에이전트 #1 ┐ 전용 브랜치 · 샌드박스
+                                                    ├─▶ 목표 에이전트 #2 ├ 병렬 실행
+                                                    └─▶ 목표 에이전트 #3 ┘ 끝나면 먼저 보고
+```
+
+| 효과음 | 뜻 |
+| --- | --- |
+| 띠링 | 말을 알아들었어요 |
+| 톡 … 톡 | 생각하는 중 · 작업 중 |
+| 뚝 | 멈췄어요 (끼어들기, "멈춰") |
+| 딩-동? | 대답이 필요해요 ("응" / "아니") |
+| 도-미-솔 | 맡긴 백그라운드 작업이 끝났어요 |
+
+시작하기: 음성 프로필(`docker-compose.voice.yml`)로 STT · TTS를 띄우고, 작업자 PC에서 `apps/secretary`를 실행한 뒤, 전화 게이트웨이(`docker-compose.phone.yml`)와 앱을 연결합니다. 자세한 순서는 [voice-secretary.md](docs/voice-secretary.md) → [voice-app.md](docs/voice-app.md)에 있습니다.
 
 <a id="architecture"></a>
 ## 아키텍처
@@ -560,6 +633,7 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 | --- | --- | --- |
 | v0.6.0 ✅ | 첫 공개 | 근거 채팅, HWP 수집, ACL · 감사, 암묵지 루프, PR 보안 점검 |
 | v0.7.0 ✅ | 사내 메신저 안에서 먼저 묻는 AI | Slack · Discord 봇, MCP 서버, 서비스 계정 위임, 하이브리드 검색 |
+| main ✅ | 말로 일하는 비서 | 받아쓰기 · 라이브 대화, 음성 비서, 목표 에이전트, 바리온 비서 앱 · SIP 전화, 효과음 |
 | v0.8.0 | 보안 심사를 통과하는 운영 기능 | 사용자 · 조직 · 역할 관리 UI, 감사 로그 검색 · 내보내기 · 보존, 백업 · 복구 런북, 공유 링크 |
 | v0.9.0 | 지식 품질 | 온톨로지 편집 UI, 대화 자동 메모리, E2E CI |
 
@@ -576,7 +650,8 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 | 구조 · 설계 | [architecture.md](docs/architecture.md) · [ingestion/architecture.md](docs/ingestion/architecture.md) · [ux-principles.md](docs/ux-principles.md) · [research/knowledge-gap-loop.md](docs/research/knowledge-gap-loop.md) |
 | 기능 전체 | [features.md](docs/features.md) · [screenshots.md](docs/screenshots.md) |
 | 인증 · 보안 | [auth-oidc.md](docs/auth-oidc.md) · [multi-tenancy.md](docs/multi-tenancy.md) · [security.md](docs/security.md) · [security-ci.md](docs/security-ci.md) · [SECURITY.md](SECURITY.md) |
-| 연동 | [mcp-server.md](docs/mcp-server.md) · [mcp-connectors.md](docs/mcp-connectors.md) · [voice.md](docs/voice.md) · [examples/](examples) |
+| 연동 | [mcp-server.md](docs/mcp-server.md) · [mcp-connectors.md](docs/mcp-connectors.md) · [examples/](examples) |
+| 음성 비서 · 앱 | [voice.md](docs/voice.md) · [voice-secretary.md](docs/voice-secretary.md) · [phone.md](docs/phone.md) · [voice-app.md](docs/voice-app.md) |
 | 오픈소스 · 라이선스 | [open-source.md](docs/open-source.md) · [ingestion/open-source-inventory.md](docs/ingestion/open-source-inventory.md) |
 | 방향 | [roadmap.md](docs/roadmap.md) |
 | 홈페이지 운영 | [promotion-playbook.md](docs/promotion-playbook.md) · [site-seo.md](docs/site-seo.md) · [domain-migration.md](docs/domain-migration.md) |
@@ -586,9 +661,11 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 
 ```text
 apps/api/       FastAPI 게이트웨이와 API (Python, uv)
-apps/web/       React + Vite 채팅 워크스페이스
+apps/web/       React + Vite 채팅 워크스페이스 (받아쓰기 · 라이브 대화 포함)
+apps/secretary/ 상주 음성 비서와 목표 에이전트 (Claude Agent SDK)
+apps/voice_app/ 바리온 비서 안드로이드 앱 (Flutter + Kotlin 통화 엔진)
 examples/       공개 API로 만든 확장 예제 (Slack · Discord 봇)
-deploy/         Compose · Kubernetes · 파서 사이드카
+deploy/         Compose · Kubernetes · 파서 · STT/TTS(stt) · 전화 게이트웨이(phone)
 docs/           아키텍처 · 운영 · 보안 · 연동 · 연구 문서
 site/           홈페이지 (GitHub Pages)
 scripts/        Ollama 프록시, 스모크 테스트, IndexNow, 의존성 갱신
@@ -597,6 +674,7 @@ scripts/        Ollama 프록시, 스모크 테스트, IndexNow, 의존성 갱�
 ```bash
 cd apps/api && uv sync --extra dev && uv run pytest          # API 테스트
 cd apps/web && npm ci && npm run build                        # 웹 빌드
+cd apps/voice_app && flutter test && flutter build apk --debug # 바리온 비서 앱
 uvicorn baryon.main:app --app-dir apps/api/src --port 8000 --env-file .env   # 호스트에서 API 실행
 ```
 
@@ -633,6 +711,7 @@ API_BASE=http://127.0.0.1:8000 REQUIRE_FULL=1 python3 scripts/smoke_full_stack.p
 - **Korean-document ready**: MIME-based routing to kordoc (HWP/HWPX), docling (PDF/Office/images), and Tika; structure-aware chunking; vector or hybrid retrieval.
 - **Ask-first loop**: unanswered questions become knowledge gaps, experts answer from a question queue, and published answers are indexed through the same pipeline.
 - **Integrations**: OpenAI-compatible `/v1/chat/completions`, an MCP server at `POST /mcp`, an MCP tool picker, Slack and Discord bots, and Apache Ossie import/export.
+- **Voice secretary**: dictation, interruptible live conversation, and a resident secretary you can phone, by SIP or from the **바리온 비서** Android app. It shows up as a normal call, so car Bluetooth works. The secretary summarizes mail, calendar, to-dos and PRs, and acts only after a spoken "yes". It hands long work to **goal agents** that run in parallel on their own sandboxed git branches and report back by voice. Speech-to-text and text-to-speech stay on-premises.
 - **Governance**: OIDC with delegated identity for bots and MCP gateways, audit events in PostgreSQL/JSONL, Langfuse traces, and a security sweep that blocks P0/P1 findings on every PR.
 
 Start with one line (Docker only, no GPU or API key): see [Quick start](#quick-start). The English website is at [baryon-ax.baryon.ai/en](https://baryon-ax.baryon.ai/en/).
