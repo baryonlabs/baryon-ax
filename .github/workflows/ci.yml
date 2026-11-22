@@ -107,7 +107,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
-        with: { channel: stable, cache: true }
+        # Pinned: newer stable releases deprecate package:flutter/material.dart; move with an explicit upgrade.
+        with: { channel: stable, flutter-version: "3.44.0", cache: true }
       - run: flutter pub get
       - run: flutter analyze --no-pub
       - run: flutter test
