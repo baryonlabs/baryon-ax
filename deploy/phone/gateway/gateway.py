@@ -663,7 +663,8 @@ async def settings_request(client: httpx.AsyncClient, base_url: str, message: st
     memory_id = re.sub(r"[^0-9a-f]", "", str(request.get("memory", "")))[:32]
     if "{id}" in path and not memory_id:
         return {"id": request_id, "ok": False, "error": "memory id required"}
-    body = {key: request[key] for key in ("about", "usage", "mcp", "text") if key in request}
+    body = {key: request[key] for key in ("about", "usage", "mcp", "text", "brain", "goal_brain")
+            if key in request}
     try:
         response = await client.request(method, base_url + path.format(id=memory_id),
                                         json=body if method in {"PUT", "POST"} else None)

@@ -17,7 +17,7 @@ signed in) and is reached only by the Baryon AX API, which authenticates the own
 Environment:
     SECRETARY_API_KEY      required bearer key (the Baryon AX API holds it)
     SECRETARY_CWD          working directory, e.g. the repository you code in
-    SECRETARY_MODEL        Claude model alias (default sonnet)
+    SECRETARY_MODEL        Claude model alias (default sonnet), used until the owner picks a brain in the app
     SECRETARY_MCP          comma-separated MCP server names to import from ~/.claude.json
                            (for example dureclaw,baryon-todo,kb-baryon); the first default of the
                            profile's MCP list, which the owner then changes from the app
@@ -107,7 +107,9 @@ async def lifespan(_: FastAPI):
     if profile is None:
         profile = Profile(STATE_DIR, MCP_NAMES)
     if goal_manager is None and "options_factory" not in session_kwargs:
-        goal_manager = GoalManager(STATE_DIR, client_factory, on_goal, model=MODEL, max_parallel=MAX_GOALS)
+        goal_manager = GoalManager(STATE_DIR, client_factory, on_goal, model=MODEL, max_parallel=MAX_GOALS,
+                                   brain=lambda: profile.goal_agent_brain(MODEL) if profile else
+                                   {"model": MODEL, "effort": None, "fallback": None})
     reaper = asyncio.create_task(reap_idle())
     yield
     reaper.cancel()
@@ -140,6 +142,8 @@ class ProfileBody(BaseModel):
     about: str | None = Field(None, max_length=2000)
     usage: str | None = Field(None, max_length=2000)
     mcp: list[str] | None = Field(None, max_length=50)
+    brain: str | None = Field(None, max_length=20)
+    goal_brain: str | None = Field(None, max_length=20)
 
 
 class MemoryBody(BaseModel):
@@ -179,7 +183,7 @@ async def read_profile(authorization: str | None = Header(None)) -> dict:
 @app.put("/v1/profile")
 async def write_profile(body: ProfileBody, authorization: str | None = Header(None)) -> dict:
     require_key(authorization)
-    get_profile().update(about=body.about, usage=body.usage, mcp=body.mcp)
+    get_profile().update(about=body.about, usage=body.usage, mcp=body.mcp, brain=body.brain, goal_brain=body.goal_brain)
     return get_profile().public()
 
 
@@ -215,14 +219,18 @@ async def start(body: StartBody, authorization: str | None = Header(None)) -> di
     if profile is not None:
         extra["profile"] = profile
     mcp_names = profile.mcp_enabled if profile is not None else MCP_NAMES
-    session = Session(client_factory, owner=body.owner, cwd=CWD, model=MODEL, mcp_names=mcp_names, **extra, **session_kwargs)
+    brain = profile.conversation_brain(MODEL) if profile is not None else {"model": MODEL}
+    if brain.get("effort"):
+        extra.update(effort=brain["effort"], fallback=brain["fallback"])
+    session = Session(client_factory, owner=body.owner, cwd=CWD, model=brain["model"], mcp_names=mcp_names,
+                      **extra, **session_kwargs)
     try:
         await session.start()
     except Exception as error:
         logger.exception("cannot start the agent")
         raise HTTPException(503, f"cannot start the agent: {type(error).__name__}") from error
     sessions[session.id] = session
-    return {"id": session.id, "model": MODEL}
+    return {"id": session.id, "model": brain["model"]}
 
 
 @app.post("/v1/sessions/{session_id}/turn")

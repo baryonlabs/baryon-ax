@@ -33,6 +33,18 @@ void main() {
                 'memories': [
                   {'id': 'a1', 'text': '아침엔 PR부터', 'source': 'voice'},
                 ],
+                'brain': 'default',
+                'goal_brain': 'deep',
+                'brains': [
+                  {'id': 'fast', 'label': '빠르게'},
+                  {'id': 'smart', 'label': '똑똑하게'},
+                  {'id': 'best', 'label': '최고'},
+                ],
+                'goal_brains': [
+                  {'id': 'standard', 'label': '기본'},
+                  {'id': 'deep', 'label': '깊게'},
+                  {'id': 'best', 'label': '최고'},
+                ],
                 'mcp': [
                   {
                     'name': 'kb-baryon',
@@ -278,6 +290,11 @@ void main() {
             as Map;
     expect(request(0)['op'], 'profile.put');
     expect(request(0)['usage'], '답은 두 문장으로');
+
+    await tester.tap(find.text('똑똑하게'));
+    await tester.pumpAndSettle();
+    expect(request(0), {'op': 'profile.put', 'brain': 'smart'});
+    expect(find.textContaining('첫마디 2~3초'), findsOneWidget);
 
     await tester.scrollUntilVisible(
       find.byKey(const Key('mcp-kb-baryon')),

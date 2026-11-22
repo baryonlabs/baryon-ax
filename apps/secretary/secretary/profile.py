@@ -4,6 +4,8 @@
     usage      활용: how the owner wants the secretary to work (tone, length, what to check first)
     memories   short facts to keep ("이거 기억해 줘"), added by voice or in the app
     mcp        which MCP connections (from ~/.claude.json) the secretary may use
+    brain      the model behind the conversation (fast / smart / best; "" = SECRETARY_MODEL)
+    goal_brain the model behind goal agents (deep by default: background work can take its time)
 
 Saved as JSON in SECRETARY_STATE_DIR/profile.json on the workstation. MCP connections are
 listed by name and kind only; their commands, URLs and credentials never leave ~/.claude.json.
@@ -24,6 +26,31 @@ MAX_TEXT = 2000
 MAX_MEMORY = 300
 MAX_MEMORIES = 200
 IN_PROMPT = 60  # newest memories put in the secretary's instructions
+
+# Measured with the secretary's instructions on spoken questions (time to the first word):
+# Sonnet 5.5 low 0.7-1.6 s, Opus 5.5 low/medium 2.3-3.5 s, Fable 5.2 low 0.8-1.3 s.
+# A caller notices anything past ~2 s, so the conversation defaults to fast; goal agents work
+# in the background, where depth matters more than the first word.
+BRAINS = {
+    "fast": {"model": "claude-sonnet-5-5", "effort": "low", "label": "빠르게"},
+    "smart": {"model": "claude-opus-5-5", "effort": "low", "label": "똑똑하게"},
+    "best": {"model": "claude-fable-5-2", "effort": "low", "label": "최고"},
+}
+GOAL_BRAINS = {
+    "standard": {"model": "claude-sonnet-5-5", "effort": "high", "label": "기본"},
+    "deep": {"model": "claude-opus-5-5", "effort": "high", "label": "깊게"},
+    "best": {"model": "claude-fable-5-2", "effort": "high", "label": "최고"},
+}
+FALLBACK_MODEL = "claude-sonnet-5-5"  # if the chosen model is unavailable, keep the call going
+
+
+def brain_choice(name: str, table: dict, default_model: str) -> dict:
+    """{"model", "effort", "fallback"} for a choice; an unknown or empty choice keeps the default."""
+    choice = table.get(name)
+    if not choice:
+        return {"model": default_model, "effort": None, "fallback": None}
+    fallback = FALLBACK_MODEL if choice["model"] != FALLBACK_MODEL else None
+    return {"model": choice["model"], "effort": choice["effort"], "fallback": fallback}
 
 
 def claude_mcp_servers() -> dict[str, dict]:
@@ -49,7 +76,8 @@ class Profile:
     def __init__(self, state_dir: Path, default_mcp: list[str]) -> None:
         self.path = Path(state_dir) / "profile.json"
         self._lock = threading.Lock()
-        self.data: dict[str, Any] = {"about": "", "usage": "", "memories": [], "mcp": list(default_mcp)}
+        self.data: dict[str, Any] = {"about": "", "usage": "", "memories": [], "mcp": list(default_mcp),
+                                     "brain": "", "goal_brain": "deep"}
         try:
             saved = json.loads(self.path.read_text())
             self.data.update({key: saved[key] for key in self.data if key in saved})
@@ -78,6 +106,11 @@ class Profile:
             "about": self.data["about"],
             "usage": self.data["usage"],
             "memories": list(reversed(self.data["memories"])),  # newest first
+            "brain": self.data["brain"] or "default",
+            "goal_brain": self.data["goal_brain"],
+            "brains": [{"id": key, "label": value["label"], "model": value["model"]} for key, value in BRAINS.items()],
+            "goal_brains": [{"id": key, "label": value["label"], "model": value["model"]}
+                            for key, value in GOAL_BRAINS.items()],
             "mcp": [{"name": name, "kind": mcp_kind(available.get(name, {})), "enabled": name in enabled,
                      "installed": name in available} for name in names],
         }
@@ -96,8 +129,19 @@ class Profile:
 
     # --- changing ------------------------------------------------------------------------
 
-    def update(self, *, about: str | None = None, usage: str | None = None, mcp: list[str] | None = None) -> None:
+    def conversation_brain(self, default_model: str) -> dict:
+        return brain_choice(self.data["brain"], BRAINS, default_model)
+
+    def goal_agent_brain(self, default_model: str) -> dict:
+        return brain_choice(self.data["goal_brain"], GOAL_BRAINS, default_model)
+
+    def update(self, *, about: str | None = None, usage: str | None = None, mcp: list[str] | None = None,
+               brain: str | None = None, goal_brain: str | None = None) -> None:
         with self._lock:
+            if brain is not None:
+                self.data["brain"] = brain if brain in BRAINS else ""
+            if goal_brain is not None and goal_brain in GOAL_BRAINS:
+                self.data["goal_brain"] = goal_brain
             if about is not None:
                 self.data["about"] = about.strip()[:MAX_TEXT]
             if usage is not None:

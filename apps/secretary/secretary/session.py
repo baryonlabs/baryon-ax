@@ -93,12 +93,14 @@ def goal_tools(manager: Any, repo: str):
 
 
 def build_options(can_use_tool: Callable, *, cwd: str, model: str, mcp_names: list[str], goals: Any = None,
-                  profile: Any = None):
+                  profile: Any = None, effort: str | None = None, fallback: str | None = None):
     from claude_agent_sdk import ClaudeAgentOptions
 
     today = datetime.now(ZoneInfo(os.getenv("SECRETARY_TZ", "Asia/Seoul"))).strftime("%Y년 %m월 %d일 %A %H시 %M분")
     return ClaudeAgentOptions(
         model=model,
+        effort=effort,
+        fallback_model=fallback,
         cwd=cwd,
         include_partial_messages=True,
         can_use_tool=can_use_tool,
@@ -130,7 +132,8 @@ def result_text(content: object) -> str:
 
 class Session:
     def __init__(self, client_factory: Callable[[Any], Any], *, owner: str, cwd: str, model: str, mcp_names: list[str],
-                 options_factory: Callable[..., Any] = build_options, goals: Any = None, profile: Any = None) -> None:
+                 options_factory: Callable[..., Any] = build_options, goals: Any = None, profile: Any = None,
+                 effort: str | None = None, fallback: str | None = None) -> None:
         self.id = uuid.uuid4().hex
         self.owner = owner
         self.created = self.last_active = time.time()
@@ -148,6 +151,10 @@ class Session:
         extra = {"goals": goals} if goals is not None else {}
         if profile is not None:
             extra["profile"] = profile
+        if effort:
+            extra["effort"] = effort
+        if fallback:
+            extra["fallback"] = fallback
         self._client = client_factory(options_factory(self._can_use_tool, cwd=cwd, model=model, mcp_names=mcp_names, **extra))
 
     async def start(self) -> None:
