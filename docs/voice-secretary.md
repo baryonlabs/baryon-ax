@@ -81,6 +81,34 @@ A real run started two goals on a test repository at once ("fix add", "make aver
 
 API (same bearer key): `GET/PUT /v1/profile`, `POST /v1/memories`, `DELETE /v1/memories/{id}`. A running conversation keeps its tools and instructions; changes apply from the next call. The phone app reaches this through the gateway's settings channel ([voice-app.md](voice-app.md#protocol)).
 
+## Scheduling by conversation
+
+"다음 주에 김 대표랑 미팅 잡아 줘" runs four steps, each spoken back:
+
+| Step | Source | Tool | Confirmation |
+| --- | --- | --- | --- |
+| 1. Find the request | Mail | `gog gmail search` / `thread get` | none (read only) |
+| | Slack | `mcp__slack__search_messages`, `read_channel` | none |
+| | KakaoTalk | DureClaw deskclaw node: `[KAKAO] unread`, `triage` | none |
+| | | `[KAKAO] read "방"` | yes: opening a room marks it read for the other side |
+| 2. Free time | Google Calendar | `gog calendar freebusy`, `conflicts` | none; 2–3 options are offered aloud |
+| 3. Book | Google Calendar | `gog calendar create` / `update` | read back: title, day and time, attendees |
+| 4. Reply | where the request came from | `gog gmail send --thread-id`, `post_message`, `[KAKAO] send … --yes` | read back: recipient and text |
+
+Setup:
+
+- **Slack**: set `SECRETARY_SLACK_TOKEN`. A user token (`xoxp-`) with `search:read`, `channels:history`,
+  `groups:history`, `im:history`, `mpim:history`, `channels:read`, `users:read` and `chat:write` sees what the owner
+  sees and can search; a bot token (`xoxb-`) reads only channels the bot was invited to and cannot search.
+- **KakaoTalk**: a deskclaw node with the `kakao` capability on the Mac that runs KakaoTalk
+  (DureClaw deskclaw). macOS must grant that process Accessibility (System Settings →
+  Privacy & Security → Accessibility). Results arrive as bus notifications (`get_notifications(task_id)`).
+- **Calendar**: the same gogcli sign-in as mail, with the calendar scope.
+
+Tested: "이번 주 수요일 오후에 1시간 미팅 잡을 수 있는 시간 알려줘" → free/busy looked up without a question, three
+times offered (7.9 s). "수요일 오후 3시에 … 잡아줘" → "일정을 등록할까요? '…', 11월 25일 15:00부터 16:00까지"; after
+"아니" no event was created.
+
 ## Confirmations
 
 Confirmations are enforced in code, not left to the model. Every tool call

@@ -27,6 +27,7 @@ from zoneinfo import ZoneInfo
 
 from .policy import confirmation_prompt, decide, parse_answer, status_label
 from .profile import claude_mcp_servers, memory_tools
+from .slack_tools import slack_tools
 
 logger = logging.getLogger("secretary")
 
@@ -49,6 +50,19 @@ PERSONA = """너는 사용자의 음성 비서다. 사용자는 운전 중일 �
 - 회사 규정, 업무 절차, 사내 지식 질문은 baryon-ax 도구(ask 또는 search_documents)로 먼저 찾고, 답에 어느 문서에서 찾았는지 짧게 붙인다. 출처는 결과의 'Sources used in the answer'에 있는 문서만 말하고, 'Also retrieved'에 있는 문서는 출처로 말하지 않는다. 파일 이름(tacit-tk_… 같은 것)은 읽지 말고 '재무팀이 남긴 노하우 메모'처럼 무엇인지로 말한다. 근거가 없으면 지어내지 말고 모른다고 말한다. 사용자가 답을 알려 주며 남겨 달라고 하면 record_answer로 초안을 만들고, 게시를 원하면 publish_answer로 게시한다.
 - 잘 못 알아들었으면 짐작하지 말고 짧게 되묻는다.
 - "너 누구야", "뭘 할 수 있어" 같은 질문에는 바리온 비서라고 소개하고 세 가지로 답한다: 첫째, 메일·일정·할 일·PR과 CI 요약. 둘째, 코딩과 조사는 목표 에이전트에게 맡기고 끝나면 먼저 알려 줌. 셋째, 다른 머신 일은 DureClaw 플릿에 보냄. 앱 설정의 '비서에게 알려 주기'에서 소개, 원하는 방식, 기억, 연결(MCP)을 바꿀 수 있다고 덧붙인다.
+- 일정 조정 요청("다음 주에 김 대표랑 미팅 잡아 줘", "이 메일 일정 맞춰 줘")은 이 순서로 한다.
+  1) 요청 찾기: 상대와 후보 시간을 메일(gog gmail search), 슬랙(search_messages, read_channel), 카톡에서 찾는다.
+     카톡은 DureClaw 데스크 노드에 send_task(to "deskclaw@oah")로 "[KAKAO] unread -n 30" 또는 "[KAKAO] triage -n 30"을
+     보내 방 목록을 먼저 보고, 필요한 방만 "[KAKAO] read \"방 이름\" -n 20"으로 읽는다(읽음 표시가 되니 확인을 받는다).
+     결과는 send_task가 돌려준 task_id로 get_notifications(task_id)를 불러 받는다(몇 초 걸린다). 권한 오류가 나면
+     "카톡을 읽으려면 그 Mac에서 손쉬운 사용 권한이 필요해요"라고 말한다. 어디서 찾았는지 한 줄로 말한다.
+  2) 빈 시간: gog calendar freebusy --from … --to … -j 와 gog calendar conflicts 로 내 일정을 보고, 업무 시간 안의 후보
+     2~3개를 "첫째 화요일 오후 3시, 둘째 수요일 오전 10시"처럼 말로 제안한다. 상대가 낸 시간이 있으면 그중 비는 것부터.
+  3) 확정: 고르면 gog calendar create primary --summary … --from … --to … (RFC3339, +09:00) --attendees … 로 등록한다.
+     기존 일정을 옮길 때는 update. 시스템이 제목·시간·참석자를 되읽어 확인을 받는다.
+  4) 회신: 요청이 온 곳으로 답한다(메일 gog gmail send --thread-id, 슬랙 post_message, 카톡 "[KAKAO] send \"방\" \"내용\" --yes").
+     보내기 전에 내용을 짧게 되읽는다. 회신 없이 끝내지 말고, 하지 않을 거면 "회신은 안 할게요"라고 말한다.
+  시간은 항상 한국 시간으로 말하고, 날짜는 "11월 25일 화요일"처럼 요일을 붙인다. 모르는 사람 이메일은 지어내지 말고 묻는다.
 - 사용자가 "기억해 줘"라고 하거나 오래 갈 선호(호칭, 말투, 자주 보는 저장소, 함께 일하는 사람)를 말하면 remember로 짧게 저장하고 "기억했어요"라고 말한다. 잊으라고 하면 forget을 쓴다.
 오늘은 {today}이다.{profile}"""
 
@@ -109,7 +123,8 @@ def build_options(can_use_tool: Callable, *, cwd: str, model: str, mcp_names: li
         can_use_tool=can_use_tool,
         setting_sources=[],  # lean: no user hooks/plugins/CLAUDE.md, which add seconds and cost per turn
         mcp_servers={**imported_mcp_servers(mcp_names), **({"goals": goal_tools(goals, cwd)} if goals else {}),
-                     **({"memory": memory_tools(profile)} if profile else {})},
+                     **({"memory": memory_tools(profile)} if profile else {}),
+                     **({"slack": slack_tools()} if os.getenv("SECRETARY_SLACK_TOKEN") else {})},
         system_prompt={"type": "preset", "preset": "claude_code",
                        "append": PERSONA.format(today=today, profile=owner_block(profile))},
     )

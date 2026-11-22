@@ -457,3 +457,56 @@ def test_baryon_knowledge_tools(tool: str, action: str) -> None:
 def test_publishing_knowledge_is_read_back() -> None:
     assert "게시할까요" in policy.confirmation_prompt("mcp__baryon-ax__publish_answer", {"entry_id": "tk_1"})
     assert "출장비" in policy.confirmation_prompt("mcp__baryon-ax__record_answer", {"question": "출장비 정산 마감"})
+
+
+# --- scheduling: mail, Slack, KakaoTalk (deskclaw) and the calendar ---------------------------
+
+@pytest.mark.parametrize("tool,tool_input,action", [
+    ("Bash", {"command": "gog calendar freebusy --from 2026-11-24 --to 2026-11-28 -j"}, "auto"),
+    ("Bash", {"command": "gog calendar conflicts --from today --to 2026-11-30 -j"}, "auto"),
+    ("Bash", {"command": "gog calendar create primary --summary '김대표 미팅' --from 2026-11-25T15:00:00+09:00 --to 2026-11-25T16:00:00+09:00"}, "confirm"),
+    ("mcp__dureclaw__send_task", {"to": "deskclaw@oah", "instructions": "[KAKAO] unread -n 30"}, "auto"),
+    ("mcp__dureclaw__send_task", {"to": "deskclaw@oah", "instructions": "[KAKAO] triage -n 30"}, "auto"),
+    ("mcp__dureclaw__send_task", {"to": "deskclaw@oah", "instructions": '[KAKAO] send "김대표" "화요일 3시 어떠세요?"'}, "auto"),  # dry run
+    ("mcp__dureclaw__send_task", {"to": "deskclaw@oah", "instructions": '[KAKAO] read "김대표" -n 20'}, "confirm"),   # marks read
+    ("mcp__dureclaw__send_task", {"to": "deskclaw@oah", "instructions": '[KAKAO] send "김대표" "화요일 3시 어떠세요?" --yes'}, "confirm"),
+    ("mcp__dureclaw__send_task", {"to": "builder@b300", "instructions": "run the tests"}, "confirm"),
+    ("mcp__slack__search_messages", {"query": "미팅"}, "auto"),
+    ("mcp__slack__read_channel", {"channel": "#general"}, "auto"),
+    ("mcp__slack__post_message", {"channel": "#general", "text": "화요일 3시 괜찮아요"}, "confirm"),
+])
+def test_scheduling_policy(tool: str, tool_input: dict, action: str) -> None:
+    assert policy.decide(tool, tool_input).action == action
+
+
+def test_scheduling_actions_are_read_back() -> None:
+    event = policy.confirmation_prompt("Bash", {"command":
+        "gog calendar create primary --summary '김대표 미팅' --from 2026-11-25T15:00:00+09:00 "
+        "--to 2026-11-25T16:00:00+09:00 --attendees kim@example.com"})
+    assert event.startswith("일정을 등록할까요?") and "김대표 미팅" in event and "11월 25일 15:00" in event
+    assert "16:00까지" in event and "kim@example.com" in event
+    moved = policy.confirmation_prompt("Bash", {"command": "gog calendar update primary ev1 --from 2026-11-26T10:00:00+09:00"})
+    assert moved.startswith("일정을 바꿀까요?") and "11월 26일 10:00" in moved
+    kakao = policy.confirmation_prompt("mcp__dureclaw__send_task",
+                                       {"instructions": '[KAKAO] send "김대표" "화요일 3시 어떠세요?" --yes'})
+    assert "김대표" in kakao and "화요일 3시" in kakao
+    assert "읽음" in policy.confirmation_prompt("mcp__dureclaw__send_task", {"instructions": '[KAKAO] read "김대표"'})
+    assert "슬랙" in policy.confirmation_prompt("mcp__slack__post_message", {"channel": "#sales", "text": "확인했어요"})
+
+
+def test_slack_reader_reads_names_and_explains_missing_search_scope() -> None:
+    from secretary.slack_tools import SlackReader
+
+    def fake(method, params):
+        return {
+            "conversations.list": {"ok": True, "channels": [{"id": "C1", "name": "sales"}, {"id": "D1", "is_im": True, "user": "U1"}]},
+            "users.info": {"ok": True, "user": {"profile": {"display_name": "김대표"}}},
+            "conversations.history": {"ok": True, "messages": [{"user": "U1", "text": "화요일 3시 어때요?", "ts": "2"},
+                                                               {"user": "U1", "text": "미팅 하시죠", "ts": "1"}]},
+            "search.messages": {"ok": False, "error": "not_allowed_token_type"},
+        }[method]
+
+    reader = SlackReader(fake)
+    text = reader.read("DM 김대표")
+    assert text.splitlines() == ["[1] 김대표: 미팅 하시죠", "[2] 김대표: 화요일 3시 어때요?"]  # oldest first
+    assert "사용자 토큰" in reader.search("미팅")
