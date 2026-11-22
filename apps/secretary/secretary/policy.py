@@ -39,6 +39,9 @@ AUTO_MCP_SUFFIXES = (
     "__list_issues", "__get_issue", "__list_comments",
     "__list_goals", "__answer_goal", "__cancel_goal",  # the user's own background agents
     "__memory__remember", "__memory__list_memories", "__memory__forget",  # the secretary's own notes about its owner (profile.py)
+    # Baryon AX's own MCP server (POST /mcp): reading company knowledge. Saving or publishing an answer
+    # (record_answer, publish_answer) changes the knowledge base, so it still needs a spoken yes.
+    "__search_documents", "__list_knowledge_gaps", "__suggest_questions", "__baryon-ax__ask",
 )
 
 DENY_BASH = re.compile(
@@ -136,6 +139,10 @@ def confirmation_prompt(tool: str, tool_input: dict) -> str:
         return f"할 일을 수정할까요? {_short(tool_input.get('title') or tool_input.get('id'))}"
     if name in {"send_message", "reply", "forward"}:
         return f"메일을 보낼까요? 받는 사람 {_short(tool_input.get('to') or tool_input.get('recipient'), 40)}"
+    if name == "record_answer":
+        return f"이 답을 지식 초안으로 저장할까요? {_short(tool_input.get('question'), 40)}"
+    if name == "publish_answer":
+        return "이 답을 사내 지식으로 게시할까요? 게시하면 다른 사람 질문의 근거가 돼요."
     if name in {"create_draft", "update_draft"}:
         return "메일 초안을 저장할까요?"
     if name in {"create_event", "update_event"}:
