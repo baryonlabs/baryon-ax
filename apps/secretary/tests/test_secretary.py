@@ -146,6 +146,8 @@ def test_confirmation_prompts_say_what_will_happen() -> None:
     prompt = policy.confirmation_prompt("mcp__dureclaw__send_task", {"to": "builder@mini", "instructions": "로그인 버그를 고치고 테스트를 통과시켜 PR을 올려줘"})
     assert prompt.startswith("builder@mini에게 이 작업을 보낼까요?") and "로그인 버그" in prompt
     assert "파일을 수정할까요" in policy.confirmation_prompt("Edit", {"file_path": "/repo/app/main.py"})
+    assert policy.confirmation_prompt("mcp__dureclaw__send_task", {"to": "webclaw", "instructions": "[OPEN] https://www.naver.com/news?a=1"}) \
+        == "webclaw에게 이 작업을 보낼까요? 열기 naver.com"
     assert policy.confirmation_prompt("mcp__dureclaw__browser_run", {"instructions": "[OPEN] https://www.naver.com"}) \
         == "브라우저 노드에서 이 작업을 할까요? 열기 naver.com"
     assert policy.status_label("mcp__claude_ai_Gmail__search_threads", {}) == "메일을 확인하고 있어요."
