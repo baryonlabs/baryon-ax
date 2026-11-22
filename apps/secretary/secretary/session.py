@@ -7,6 +7,7 @@ per turn. Each turn's output is turned into small events that a voice client spe
     {"type": "status", "text": "..."}        spoken filler while a tool runs
     {"type": "confirm", "id", "prompt"}      a yes/no question before a side effect
     {"type": "confirmed", "id", "allow"}     the user's answer was applied
+    {"type": "card", "card": {...}}          something to look at on the phone (screen.py), not spoken
     {"type": "done", "cost_usd", "ms"}       the turn finished
     {"type": "error", "message"}
 """
@@ -28,17 +29,22 @@ from zoneinfo import ZoneInfo
 from .policy import confirmation_prompt, decide, parse_answer, status_label
 from .notify import notify_tools
 from .profile import claude_mcp_servers, memory_tools
+from .screen import screen_tools
 from .slack_tools import slack_tools
 
 logger = logging.getLogger("secretary")
 
 CONFIRM_TIMEOUT = float(os.getenv("SECRETARY_CONFIRM_TIMEOUT", "120"))
 INTERRUPT_GRACE = 5.0  # seconds to let an interrupted turn wind down before the next starts
-SILENT_TOOLS = {"ToolSearch", "TodoWrite"}  # internal bookkeeping: nothing worth saying aloud
+SILENT_TOOLS = {"ToolSearch", "TodoWrite", "mcp__screen__show"}  # bookkeeping, and the screen card itself: nothing to say aloud
+IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 STOP_WORDS = {"멈춰", "그만", "중지", "스톱", "stop", "취소"}
 
-PERSONA = """너는 사용자의 음성 비서다. 사용자는 운전 중일 수 있고 화면을 볼 수 없다.
-- 결론부터 2~3문장의 자연스러운 한국어 구어체로 말한다. 마크다운, 표, 코드 블록, URL, 이모지를 쓰지 않는다.
+PERSONA = """너는 사용자의 음성 비서다. 사용자는 운전 중이라 화면을 못 볼 수도 있고, 폰 화면으로 같이 볼 수도 있다.
+- 말과 화면을 나눈다. 말은 결론만 1~2문장의 자연스러운 한국어 구어체로 한다. 마크다운, 표, 코드 블록, URL, 이모지를 말에 쓰지 않는다.
+- 볼 만한 것(목록 네 개 이상, 여러 항목의 비교, 금액·건수·시간 같은 숫자, 추이, 일정표, 긴 요약)은 show 도구로 화면 카드에 띄운다. 비교는 bar, 시간에 따른 변화는 line, 핵심 숫자 두세 개는 stats, 고를 것이나 할 일은 list, 여러 칸이 있는 것은 table, 길게 읽을 내용은 text. 띄운 뒤 말로는 "세 건이에요, 화면에 정리했어요"처럼 요점만 말하고 화면 내용을 다시 읽지 않는다.
+- 사진이 오면 무엇이 보이는지 먼저 한 문장으로 말하고, 글자·숫자·표가 있으면 옮겨서 화면 카드로 보여 준다. 영수증, 명함, 문서, 화면 캡처, 화이트보드를 알아본다.
+- "[녹음 …]"으로 시작하는 입력은 사용자가 녹음해 글로 옮긴 것이다(받아쓰기라 틀린 말이 섞일 수 있다). 요청이 없으면 핵심 요약, 결정된 것, 할 일을 text나 list 카드로 보여 주고 말로는 한두 문장만 한다.
 - 숫자와 이름은 귀로 듣기 쉽게 말한다. 목록은 "첫째, 둘째"처럼 말하고 세 개를 넘기지 않는다. 더 있으면 "더 들으실래요?"라고 묻는다.
 - 도구를 쓰기 전에 무엇을 할지 한 문장으로 먼저 말한다. 변경이 생기는 작업은 시스템이 사용자에게 확인을 받으니, 거절되면 이유를 묻지 말고 다른 방법을 제안한다.
 - 코딩·조사처럼 시간이 걸리는 일은 start_goal로 목표 에이전트에게 맡긴다. 제목, 목표, 완료 조건(예: 테스트 통과)을 구체적으로 쓴다. 여러 개를 동시에 맡겨도 된다. 맡긴 뒤에는 "맡겼어요, 끝나면 알려 드릴게요"라고 말하고 대화를 이어 간다. 진행 상황은 list_goals로 확인한다. 목표 에이전트는 자기 브랜치에 커밋까지만 하고, push나 PR은 사용자가 원하면 네가 확인을 받고 한다.
@@ -112,7 +118,8 @@ def goal_tools(manager: Any, repo: str):
 
 
 def build_options(can_use_tool: Callable, *, cwd: str, model: str, mcp_names: list[str], goals: Any = None,
-                  profile: Any = None, effort: str | None = None, fallback: str | None = None, notifier: Any = None):
+                  profile: Any = None, effort: str | None = None, fallback: str | None = None, notifier: Any = None,
+                  show: Callable[[dict], None] | None = None):
     from claude_agent_sdk import ClaudeAgentOptions
 
     today = datetime.now(ZoneInfo(os.getenv("SECRETARY_TZ", "Asia/Seoul"))).strftime("%Y년 %m월 %d일 %A %H시 %M분")
@@ -127,10 +134,23 @@ def build_options(can_use_tool: Callable, *, cwd: str, model: str, mcp_names: li
         mcp_servers={**imported_mcp_servers(mcp_names), **({"goals": goal_tools(goals, cwd)} if goals else {}),
                      **({"memory": memory_tools(profile)} if profile else {}),
                      **({"phone": notify_tools(notifier)} if notifier is not None else {}),
+                     **({"screen": screen_tools(show)} if show is not None else {}),
                      **({"slack": slack_tools()} if os.getenv("SECRETARY_SLACK_TOKEN") else {})},
         system_prompt={"type": "preset", "preset": "claude_code",
                        "append": PERSONA.format(today=today, profile=owner_block(profile))},
     )
+
+
+def user_message(text: str, images: list[dict]):
+    """One user turn with photos, as the SDK's streaming input (content blocks)."""
+    content: list[dict] = [{"type": "image", "source": {"type": "base64", "media_type": image["media_type"],
+                                                         "data": image["data"]}}
+                           for image in images if image.get("media_type") in IMAGE_TYPES and image.get("data")]
+    content.append({"type": "text", "text": text or "이 사진을 봐 줘."})
+
+    async def stream():
+        yield {"type": "user", "message": {"role": "user", "content": content}, "parent_tool_use_id": None}
+    return stream()
 
 
 def owner_block(profile: Any) -> str:
@@ -174,6 +194,7 @@ class Session:
             extra["profile"] = profile
         if notifier is not None:
             extra["notifier"] = notifier
+        extra["show"] = lambda shown: self.emit({"type": "card", "card": shown})
         if effort:
             extra["effort"] = effort
         if fallback:
@@ -198,10 +219,13 @@ class Session:
 
     # --- user input -------------------------------------------------------------------
 
-    async def turn(self, text: str) -> str:
-        """Handle one utterance. Returns how it was used: confirm | answer | interrupt | queued."""
+    async def turn(self, text: str, images: list[dict] | None = None) -> str:
+        """Handle one utterance (with photos, if the owner attached any).
+        Returns how it was used: confirm | answer | interrupt | queued."""
         self.last_active = time.time()
         text = text.strip()
+        if images:  # a photo is always a new request, never a yes or no
+            self._resolve_pending(False)
         if self.pending:
             answer = parse_answer(text)
             if answer is not None:
@@ -218,7 +242,7 @@ class Session:
                     await asyncio.wait_for(asyncio.shield(self._task), INTERRUPT_GRACE)
                 except (asyncio.TimeoutError, Exception):
                     pass
-        self._task = asyncio.create_task(self._run(text))
+        self._task = asyncio.create_task(self._run(text, images))
         return "answer"
 
     def notify(self, text: str) -> None:
@@ -244,13 +268,13 @@ class Session:
 
     # --- agent loop -------------------------------------------------------------------
 
-    async def _run(self, text: str) -> None:
+    async def _run(self, text: str, images: list[dict] | None = None) -> None:
         self.busy = True
         self.turns += 1
         started = time.perf_counter()
         self._last_status = ""
         try:
-            await self._client.query(text)
+            await self._client.query(user_message(text, images) if images else text)
             async for message in self._client.receive_response():
                 self._translate(message, started)
         except asyncio.CancelledError:

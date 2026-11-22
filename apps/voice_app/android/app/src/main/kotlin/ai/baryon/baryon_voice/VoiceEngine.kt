@@ -83,7 +83,7 @@ object VoiceEngine {
                 emit("state", "state" to if (audio) "connected" else "typing", "audio" to audio)
                 if (audio) startAudio(webSocket)
                 prefsJson?.let { webSocket.send(it) }
-                synchronized(pendingTexts) { pendingTexts.forEach { sendText(it) }; pendingTexts.clear() }
+                synchronized(pendingTexts) { pendingTexts.forEach { sendRaw(it) }; pendingTexts.clear() }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -135,12 +135,15 @@ object VoiceEngine {
     }
 
     /** Typed message or a tapped answer such as "응". Queued until the line is open. */
-    fun sendText(text: String) {
+    fun sendText(text: String) = sendRaw(JSONObject().put("type", "text").put("text", text).toString())
+
+    /** A message from the app as JSON (a typed line, or one with a photo or a transcribed recording). */
+    fun sendRaw(json: String) {
         if (!open) {
-            synchronized(pendingTexts) { pendingTexts += text }
+            synchronized(pendingTexts) { pendingTexts += json }
             return
         }
-        socket?.send(JSONObject().put("type", "text").put("text", text).toString())
+        socket?.send(json)
     }
 
     /**

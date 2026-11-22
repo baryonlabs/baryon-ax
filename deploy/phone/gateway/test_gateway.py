@@ -647,3 +647,83 @@ def test_notifications_reach_every_phone_and_wait_for_an_ack() -> None:
         await relay.ack("a1b2")  # a second ack (two phones) is not sent again
         assert acked == ["/v1/notifications/a1b2/ack"]
     asyncio.run(run())
+
+
+def test_a_typed_message_can_carry_photos_and_a_recording() -> None:
+    photo = {"media_type": "image/jpeg", "data": "QUJD" * 10}
+    message = gateway.typed_message({"type": "text", "text": "이거 뭐야", "images": [photo, {"media_type": "text/html", "data": "x" * 40}],
+                                     "shown": {"kind": "image", "ref": "/cache/a.jpg", "evil": {"x": 1}}})
+    assert message == {"text": "이거 뭐야", "images": [photo], "shown": {"kind": "image", "ref": "/cache/a.jpg"}}
+    long = "가" * 30000
+    assert len(gateway.typed_message({"text": long})["text"]) == 2000
+    assert len(gateway.typed_message({"text": long, "shown": {"kind": "recording", "seconds": 600}})["text"]) == 30000
+
+
+def test_a_long_recording_is_cut_at_quiet_moments_and_stamped() -> None:
+    import re as _re
+
+    import recording
+
+    rate = 16000
+    rng = np.random.default_rng(1)
+    speech = lambda seconds: (0.2 * np.sin(np.arange(int(rate * seconds)) * 0.05)
+                              + 0.01 * rng.standard_normal(int(rate * seconds))).astype(np.float32)
+    quiet = lambda seconds: np.zeros(int(rate * seconds), np.float32)
+    samples = np.concatenate([speech(18), quiet(1), speech(20), quiet(30), speech(5)])  # 74 s
+    ranges = recording.pieces(samples)
+    assert all(15 * rate <= end - start <= 25 * rate for start, end in ranges[:-1])
+    assert ranges[0][1] in range(18 * rate, 19 * rate)  # cut inside the pause, not mid-word
+    assert ranges[-1][1] == len(samples)
+
+    heard: list = []
+
+    async def transcribe(piece, rate_):
+        heard.append(len(piece))
+        return "시청해 주셔서 감사합니다" if len(heard) == 3 else f"말 {len(heard)}"
+
+    async def run():
+        progress: list = []
+
+        async def report(done, total):
+            progress.append((done, total))
+        text, count = await recording.transcribe_recording(samples, transcribe, gateway.PHANTOM_PHRASES, report)
+        return text, count, progress
+    text, count, progress = asyncio.run(run())
+    lines = text.splitlines()
+    assert lines[0].startswith("[00:00] 말") and len(lines) == count
+    assert all(_re.match(r"\[\d\d:\d\d\] 말 \d", line) for line in lines)  # the phantom piece is dropped
+    assert len(heard) < len(ranges)  # the silent stretch was never sent to the speech model
+    assert progress[-1] == (len(ranges), len(ranges))
+    assert recording.stamp(3725) == "1:02:05"
+
+
+def test_upload_turns_a_recording_into_text() -> None:
+    import recording
+
+    class Socket:
+        def __init__(self, messages):
+            self.messages, self.sent = messages, []
+
+        async def send(self, text):
+            self.sent.append(json.loads(text))
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self.messages:
+                raise StopAsyncIteration
+            return self.messages.pop(0)
+
+    tone = (0.3 * np.sin(np.arange(16000 * 3) * 0.07) * 32767).astype("<i2").tobytes()
+
+    async def transcribe(piece, rate):
+        return "회의는 3시에 합니다"
+
+    socket = Socket([b"ignored before start", '{"type": "recording", "rate": 16000}', tone[:40000], tone[40000:], '{"type": "end"}'])
+    asyncio.run(recording.receive_upload(socket, transcribe, gateway.PHANTOM_PHRASES))
+    assert socket.sent[0] == {"type": "received", "seconds": 3.0}
+    assert socket.sent[-1] == {"type": "transcript", "text": "[00:00] 회의는 3시에 합니다", "seconds": 3.0, "pieces": 1}
+    bad = Socket(['{"type": "recording", "rate": 12345}'])
+    asyncio.run(recording.receive_upload(bad, transcribe, gateway.PHANTOM_PHRASES))
+    assert bad.sent[0]["type"] == "error"

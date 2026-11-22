@@ -41,6 +41,7 @@ AUTO_MCP_SUFFIXES = (
     "__list_goals", "__answer_goal", "__cancel_goal",  # the user's own background agents
     "__slack__search_messages", "__slack__read_channel", "__slack__list_conversations",  # reading Slack
     "__memory__remember", "__memory__list_memories", "__memory__forget",  # the secretary's own notes about its owner (profile.py)
+    "__screen__show",  # a card on the owner's own screen
     "__phone__notify_phone", "__phone__list_reminders", "__phone__cancel_reminder",  # ringing only the owner's own phone (notify.py)
     # Baryon AX's own MCP server (POST /mcp): reading company knowledge. Saving or publishing an answer
     # (record_answer, publish_answer) changes the knowledge base, so it still needs a spoken yes.
