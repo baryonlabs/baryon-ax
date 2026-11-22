@@ -32,12 +32,14 @@ class MainActivity : FlutterActivity() {
         provision(intent)
         publishShortcuts()
         callIfAsked(intent)
+        askIfDebug(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         provision(intent)
         callIfAsked(intent)
+        askIfDebug(intent)
     }
 
     /** "비서에게 전화" from the home screen or the icon's long-press menu: one tap, the call starts. */
@@ -45,6 +47,22 @@ class MainActivity : FlutterActivity() {
         if (intent?.action != ACTION_CALL_SECRETARY || VoiceEngine.isRunning) return
         intent.action = Intent.ACTION_MAIN // not again on rotation
         main.postDelayed({ withPermissions { startCall() } }, 300)
+    }
+
+    /**
+     * Debug builds only: type a message as if from the input box, for demos and screenshots over USB
+     * (adb cannot type Korean):
+     *   adb shell am start -n ai.baryon.baryon_voice/.MainActivity --es ask "해외 출장비 정산 마감이 언제야?"
+     */
+    private fun askIfDebug(intent: Intent?) {
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        val text = intent?.getStringExtra("ask")?.trim().orEmpty()
+        if (text.isEmpty()) return
+        intent?.removeExtra("ask") // not again on rotation
+        main.postDelayed({
+            if (!VoiceEngine.isRunning) startTyped()
+            VoiceEngine.sendText(text)
+        }, 600)
     }
 
     private fun startCall() {
