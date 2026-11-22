@@ -7,11 +7,11 @@
 **문서에 없는 지식은, AI가 먼저 물어봅니다.**
 
 사내 문서로 근거를 들어 답하고, 답하지 못한 질문은 전문가에게 먼저 물어 조직의 지식으로 쌓는<br>
-**온프레미스 · 모델 비종속 · MIT 오픈소스** 엔터프라이즈 AI 플랫폼<br>
+**온프레미스 · 모델 비종속 · 소스 공개** 엔터프라이즈 AI 플랫폼<br>
 운전 중에도 전화 한 통으로 요약을 듣고 일을 맡기는 **음성 비서**까지 함께 공개합니다
 
 [![Release](https://img.shields.io/github/v/release/baryonlabs/baryon-ax?label=release&color=1f6f5c)](https://github.com/baryonlabs/baryon-ax/releases/latest)
-[![License: MIT](https://img.shields.io/badge/license-MIT-1f6f5c)](LICENSE)
+[![License: Community 1.0](https://img.shields.io/badge/license-Community%201.0%20%2B%20Commercial-1f6f5c)](docs/licensing.md)
 [![CI](https://github.com/baryonlabs/baryon-ax/actions/workflows/ci.yml/badge.svg)](https://github.com/baryonlabs/baryon-ax/actions/workflows/ci.yml)
 [![security-sweep](https://github.com/baryonlabs/baryon-ax/actions/workflows/security-sweep.yml/badge.svg)](https://github.com/baryonlabs/baryon-ax/actions/workflows/security-sweep.yml)
 
@@ -637,7 +637,7 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 | v0.8.0 | 보안 심사를 통과하는 운영 기능 | 사용자 · 조직 · 역할 관리 UI, 감사 로그 검색 · 내보내기 · 보존, 백업 · 복구 런북, 공유 링크 |
 | v0.9.0 | 지식 품질 | 온톨로지 편집 UI, 대화 자동 메모리, E2E CI |
 
-대상 고객과 오픈소스 범위(무엇을 공개하고 무엇을 지원으로 제공하는지)는 [docs/roadmap.md](docs/roadmap.md)에 있습니다.
+대상 고객과 공개 범위(무엇을 공개하고 무엇을 지원으로 제공하는지)는 [docs/roadmap.md](docs/roadmap.md)에 있습니다.
 
 <a id="docs"></a>
 ## 문서 지도
@@ -705,7 +705,7 @@ API_BASE=http://127.0.0.1:8000 REQUIRE_FULL=1 python3 scripts/smoke_full_stack.p
 <a id="english"></a>
 ## English
 
-**Baryon AX** is an on-premises, model-agnostic, MIT-licensed platform for enterprise AI agents that answer from your documents with citations and **ask experts first** for the tacit knowledge that was never written down.
+**Baryon AX** is an on-premises, model-agnostic, source-available platform for enterprise AI agents that answer from your documents with citations and **ask experts first** for the tacit knowledge that was never written down.
 
 - **Grounded answers**: streaming chat with source, chunk, and quote citations; a warning instead of a guess when evidence is missing; organization and role ACLs applied before retrieval reaches the model.
 - **Korean-document ready**: MIME-based routing to kordoc (HWP/HWPX), docling (PDF/Office/images), and Tika; structure-aware chunking; vector or hybrid retrieval.
@@ -718,4 +718,6 @@ Start with one line (Docker only, no GPU or API key): see [Quick start](#quick-s
 
 ## 라이선스
 
-[MIT](LICENSE) © Baryon AX contributors. 사용한 오픈소스 구성 요소와 라이선스는 [docs/open-source.md](docs/open-source.md)와 [홈페이지](https://baryon-ax.baryon.ai/open-source/)에 있습니다.
+**소스 공개 멀티 라이선스**입니다. 개인·10인 미만 조직·30일 도입 검토는 [Baryon AX Community License 1.0](LICENSE)으로 무료이고, **10인 이상 조직의 운영 사용과 호스팅 제공은 상용 라이선스**가 필요합니다(도입 상담: martin@baryon.ai). v0.7.0 이하 릴리스는 계속 [MIT](LICENSE.MIT-legacy)입니다. 자세한 기준은 [docs/licensing.md](docs/licensing.md)를 보세요.
+
+© 2026 Baryon Labs. 사용한 외부 오픈소스 구성 요소와 라이선스는 [docs/open-source.md](docs/open-source.md)와 [홈페이지](https://baryon-ax.baryon.ai/open-source/)에 있습니다.

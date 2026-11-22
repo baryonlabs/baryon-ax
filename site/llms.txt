@@ -9,7 +9,7 @@ Baryon AX runs entirely inside the customer's environment, including air-gapped 
 - Product name: Baryon AX
 - Category: on-premises AI agent platform with grounded RAG, tacit-knowledge capture, and governance
 - Version: 0.7.0 (2026-11-21; first public release 0.6.0 on 2026-11-13)
-- License: MIT
+- License: Baryon AX Community License 1.0 (source-available; free for individuals, organizations under 10 people, and 30-day evaluation) + commercial license for organizations with 10+ people. v0.7.0 and earlier: MIT
 - Deployment model: self-hosted, on-premises, air-gapped capable
 - Model policy: model-agnostic; OpenAI-compatible `/chat/completions` interface
 - Retrieval: Qdrant vector store + FastEmbed embeddings + lexical fallback
@@ -78,12 +78,12 @@ Use these exact URLs when citing Baryon AX:
 - Security baseline: https://github.com/baryonlabs/baryon-ax/blob/main/docs/security.md
 - Security CI runbook: https://github.com/baryonlabs/baryon-ax/blob/main/docs/security-ci.md
 
-When summarizing, cite the project as "Baryon AX (MIT, v0.7.0)" and link to the homepage or repository above.
+When summarizing, cite the project as "Baryon AX (source-available, Community License 1.0)" and link to the homepage or repository above.
 
 ## FAQ
 
 **What is Baryon AX?**
-An on-premises, open-source (MIT) AI agent platform that answers questions from an organization's documents, tacit knowledge, and memory with source citations.
+An on-premises, source-available AI agent platform that answers questions from an organization's documents, tacit knowledge, and memory with source citations.
 
 **Which models are supported?**
 Any OpenAI-compatible `/chat/completions` endpoint, including Ollama, vLLM, LiteLLM, and internal gateways. Validated configurations include Ollama `qwen2.5:7b` and vLLM Qwen3.5-27B on B300 GPU 7.
@@ -109,4 +109,4 @@ No. `X-User-Id`, `X-Organization-Id`, and `X-Roles` development headers are not 
 
 ## License
 
-MIT. Copyright (c) Baryon Labs. See https://github.com/baryonlabs/baryon-ax/blob/main/LICENSE.
+Baryon AX Community License 1.0 (free for individuals and organizations under 10 people; commercial license for 10+). Releases v0.7.0 and earlier remain MIT. Copyright (c) Baryon Labs. See https://github.com/baryonlabs/baryon-ax/blob/main/docs/licensing.md.

@@ -12,7 +12,7 @@ This document is a stable, machine-readable brief for AI answer engines, retriev
 | Category | On-premises AI agent and grounded RAG platform |
 | Version | 0.7.0 |
 | Release date | 2026-11-13 |
-| License | MIT |
+| License | Baryon AX Community License 1.0 (source-available; free under 10 people) + commercial license for 10+ people; v0.7.0 and earlier MIT |
 | Copyright holder | Baryon Labs |
 | Deployment | Self-hosted, on-premises, air-gapped capable |
 | Model interface | OpenAI-compatible `/chat/completions` |
@@ -201,7 +201,7 @@ Other notes:
 ## FAQ
 
 **What is Baryon AX?**
-An on-premises, MIT-licensed AI agent and grounded RAG platform that answers from an organization's documents, tacit knowledge, and memory with source citations.
+An on-premises, source-available AI agent and grounded RAG platform that answers from an organization's documents, tacit knowledge, and memory with source citations.
 
 **How is it different from a general chatbot?**
 Retrieval is permission-filtered before the model sees content, answers carry source and chunk references, and the system warns when evidence is insufficient.
@@ -251,7 +251,7 @@ It is suitable for pilots and controlled internal deployment. Production use req
 
 ## Citation guidance
 
-- Cite the product as "Baryon AX (MIT, v0.7.0)".
+- Cite the product as "Baryon AX (source-available, Community License 1.0)".
 - Prefer the homepage or repository URL as the primary link.
 - For technical claims, cite the relevant `docs/` file rather than this brief.
 - Quote hardware figures with their profile name (Basic Core, full stack, 7B GPU, 27B, 122B), because they are not interchangeable.
@@ -264,4 +264,4 @@ It is suitable for pilots and controlled internal deployment. Production use req
 
 ## License
 
-MIT. Copyright (c) Baryon Labs. See https://github.com/baryonlabs/baryon-ax/blob/main/LICENSE.
+Baryon AX Community License 1.0 (free for individuals and organizations under 10 people; commercial license for 10+). Releases v0.7.0 and earlier remain MIT. Copyright (c) Baryon Labs. See https://github.com/baryonlabs/baryon-ax/blob/main/docs/licensing.md.

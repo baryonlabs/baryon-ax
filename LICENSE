@@ -1,21 +1,132 @@
-MIT License
+Baryon AX Community License 1.0
 
-Copyright (c) 2026 Baryon AX contributors
+Copyright (c) 2026 Seungwoo Hong, doing business as Baryon Labs (바리온랩스).
+All rights reserved except as expressly granted below.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+SPDX-License-Identifier: LicenseRef-Baryon-AX-Community-1.0
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This license applies to Baryon AX version 0.8.0 and later, and to every
+commit on the default branch made on or after 2026-11-22. Versions 0.7.0 and
+earlier were released under the MIT License, and those releases remain
+available under the MIT License (see LICENSE.MIT-legacy).
+
+Files or directories that carry their own license notice (for example a
+LICENSE file inside a subdirectory, or a "license" field in a package
+manifest) are governed by that notice instead of this license. Third-party
+components keep their own licenses; see docs/open-source.md.
+
+1. Definitions
+
+"Licensor" means Seungwoo Hong, doing business as Baryon Labs, and any
+successor or assignee of the copyright in the Software, including a
+corporation to which the copyright is transferred.
+
+"Software" means the source code, object code, documentation, and other
+material in this repository that is made available under this license.
+
+"You" means the individual or the Legal Entity exercising rights under this
+license.
+
+"Legal Entity" means a company, partnership, government body, institution,
+association, or other organization, together with every entity that controls,
+is controlled by, or is under common control with it ("Affiliates"). Control
+means direct or indirect ownership of more than 50% of the voting interests or
+the power to direct management.
+
+"Headcount" means the total number of natural persons who work for a Legal
+Entity and its Affiliates, including employees, officers, and individual
+contractors or freelancers working for it on a substantially full-time basis,
+counted at any time during the period of use.
+
+"Production Use" means any use of the Software other than Evaluation.
+
+"Evaluation" means installing and using the Software solely to test whether
+it meets Your needs, with no more than 30 consecutive days of use per Legal
+Entity, and without serving end users in the course of business.
+
+2. Free license grant
+
+Subject to the conditions of this license, the Licensor grants You a
+worldwide, non-exclusive, royalty-free, non-transferable license to use, copy,
+modify, and create derivative works of the Software, and to distribute copies
+of the Software and of Your derivative works, if You are one of the following:
+
+  (a) an individual using the Software for personal purposes or for Your own
+      professional work, other than on behalf of a Legal Entity that is not
+      itself eligible under this section;
+
+  (b) a Legal Entity whose Headcount is fewer than ten (10) persons; or
+
+  (c) any person or Legal Entity performing Evaluation.
+
+3. When a commercial license is required
+
+You must obtain a separate commercial license from the Licensor before any
+Production Use of the Software if You are, or You use the Software on behalf
+of, a Legal Entity whose Headcount is ten (10) persons or more. This includes
+use by a contractor, integrator, or consultant who installs or operates the
+Software for such a Legal Entity.
+
+A Legal Entity that becomes ineligible under Section 2 because its Headcount
+reaches ten (10) persons may continue its existing Production Use for ninety
+(90) days, during which it must obtain a commercial license or stop
+Production Use.
+
+4. Conditions
+
+  (a) Notices. You must keep this license, the copyright notice, and any
+      notices in the Software in every copy or substantial portion of the
+      Software or of Your derivative works that You distribute.
+
+  (b) Same terms. Any distribution of the Software or of a derivative work
+      must be made under this license, and You may not impose additional
+      restrictions that conflict with it.
+
+  (c) No competing hosted service. You may not provide the Software, or a
+      derivative work, to third parties as a hosted, managed, or
+      software-as-a-service offering whose value derives substantially from
+      the Software, unless You hold a commercial license that permits it.
+
+  (d) No license circumvention. You may not split a Legal Entity, rotate
+      Evaluation periods, or use Affiliates or intermediaries to avoid the
+      Headcount threshold.
+
+5. Patents
+
+The Licensor grants You a license under any patent claims the Licensor can
+license that are necessarily infringed by the Software as provided, solely to
+the extent needed to exercise the rights granted to You in Section 2. If You
+bring a patent claim alleging that the Software infringes a patent, this
+patent license ends immediately.
+
+6. Termination
+
+If You breach this license, Your rights under it end automatically. If You
+cure the breach within thirty (30) days after receiving written notice from
+the Licensor, Your rights are reinstated, provided that this is the first
+notice You have received for a breach of this license.
+
+7. No trademark rights
+
+This license does not grant any right to use the names, logos, or trademarks
+"Baryon AX", "DureClaw", "Baryon Labs", or "바리온랩스", except as needed to
+reproduce the notices required by Section 4(a).
+
+8. Disclaimer of warranty and limitation of liability
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+LICENSOR OR CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+9. Commercial licensing
+
+Commercial licenses for Legal Entities with a Headcount of ten (10) or more,
+hosted-service rights, and support are available from Baryon Labs.
+Contact: martin@baryon.ai · https://baryon.ai
+
+This license text is provided in English. A Korean summary is available in
+docs/licensing.md for convenience only; if the two differ, this English text
+controls.
