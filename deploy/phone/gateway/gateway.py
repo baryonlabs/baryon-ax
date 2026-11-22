@@ -76,7 +76,7 @@ ECHO_WINDOW_SECONDS = 15.0  # what the secretary said this recently may come bac
 ECHO_SIMILARITY = 0.6
 TYPING_QUIET_SECONDS = 2.0  # after the last key press, the mic is not treated as speech
 LEAD_SECONDS = 0.08
-THINKING_TICK_SECONDS = 2.5  # a soft tick while the secretary works and nothing has been heard for this long         # how far ahead of real time audio is written to Asterisk
+THINKING_TICK_SECONDS = 1.2  # 동… 동… 동…: a bell while the secretary works and nothing has been heard for this long         # how far ahead of real time audio is written to Asterisk
 
 
 @dataclass

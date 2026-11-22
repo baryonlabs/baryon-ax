@@ -431,7 +431,7 @@ def test_thinking_ticks_only_while_working_in_silence() -> None:
             collector.cancel()
             server.close()
         finally:
-            gateway.THINKING_TICK_SECONDS = 2.5
+            gateway.THINKING_TICK_SECONDS = 1.2
     asyncio.run(run())
 
 
