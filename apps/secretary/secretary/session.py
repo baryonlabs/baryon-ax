@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from datetime import datetime
@@ -78,6 +79,19 @@ def build_options(can_use_tool: Callable, *, cwd: str, model: str, mcp_names: li
     )
 
 
+def spoken_summary(text: object, limit: int = 80) -> str:
+    text = re.sub(r"\[(?:OPEN|NAV)\]\s*", "열기 ", str(text or ""))
+    text = re.sub(r"https?://(?:www\.)?([^/\s]+)\S*", r"\1", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def result_text(content: object) -> str:
+    if isinstance(content, list):
+        content = " ".join(str(part.get("text", "")) if isinstance(part, dict) else str(part) for part in content)
+    return re.sub(r"\s+", " ", str(content or "")).strip()
+
+
 class Session:
     def __init__(self, client_factory: Callable[[Any], Any], *, owner: str, cwd: str, model: str, mcp_names: list[str],
                  options_factory: Callable[..., Any] = build_options) -> None:
@@ -93,6 +107,7 @@ class Session:
         self._task: asyncio.Task | None = None
         self._last_status = ""
         self._after_tool = False
+        self._tasks: dict[str, dict] = {}
         self._client = client_factory(options_factory(self._can_use_tool, cwd=cwd, model=model, mcp_names=mcp_names))
 
     async def start(self) -> None:
@@ -184,9 +199,26 @@ class Session:
                     if block.name in SILENT_TOOLS:
                         continue
                     label = status_label(block.name, block.input or {})
+                    tool_id = getattr(block, "id", "")
+                    # Shown on screen (not spoken): every step the agent takes.
+                    self.emit({"type": "activity", "id": tool_id, "tool": block.name, "label": label})
+                    if block.name.endswith(("__send_task", "__browser_run")):
+                        self._tasks[tool_id] = {"tool": block.name, "to": (block.input or {}).get("to", ""),
+                                                "summary": spoken_summary((block.input or {}).get("instructions", ""))}
                     if not self._last_status:  # one spoken filler per turn is enough
                         self.emit({"type": "status", "text": label, "tool": block.name})
                         self._last_status = label
+        elif kind == "UserMessage":
+            for block in getattr(message, "content", None) or []:
+                if type(block).__name__ != "ToolResultBlock":
+                    continue
+                tool_id = getattr(block, "tool_use_id", "")
+                failed = bool(getattr(block, "is_error", False))
+                self.emit({"type": "activity_done", "id": tool_id, "error": failed})
+                task = self._tasks.pop(tool_id, None)
+                if task:  # background work handed to the fleet
+                    self.emit({"type": "task", "id": tool_id, **task, "status": "failed" if failed else "sent",
+                               "result": result_text(getattr(block, "content", ""))[:200]})
         elif kind == "ResultMessage":
             self.emit({"type": "done", "cost_usd": getattr(message, "total_cost_usd", None),
                        "ms": int((time.perf_counter() - started) * 1000)})

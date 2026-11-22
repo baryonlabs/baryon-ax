@@ -60,6 +60,8 @@ def _read_only_shell(command: str) -> bool:
     if _UNSAFE_SHELL.search(plain):
         return False
     for step in filter(None, _SEQUENCE.split(plain.strip())):
+        if re.fullmatch(r"cd(?:\s+\S+)?", step.strip()):
+            continue  # changing directory first ("cd repo && gh pr list") changes nothing
         stages = [stage.strip() for stage in step.split("|")]
         if not stages[0].startswith(AUTO_BASH_PREFIXES):
             return False
@@ -118,7 +120,9 @@ def confirmation_prompt(tool: str, tool_input: dict) -> str:
     if name in {"delete_event", "trash_message", "trash_thread", "delete_draft"}:
         return "삭제할까요? 되돌리기 어려울 수 있어요."
     if tool == "Bash":
-        return f"이 명령을 실행할까요? {_short(tool_input.get('command'))}"
+        command = re.sub(r"^\s*cd\s+\S+\s*(?:&&|;)\s*", "", str(tool_input.get("command", "")))
+        command = re.sub(r"(?:/[\w.~-]+){2,}/?", "", command)  # long paths are noise when read aloud
+        return f"이 명령을 실행할까요? {_short(command)}"
     if tool in {"Edit", "Write", "MultiEdit", "NotebookEdit"}:
         path = str(tool_input.get("file_path", "")).rsplit("/", 1)[-1]
         return f"{path or '파일'} 파일을 수정할까요?"

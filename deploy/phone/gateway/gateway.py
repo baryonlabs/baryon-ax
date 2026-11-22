@@ -25,6 +25,8 @@ Environment:
 from __future__ import annotations
 
 import asyncio
+import difflib
+import hmac
 import json
 import logging
 import os
@@ -46,7 +48,12 @@ logging.getLogger("httpx").setLevel(logging.WARNING)  # request lines would log 
 
 VAD_RATE = 16000
 STOP_WORDS = re.compile(r"^(?:멈춰|그만|중지|스톱|stop)[.!?\s]*$", re.I)
-BARGE_IN_FRAMES = 8         # 8 x 20 ms phone frames = 160 ms of speech while the secretary talks interrupts it
+# Secretary events shown on the app's screen (renamed so they do not clash with call events).
+SCREEN_EVENTS = {"activity": "activity", "activity_done": "activity_done", "task": "task",
+                 "text": "agent_text", "done": "agent_done", "confirmed": "confirmed"}
+BARGE_IN_MS = 350           # this much speech while the secretary talks interrupts it (echo bursts are shorter)
+ECHO_WINDOW_SECONDS = 15.0  # what the secretary said this recently may come back as echo
+ECHO_SIMILARITY = 0.6
 LEAD_SECONDS = 0.08         # how far ahead of real time audio is written to Asterisk
 
 
@@ -63,13 +70,17 @@ class Settings:
     speed: float = field(default_factory=lambda: float(os.getenv("VOICE_SPEED", "1.05")))
     greeting: str = field(default_factory=lambda: os.getenv("GREETING", "네, 비서입니다. 말씀하세요."))
     vad_model: str = field(default_factory=lambda: os.getenv("VAD_MODEL", "/models/silero_vad.onnx"))
+    # Log what callers said. Off by default; turn on only briefly on your own machine to debug.
+    debug_transcripts: bool = field(default_factory=lambda: os.getenv("GATEWAY_DEBUG_TRANSCRIPTS", "") == "1")
+    app_tokens: tuple[str, ...] = field(default_factory=lambda: tuple(
+        token.strip() for token in os.getenv("GATEWAY_APP_TOKENS", "").split(",") if len(token.strip()) >= 24))
 
 
 # --- collaborators (real ones talk HTTP; tests pass fakes) -----------------------------------
 
 class Speech(Protocol):
     async def transcribe(self, samples: np.ndarray, rate: int) -> str: ...
-    async def synthesize(self, text: str) -> np.ndarray: ...  # float32 at PHONE_RATE
+    async def synthesize(self, text: str) -> tuple[np.ndarray, int]: ...  # float32 samples and their rate
 
 
 class Secretary(Protocol):
@@ -96,8 +107,7 @@ class HttpSpeech:
         response = await self.client.post(f"{self.settings.stt_url}/v1/audio/speech", json={
             "input": text, "voice": self.settings.voice, "speed": self.settings.speed, "language": self.settings.language})
         response.raise_for_status()
-        samples, rate = from_wav(response.content)
-        return resample(samples, rate, PHONE_RATE)
+        return from_wav(response.content)
 
 
 class HttpSecretary:
@@ -173,12 +183,119 @@ class SileroVad:
 
 # --- one call ----------------------------------------------------------------------------
 
+class AudioSocketTransport:
+    """Asterisk AudioSocket: 8 kHz signed linear frames over TCP (SIP calls)."""
+
+    rate = PHONE_RATE
+    audio = True
+
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self.reader, self.writer, self.id = reader, writer, ""
+
+    async def start(self) -> bool:
+        kind, payload = await read_frame(self.reader)
+        if kind != KIND_UUID:
+            logger.warning("call did not start with a UUID frame (kind %s)", kind)
+            return False
+        self.id = str(uuid.UUID(bytes=payload))
+        return True
+
+    async def receive(self) -> bytes | None:
+        while True:
+            kind, payload = await read_frame(self.reader)
+            if kind == KIND_AUDIO:
+                return payload
+            if kind in (KIND_HANGUP, KIND_ERROR):
+                return None
+
+    async def send_audio(self, pcm: bytes) -> None:
+        self.writer.write(frame(KIND_AUDIO, pcm))
+        await self.writer.drain()
+
+    async def send_event(self, event: dict) -> None:
+        pass  # a plain phone call has no screen
+
+    async def close(self) -> None:
+        self.writer.close()
+
+
+class WebSocketTransport:
+    """The Baryon voice app: 16 kHz PCM16 over a WebSocket, plus JSON events for its screen.
+
+    client -> server: binary PCM16LE mono 16 kHz; text {"type": "hangup"}
+    server -> client: binary PCM16LE mono 16 kHz paced in real time;
+                      text {"type": "heard"|"said"|"status"|"confirm"|"flush"|"state", ...}"""
+
+    rate = VAD_RATE
+
+    def __init__(self, websocket: Any) -> None:
+        self.websocket, self.id = websocket, str(uuid.uuid4())
+        # ?audio=0: a typed conversation (no microphone, no synthesized speech, text only)
+        path = getattr(getattr(websocket, "request", None), "path", "") or ""
+        self.audio = "audio=0" not in path
+
+    async def start(self) -> bool:
+        return True
+
+    async def receive(self) -> bytes | dict | None:
+        while True:
+            try:
+                message = await self.websocket.recv()
+            except Exception:  # closed
+                return None
+            if isinstance(message, bytes):
+                return message
+            try:
+                command = json.loads(message)
+            except ValueError:
+                continue
+            if command.get("type") == "hangup":
+                return None
+            if command.get("type") == "text" and str(command.get("text", "")).strip():
+                return {"text": str(command["text"])[:2000]}  # typed, or a tapped answer such as "응"
+            if command.get("type") == "dictate":
+                return {"dictate": bool(command.get("on"))}  # speech to text for the input box only
+
+    async def send_audio(self, pcm: bytes) -> None:
+        await self.websocket.send(pcm)
+
+    async def send_event(self, event: dict) -> None:
+        try:
+            await self.websocket.send(json.dumps(event, ensure_ascii=False))
+        except Exception:
+            pass
+
+    async def close(self) -> None:
+        try:
+            await self.websocket.close()
+        except Exception:
+            pass
+
+
+def similar(a: str, b: str) -> float:
+    """How alike two utterances are, ignoring spaces and punctuation (0..1)."""
+    clean = lambda text: re.sub(r"[\s.,!?~·]", "", text)
+    a, b = clean(a), clean(b)
+    if not a or not b:
+        return 0.0
+    if a in b:  # a fragment of what was said
+        return 1.0 if len(a) >= 3 else 0.5
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
 class Call:
-    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, *, speech: Speech,
-                 secretary: Secretary, vad: Any, settings: Settings) -> None:
-        self.reader, self.writer = reader, writer
+    def __init__(self, transport: Any, *, speech: Speech, secretary: Secretary, vad: Any, settings: Settings) -> None:
+        self.transport = transport
         self.speech, self.secretary, self.vad, self.settings = speech, secretary, vad, settings
         self.id = ""
+        self.rate = transport.rate
+        self.frame_bytes = self.rate * FRAME_MS // 1000 * 2
+        self.speech_ms = 0.0
+        self.recent_said: list[tuple[float, str]] = []
+        self.playing_until = 0.0
+        self.audio = getattr(transport, "audio", True)
+        self.dictating = False
+        self.dictation: list[np.ndarray] = []
         self.generation = 0
         self.queue: asyncio.Queue[tuple[int, asyncio.Task]] = asyncio.Queue()
         self.playing = False
@@ -191,22 +308,26 @@ class Call:
 
     async def run(self) -> None:
         try:
-            kind, payload = await read_frame(self.reader)
-            if kind != KIND_UUID:
-                logger.warning("call did not start with a UUID frame (kind %s)", kind)
+            if not await self.transport.start():
                 return
-            self.id = str(uuid.UUID(bytes=payload))
-            logger.info("call %s connected", self.id)
+            self.id = self.transport.id
+            logger.info("call %s connected (%d Hz)", self.id, self.rate)
             self.tasks.append(asyncio.create_task(self._player()))
             self.say(self.settings.greeting)
             await self.secretary.start()
             self.tasks.append(asyncio.create_task(self._listen_secretary()))
             while True:
-                kind, payload = await read_frame(self.reader)
-                if kind == KIND_AUDIO:
-                    self._hear(payload)
-                elif kind in (KIND_HANGUP, KIND_ERROR):
+                payload = await self.transport.receive()
+                if payload is None:
                     break
+                if isinstance(payload, dict) and "dictate" in payload:
+                    await self._dictate(payload["dictate"])
+                elif isinstance(payload, dict):
+                    self.tasks.append(asyncio.create_task(self._handle_text(payload["text"], typed=True)))
+                elif self.dictating:
+                    self.dictation.append(pcm_to_float(payload))
+                else:
+                    self._hear(payload)
         except (asyncio.IncompleteReadError, ConnectionError):
             pass
         except Exception:
@@ -216,19 +337,21 @@ class Call:
             for task in self.tasks:
                 task.cancel()
             await self.secretary.close()
-            self.writer.close()
+            await self.transport.close()
 
     # --- hearing ---
 
     def _hear(self, payload: bytes) -> None:
-        samples = resample(pcm_to_float(payload), PHONE_RATE, VAD_RATE)
+        incoming = pcm_to_float(payload)
+        samples = resample(incoming, self.rate, VAD_RATE)
         speaking, utterances = self.vad.push(samples)
         if speaking and (self.playing or self.agent_busy):
-            self.speech_windows += 1
-            if self.speech_windows == BARGE_IN_FRAMES:  # once per stretch of speech
+            before = self.speech_ms
+            self.speech_ms += len(incoming) * 1000 / self.rate
+            if before < BARGE_IN_MS <= self.speech_ms:  # once per stretch of speech
                 self.tasks.append(asyncio.create_task(self.interrupt()))
         elif not speaking:
-            self.speech_windows = 0
+            self.speech_ms = 0.0
         for utterance in utterances:
             self.tasks.append(asyncio.create_task(self._utterance(utterance)))
 
@@ -240,10 +363,20 @@ class Call:
             logger.exception("transcription failed")
             self.say("잘 못 들었어요. 다시 말씀해 주세요.")
             return
+        await self._handle_text(text, started=started)
+
+    async def _handle_text(self, text: str, *, typed: bool = False, started: float | None = None) -> None:
         if len(re.sub(r"[\s.,!?]", "", text)) < 1:
             return
+        if not typed and self._is_echo(text):
+            logger.info("call %s ignored %d chars of its own echo", self.id, len(text))
+            return
         self.log.append(f"heard: {text}")
-        logger.info("call %s heard %d chars in %.2fs", self.id, len(text), time.perf_counter() - started)
+        await self.transport.send_event({"type": "heard", "text": text})
+        if self.settings.debug_transcripts:
+            logger.info("call %s heard: %s", self.id, text)
+        logger.info("call %s %s %d chars%s", self.id, "got typed" if typed else "heard", len(text),
+                    f" in {time.perf_counter() - started:.2f}s" if started else "")
         if STOP_WORDS.match(text):
             await self.interrupt()
             return
@@ -259,10 +392,38 @@ class Call:
             self.agent_busy = False
             self.say("비서에 연결할 수 없어요.")
 
+    async def _dictate(self, on: bool) -> None:
+        """The app's mic button in the text box: transcribe what was said and hand it back as text,
+        without sending it to the secretary, so the caller can edit it first."""
+        if on:
+            self.dictating, self.dictation = True, []
+            await self.transport.send_event({"type": "dictating", "on": True})
+            return
+        self.dictating = False
+        audio, self.dictation = (np.concatenate(self.dictation) if self.dictation else np.zeros(0, np.float32)), []
+        text = ""
+        if len(audio) > self.rate // 4:
+            try:
+                text = await self.speech.transcribe(resample(audio, self.rate, VAD_RATE), VAD_RATE)
+            except Exception:
+                logger.exception("dictation failed")
+        await self.transport.send_event({"type": "dictation", "text": text})
+
+    def _is_echo(self, text: str) -> bool:
+        """A phone on speaker can feed the secretary's own voice back. An utterance heard while
+        (or just after) it talked that matches what it said is that echo, not the caller."""
+        now = time.monotonic()
+        self.recent_said = [(at, said) for at, said in self.recent_said if now - at < ECHO_WINDOW_SECONDS]
+        if not (self.playing or now - self.playing_until < 1.5):
+            return False
+        spoken = " ".join(said for _, said in self.recent_said)
+        return any(similar(text, said) >= ECHO_SIMILARITY for _, said in self.recent_said) or similar(text, spoken) >= 0.9
+
     async def interrupt(self) -> None:
         """Barge-in or "멈춰": stop talking now and stop the agent's current step."""
         self.generation += 1
         self.chunker.flush()
+        await self.transport.send_event({"type": "flush"})  # the app drops audio it has buffered
         if self.agent_busy:
             self.discard_until_done = True
             try:
@@ -278,11 +439,21 @@ class Call:
         if not text:
             return
         self.log.append(f"said: {text}")
-        self.queue.put_nowait((self.generation, asyncio.create_task(self.speech.synthesize(text))))
+        self.recent_said.append((time.monotonic(), text))
+        if not self.audio:  # typed conversation: show the words, do not speak them
+            self.tasks.append(asyncio.create_task(self.transport.send_event({"type": "said", "text": text})))
+            return
+        self.queue.put_nowait((self.generation, asyncio.create_task(self._synthesize(text))))
+
+    async def _synthesize(self, text: str) -> tuple[np.ndarray, str]:
+        samples, rate = await self.speech.synthesize(text)
+        return resample(samples, rate, self.rate), text
 
     async def _listen_secretary(self) -> None:
         async for event in self.secretary.events():
             kind = event.get("type")
+            if kind in SCREEN_EVENTS:  # progress for the app's screen: steps, background tasks, live text
+                await self.transport.send_event({**event, "type": SCREEN_EVENTS[kind]})
             if self.discard_until_done:
                 if kind == "done":
                     self.discard_until_done = False
@@ -298,6 +469,7 @@ class Call:
                 if rest:
                     self.say(rest)
                 self.say(event.get("prompt", ""))
+                await self.transport.send_event({"type": "confirm", "prompt": event.get("prompt", "")})
                 self.agent_busy = False  # waiting for the caller's yes or no
             elif kind == "confirmed":
                 self.agent_busy = True
@@ -314,7 +486,7 @@ class Call:
         while True:
             generation, task = await self.queue.get()
             try:
-                samples = await task
+                samples, text = await task
             except Exception:
                 logger.exception("synthesis failed")
                 continue
@@ -322,18 +494,26 @@ class Call:
                 continue
             pcm = float_to_pcm(samples)
             self.playing = True
+            await self.transport.send_event({"type": "said", "text": text})
             start = loop.time()
-            for index in range(0, len(pcm), FRAME_BYTES):
+            step = self.frame_bytes
+            for index in range(0, len(pcm), step):
                 if generation != self.generation:
                     break
-                chunk = pcm[index:index + FRAME_BYTES].ljust(FRAME_BYTES, b"\x00")
-                self.writer.write(frame(KIND_AUDIO, chunk))
-                await self.writer.drain()
-                due = start + (index // FRAME_BYTES + 1) * FRAME_MS / 1000 - LEAD_SECONDS
+                await self.transport.send_audio(pcm[index:index + step].ljust(step, b"\x00"))
+                due = start + (index // step + 1) * FRAME_MS / 1000 - LEAD_SECONDS
                 delay = due - loop.time()
                 if delay > 0:
                     await asyncio.sleep(delay)
             self.playing = not self.queue.empty()
+            self.playing_until = time.monotonic()
+            if not self.playing:
+                await self.transport.send_event({"type": "idle"})  # finished talking: the app shows "listening"
+
+
+def token_allowed(header: str | None, tokens: tuple[str, ...]) -> bool:
+    supplied = (header or "").removeprefix("Bearer ").strip().encode()
+    return bool(supplied) and any(hmac.compare_digest(supplied, token.encode()) for token in tokens)
 
 
 async def serve(settings: Settings | None = None) -> None:
@@ -341,17 +521,39 @@ async def serve(settings: Settings | None = None) -> None:
     if not settings.secretary_url:
         raise SystemExit("SECRETARY_URL is required")
     speech = HttpSpeech(settings)
+
+    def new_call(transport: Any) -> Call:
+        return Call(transport, speech=speech, secretary=HttpSecretary(settings), vad=SileroVad(settings.vad_model),
+                    settings=settings)
+
+    async def audiosocket(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await new_call(AudioSocketTransport(reader, writer)).run()
+
     host, _, port = os.getenv("GATEWAY_LISTEN", "0.0.0.0:9092").rpartition(":")
+    servers = [await asyncio.start_server(audiosocket, host or "0.0.0.0", int(port))]
+    logger.info("AudioSocket (SIP calls) on %s:%s", host or "0.0.0.0", port)
 
-    async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        call = Call(reader, writer, speech=speech, secretary=HttpSecretary(settings),
-                    vad=SileroVad(settings.vad_model), settings=settings)
-        await call.run()
+    ws_listen = os.getenv("GATEWAY_WS_LISTEN", "")
+    if ws_listen:
+        if not settings.app_tokens:
+            raise SystemExit("GATEWAY_WS_LISTEN needs GATEWAY_APP_TOKENS (one or more tokens of 24+ characters)")
+        from websockets.asyncio.server import serve as ws_serve
 
-    server = await asyncio.start_server(handle, host or "0.0.0.0", int(port))
-    logger.info("AudioSocket gateway listening on %s", ", ".join(str(s.getsockname()) for s in server.sockets))
-    async with server:
-        await server.serve_forever()
+        def check(connection, request):
+            if request.path != "/v1/voice/call":
+                return connection.respond(404, "not found\n")
+            if not token_allowed(request.headers.get("Authorization"), settings.app_tokens):
+                return connection.respond(401, "invalid token\n")
+            return None
+
+        async def app_call(websocket) -> None:
+            await new_call(WebSocketTransport(websocket)).run()
+
+        ws_host, _, ws_port = ws_listen.rpartition(":")
+        servers.append(await ws_serve(app_call, ws_host or "0.0.0.0", int(ws_port), process_request=check,
+                                      max_size=1 << 16, ping_interval=20))
+        logger.info("WebSocket (voice app) on %s/v1/voice/call", ws_listen)
+    await asyncio.gather(*(server.serve_forever() for server in servers))
 
 
 if __name__ == "__main__":

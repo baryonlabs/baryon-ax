@@ -4,6 +4,7 @@ Speech, the secretary and the VAD are fakes, so no models, network or Claude are
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 
 import numpy as np
@@ -47,9 +48,10 @@ class FakeSpeech:
         assert rate == gateway.VAD_RATE and len(samples) > 0
         return self.heard.pop(0) if self.heard else ""
 
-    async def synthesize(self, text: str) -> np.ndarray:
+    async def synthesize(self, text: str):
         self.spoken.append(text)
-        return np.full(PHONE_RATE // 2 * max(1, len(text) // 10), 0.2, dtype=np.float32)  # longer text, longer audio
+        rate = 24000  # like Supertonic: the call resamples to its own rate
+        return np.full(rate // 2 * max(1, len(text) // 10), 0.2, dtype=np.float32), rate  # longer text, longer audio
 
 
 class FakeSecretary:
@@ -85,7 +87,8 @@ async def start_call(speech, secretary):
     calls: list[gateway.Call] = []
 
     async def handle(reader, writer):
-        call = gateway.Call(reader, writer, speech=speech, secretary=secretary, vad=FakeVad(), settings=gateway.Settings(secretary_url="x"))
+        call = gateway.Call(gateway.AudioSocketTransport(reader, writer), speech=speech, secretary=secretary, vad=FakeVad(),
+                            settings=gateway.Settings(secretary_url="x"))
         calls.append(call)
         await call.run()
 
@@ -152,7 +155,7 @@ def test_speaking_over_the_answer_interrupts_it() -> None:
         await send(writer, QUIET, 12)
         await wait_for(lambda: calls[0].playing and len(received) > 60)
         before = calls[0].generation
-        await send(writer, LOUD, 8)  # the caller talks over the answer
+        await send(writer, LOUD, 20)  # the caller talks over the answer (400 ms)
         await wait_for(lambda: calls[0].generation > before)
         await asyncio.sleep(0.2)
         settled = len(received)
@@ -256,4 +259,121 @@ def test_new_utterance_cuts_off_the_current_answer() -> None:
         await wait_for(lambda: "메일 알려줘에 답할게요." in speech.spoken)
         collector.cancel()
         server.close()
+    asyncio.run(run())
+
+
+def test_echo_of_its_own_words_is_not_a_request() -> None:
+    async def run() -> None:
+        long_answer = [{"type": "text", "delta": "지금 열려 있는 PR은 하나도 없어요. " * 4}, {"type": "done"}]
+        speech = FakeSpeech(["PR 알려줘", "열려 있는 PR은 하나도"])  # the second is the phone echoing the answer
+        secretary = FakeSecretary({"PR 알려줘": long_answer})
+        server, writer, received, collector, calls = await start_call(speech, secretary)
+        await send(writer, LOUD, 20)
+        await send(writer, QUIET, 12)
+        await wait_for(lambda: calls[0].playing and any("열려 있는 PR" in said for _, said in calls[0].recent_said))
+        await send(writer, LOUD, 10)  # 200 ms burst: below the barge-in threshold
+        await send(writer, QUIET, 12)
+        await asyncio.sleep(0.3)
+        assert secretary.turns == ["PR 알려줘"], "echo was not sent to the agent"
+        collector.cancel()
+        server.close()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("a,b,expected", [
+    ("열려 있는 PR은 하나도", "지금 열려 있는 PR은 하나도 없어요.", True),
+    ("메일 알려줘", "지금 열려 있는 PR은 하나도 없어요.", False),
+    ("네", "네, 비서입니다. 말씀하세요.", False),
+])
+def test_echo_similarity(a: str, b: str, expected: bool) -> None:
+    assert (gateway.similar(a, b) >= gateway.ECHO_SIMILARITY) is expected
+
+
+def test_app_websocket_call_streams_16k_audio_and_events() -> None:
+    from websockets.asyncio.client import connect
+    from websockets.asyncio.server import serve as ws_serve
+
+    async def run() -> None:
+        speech, secretary = FakeSpeech(["할 일 알려줘"]), FakeSecretary({})
+        tokens = ("t" * 32,)
+
+        def check(connection, request):
+            if not gateway.token_allowed(request.headers.get("Authorization"), tokens):
+                return connection.respond(401, "invalid token\n")
+            return None
+
+        async def app_call(websocket) -> None:
+            await gateway.Call(gateway.WebSocketTransport(websocket), speech=speech, secretary=secretary, vad=FakeVad(),
+                               settings=gateway.Settings(secretary_url="x")).run()
+
+        async with ws_serve(app_call, "127.0.0.1", 0, process_request=check) as server:
+            port = server.sockets[0].getsockname()[1]
+            with pytest.raises(Exception):
+                async with connect(f"ws://127.0.0.1:{port}/v1/voice/call", additional_headers={"Authorization": "Bearer nope"}):
+                    pass
+            async with connect(f"ws://127.0.0.1:{port}/v1/voice/call", additional_headers={"Authorization": f"Bearer {tokens[0]}"}) as ws:
+                loud16 = (np.full(320, 0.3, dtype=np.float32) * 32767).astype("<i2").tobytes()   # 20 ms at 16 kHz
+                for _ in range(20):
+                    await ws.send(loud16)
+                for _ in range(12):
+                    await ws.send(b"\x00" * 640)
+                audio, events = 0, []
+                while not any(e.get("type") == "said" and "할 일 알려줘에" in e.get("text", "") for e in events):
+                    message = await asyncio.wait_for(ws.recv(), 3)
+                    if isinstance(message, bytes):
+                        assert len(message) == 640  # 20 ms frames at 16 kHz
+                        audio += 1
+                    else:
+                        events.append(__import__("json").loads(message))
+                assert {"type": "heard", "text": "할 일 알려줘"} in events and audio > 0
+                await ws.send('{"type": "text", "text": "응"}')  # tapped answer on the screen
+                await wait_for(lambda: secretary.turns[-1:] == ["응"])
+                await ws.send('{"type": "hangup"}')
+            await wait_for(lambda: secretary.closed)
+    asyncio.run(run())
+
+
+def test_typed_session_dictation_and_progress_events() -> None:
+    from websockets.asyncio.client import connect
+    from websockets.asyncio.server import serve as ws_serve
+
+    async def run() -> None:
+        reply = [{"type": "activity", "id": "a1", "tool": "Bash", "label": "깃허브를 확인하고 있어요."},
+                 {"type": "text", "delta": "PR은 없어요."}, {"type": "activity_done", "id": "a1", "error": False},
+                 {"type": "task", "id": "t1", "to": "builder@mini", "summary": "버그 수정", "status": "sent"},
+                 {"type": "done"}]
+        speech, secretary = FakeSpeech(["메일 정리해줘"]), FakeSecretary({"PR 알려줘": reply})
+
+        async def app_call(websocket) -> None:
+            await gateway.Call(gateway.WebSocketTransport(websocket), speech=speech, secretary=secretary, vad=FakeVad(),
+                               settings=gateway.Settings(secretary_url="x")).run()
+
+        async with ws_serve(app_call, "127.0.0.1", 0) as server:
+            port = server.sockets[0].getsockname()[1]
+            async with connect(f"ws://127.0.0.1:{port}/v1/voice/call?audio=0") as ws:
+                events: list[dict] = []
+
+                async def until(predicate):
+                    while not any(predicate(e) for e in events):
+                        message = await asyncio.wait_for(ws.recv(), 3)
+                        assert not isinstance(message, bytes), "a typed session gets no audio"
+                        events.append(json.loads(message))
+
+                await ws.send('{"type": "text", "text": "PR 알려줘"}')
+                await until(lambda e: e["type"] == "agent_done")
+                await until(lambda e: e["type"] == "said" and e["text"] == "PR은 없어요.")  # last sentence flushes at done
+                types = [e["type"] for e in events]
+                assert {"activity", "agent_text", "activity_done", "task"} <= set(types)
+                assert any(e["type"] == "said" and e["text"] == "PR은 없어요." for e in events)
+                assert speech.spoken == []  # nothing was synthesized
+
+                # dictation: audio becomes text for the input box, and is not sent to the secretary
+                await ws.send('{"type": "dictate", "on": true}')
+                loud16 = (np.full(320, 0.3, dtype=np.float32) * 32767).astype("<i2").tobytes()
+                for _ in range(25):
+                    await ws.send(loud16)
+                await ws.send('{"type": "dictate", "on": false}')
+                await until(lambda e: e["type"] == "dictation")
+                assert next(e for e in events if e["type"] == "dictation")["text"] == "메일 정리해줘"
+                assert secretary.turns == ["PR 알려줘"]
     asyncio.run(run())

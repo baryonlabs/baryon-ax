@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">바리온 비서</string>
+    <string name="secretary_name">바리온 비서</string>
+    <string name="in_call">비서와 통화 중</string>
+    <string name="hang_up">끊기</string>
+</resources>

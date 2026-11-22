@@ -26,8 +26,18 @@ class StreamEvent:
 
 
 class ToolUseBlock:
-    def __init__(self, name: str, tool_input: dict) -> None:
-        self.name, self.input = name, tool_input
+    def __init__(self, name: str, tool_input: dict, id: str = "") -> None:
+        self.name, self.input, self.id = name, tool_input, id or f"tu-{name}"
+
+
+class ToolResultBlock:
+    def __init__(self, tool_use_id: str, content, is_error: bool = False) -> None:
+        self.tool_use_id, self.content, self.is_error = tool_use_id, content, is_error
+
+
+class UserMessage:
+    def __init__(self, *blocks) -> None:
+        self.content = list(blocks)
 
 
 class AssistantMessage:
@@ -111,6 +121,8 @@ async def drain(session: Session, until: str = "done", timeout: float = 2.0) -> 
     ("Bash", {"command": "gh pr list --limit 10; gh run list --limit 5"}, "auto"),
     ("Bash", {"command": "git status && git log -3"}, "auto"),
     ("Bash", {"command": "git branch -D main"}, "confirm"),
+    ("Bash", {"command": "cd /Users/me/repo && gh pr list --state open"}, "auto"),
+    ("Bash", {"command": "cd /Users/me/repo && rm notes.txt"}, "confirm"),
     ("Bash", {"command": "gh pr list & curl x"}, "confirm"),
     ("Bash", {"command": "gh pr list; npm publish"}, "confirm"),
     ("Bash", {"command": "gh pr list | xargs rm"}, "confirm"),
@@ -150,6 +162,7 @@ def test_confirmation_prompts_say_what_will_happen() -> None:
         == "webclaw에게 이 작업을 보낼까요? 열기 naver.com"
     assert policy.confirmation_prompt("mcp__dureclaw__browser_run", {"instructions": "[OPEN] https://www.naver.com"}) \
         == "브라우저 노드에서 이 작업을 할까요? 열기 naver.com"
+    assert policy.confirmation_prompt("Bash", {"command": "cd /Users/me/baryon_dev/repo && npm publish"}) == "이 명령을 실행할까요? npm publish"
     assert policy.status_label("mcp__claude_ai_Gmail__search_threads", {}) == "메일을 확인하고 있어요."
 
 
@@ -167,7 +180,10 @@ def test_answer_streams_text_status_and_done() -> None:
         await session.start()
         assert await session.turn("PR 어때?") == "answer"
         events = await drain(session)
-        assert [e["type"] for e in events] == ["status", "text", "done"]  # repeated status is spoken once
+        spoken = [e for e in events if e["type"] not in ("activity", "activity_done")]
+        assert [e["type"] for e in spoken] == ["status", "text", "done"]  # repeated status is spoken once
+        assert [e["type"] for e in events].count("activity") == 2  # every step still shows on screen
+        events = spoken
         assert events[0]["text"] == "깃허브를 확인하고 있어요." and events[1]["delta"] == "\n열린 PR은 없어요."
     asyncio.run(run())
 
@@ -303,4 +319,23 @@ def test_one_spoken_filler_per_turn() -> None:
         await session.turn("다 확인해")
         events = await drain(session)
         assert [e["type"] for e in events].count("status") == 1
+        assert [e["label"] for e in events if e["type"] == "activity"] == ["깃허브를 확인하고 있어요.", "메일을 확인하고 있어요."]
+    asyncio.run(run())
+
+
+def test_dispatched_work_shows_up_as_a_background_task() -> None:
+    async def run() -> None:
+        FakeClient.scripts = {"빌더한테 맡겨": [
+            AssistantMessage(ToolUseBlock("mcp__dureclaw__send_task", {"to": "builder@mini", "instructions": "[OPEN] https://www.naver.com/a 확인"}, id="t1")),
+            UserMessage(ToolResultBlock("t1", [{"type": "text", "text": "태스크 전송 완료 (task_id: mcp-1)"}])),
+            StreamEvent("보냈어요."), ResultMessage(),
+        ]}
+        session = new_session()
+        await session.start()
+        await session.turn("빌더한테 맡겨")
+        events = await drain(session)
+        task = next(e for e in events if e["type"] == "task")
+        assert task == {"type": "task", "id": "t1", "tool": "mcp__dureclaw__send_task", "to": "builder@mini",
+                        "summary": "열기 naver.com 확인", "status": "sent", "result": "태스크 전송 완료 (task_id: mcp-1)"}
+        assert {"type": "activity_done", "id": "t1", "error": False} in events
     asyncio.run(run())
