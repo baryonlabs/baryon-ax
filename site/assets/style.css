@@ -871,3 +871,13 @@ details p { color: var(--muted); }
 .update-block { margin-top: 22px; }
 .update-block h3 { margin: 0 0 10px; font-size: 1rem; }
 .update-block .code-block pre { font-size: .84rem; }
+
+/* License plans (#license) */
+.plan-grid { margin-bottom: 18px; }
+.plan { display: flex; flex-direction: column; gap: 6px; }
+.plan .plan-tag { margin: 0; color: var(--muted); font-size: .72rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+.plan .plan-price { margin: 2px 0 6px; color: var(--ink); font-size: 1.45rem; font-weight: 800; letter-spacing: -.02em; }
+.plan ul { margin: 0 0 12px; padding-left: 18px; color: var(--muted); font-size: .92rem; line-height: 1.65; }
+.plan > a { margin-top: auto; align-self: flex-start; }
+.plan-featured { border-color: var(--forest); box-shadow: 0 0 0 1px var(--forest) inset; }
+.plan-featured .plan-tag { color: var(--forest); }
