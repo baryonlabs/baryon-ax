@@ -7,5 +7,5 @@ RUN apk add --no-cache asterisk gettext \
     && chown -R asterisk:asterisk /var/run/asterisk /var/log/asterisk /var/spool/asterisk /var/lib/asterisk /etc/asterisk
 COPY config/ /etc/asterisk-templates/
 COPY entrypoint.sh /entrypoint.sh
-EXPOSE 5060/udp 10000-10049/udp
+EXPOSE 5060/udp 10000-10019/udp
 ENTRYPOINT ["/bin/sh", "/entrypoint.sh"]

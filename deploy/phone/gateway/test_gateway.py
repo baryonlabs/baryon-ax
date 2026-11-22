@@ -209,3 +209,51 @@ def test_audio_helpers() -> None:
 @pytest.mark.parametrize("text,stop", [("멈춰", True), ("그만.", True), ("멈춰서 생각해 보면", False), ("Stop", True)])
 def test_stop_words(text: str, stop: bool) -> None:
     assert bool(gateway.STOP_WORDS.match(text)) is stop
+
+
+class WindowedSherpaVad:
+    """Stands in for sherpa-onnx: one decision per 512-sample window, like Silero."""
+
+    def __init__(self) -> None:
+        self.detected = False
+        self.queue: list = []
+
+    def accept_waveform(self, window) -> None:
+        self.detected = float(np.sqrt(np.mean(np.asarray(window) ** 2))) > 0.05
+
+    def is_speech_detected(self) -> bool:
+        return self.detected
+
+    def empty(self) -> bool:
+        return not self.queue
+
+
+def test_silero_wrapper_keeps_speaking_between_windows() -> None:
+    """20 ms phone frames (320 samples at 16 kHz) are shorter than a VAD window. Frames that run
+    no window must still report speech, or barge-in never accumulates (the bug found on a real call)."""
+    vad = gateway.SileroVad.__new__(gateway.SileroVad)
+    vad.vad, vad.pending, vad.speaking = WindowedSherpaVad(), np.zeros(0, dtype=np.float32), False
+    loud = resample(np.full(160, 0.3, dtype=np.float32), PHONE_RATE, gateway.VAD_RATE)
+    flags = [vad.push(loud)[0] for _ in range(10)]
+    assert flags[0] is False and all(flags[2:]), flags  # once speech is seen it stays on for every frame
+    quiet = np.zeros(320, dtype=np.float32)
+    assert [vad.push(quiet)[0] for _ in range(4)][-1] is False
+
+
+def test_new_utterance_cuts_off_the_current_answer() -> None:
+    async def run() -> None:
+        long_answer = [{"type": "text", "delta": "아주 길게 이어지는 첫 번째 답변 문장입니다. " * 6}, {"type": "done"}]
+        speech, secretary = FakeSpeech(["길게 설명해", "메일 알려줘"]), FakeSecretary({"길게 설명해": long_answer})
+        server, writer, received, collector, calls = await start_call(speech, secretary)
+        await send(writer, LOUD, 20)
+        await send(writer, QUIET, 12)
+        await wait_for(lambda: calls[0].playing)
+        before = calls[0].generation
+        await send(writer, LOUD, 20)   # the caller asks something else over the answer
+        await send(writer, QUIET, 12)
+        await wait_for(lambda: secretary.turns == ["길게 설명해", "메일 알려줘"])
+        assert calls[0].generation > before
+        await wait_for(lambda: "메일 알려줘에 답할게요." in speech.spoken)
+        collector.cancel()
+        server.close()
+    asyncio.run(run())

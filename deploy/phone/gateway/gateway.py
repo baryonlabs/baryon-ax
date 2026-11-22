@@ -46,7 +46,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)  # request lines would log 
 
 VAD_RATE = 16000
 STOP_WORDS = re.compile(r"^(?:멈춰|그만|중지|스톱|stop)[.!?\s]*$", re.I)
-BARGE_IN_WINDOWS = 6        # ~190 ms of detected speech while talking interrupts it
+BARGE_IN_FRAMES = 8         # 8 x 20 ms phone frames = 160 ms of speech while the secretary talks interrupts it
 LEAD_SECONDS = 0.08         # how far ahead of real time audio is written to Asterisk
 
 
@@ -151,19 +151,24 @@ class SileroVad:
         config.sample_rate = VAD_RATE
         self.vad = sherpa_onnx.VoiceActivityDetector(config, buffer_size_in_seconds=60)
         self.pending = np.zeros(0, dtype=np.float32)
+        self.speaking = False
 
     def push(self, samples: np.ndarray) -> tuple[bool, list[np.ndarray]]:
-        """Returns (speech detected in this chunk, finished utterances)."""
+        """Returns (caller is speaking now, finished utterances).
+
+        A 20 ms phone frame is shorter than one 32 ms VAD window, so many frames run no
+        window at all. The last decision is kept for those frames; resetting it would make
+        "speaking" flicker and barge-in would never trigger."""
         self.pending = np.concatenate([self.pending, samples])
-        speaking, done = False, []
+        done: list[np.ndarray] = []
         while len(self.pending) >= self.WINDOW:
             self.vad.accept_waveform(self.pending[: self.WINDOW])
             self.pending = self.pending[self.WINDOW:]
-            speaking = speaking or self.vad.is_speech_detected()
+            self.speaking = self.vad.is_speech_detected()
             while not self.vad.empty():
                 done.append(np.array(self.vad.front.samples, dtype=np.float32))
                 self.vad.pop()
-        return speaking, done
+        return self.speaking, done
 
 
 # --- one call ----------------------------------------------------------------------------
@@ -220,8 +225,7 @@ class Call:
         speaking, utterances = self.vad.push(samples)
         if speaking and (self.playing or self.agent_busy):
             self.speech_windows += 1
-            if self.speech_windows >= BARGE_IN_WINDOWS:
-                self.speech_windows = 0
+            if self.speech_windows == BARGE_IN_FRAMES:  # once per stretch of speech
                 self.tasks.append(asyncio.create_task(self.interrupt()))
         elif not speaking:
             self.speech_windows = 0
@@ -243,6 +247,9 @@ class Call:
         if STOP_WORDS.match(text):
             await self.interrupt()
             return
+        # The newest thing the caller said wins: stop talking and drop the old answer first.
+        if self.playing or self.agent_busy or not self.queue.empty():
+            await self.interrupt()
         self.agent_busy = True
         self.chunker = SentenceChunker()
         try:
