@@ -61,6 +61,16 @@ A real run started two goals on a test repository at once ("fix add", "make aver
 - Each fixed the right function and committed on its own branch. The main checkout was unchanged.
 - Neither could run pytest in the sandbox: pytest was not installed, and the attempt to install it failed. Both said so in their reports and checked the test functions directly instead.
 
+## What it knows about you: profile, memory, connections
+
+`secretary/profile.py` keeps a profile in `SECRETARY_STATE_DIR/profile.json` (mode 600, on the workstation):
+
+- `about` (나에 대해) and `usage` (이렇게 써 줘): written by the owner in the app, added to the secretary's instructions.
+- `memories`: short facts. The owner adds them in the app, or by voice ("이거 기억해 줘" → the `remember` tool). The 60 newest go into the instructions with their ids, so "그건 잊어" can delete one. The memory tools run without a confirmation, because they only touch this file.
+- `mcp`: which MCP servers from `~/.claude.json` the secretary loads. It starts as `SECRETARY_MCP`, and then the app owns it. The API returns names and kinds only, never commands, URLs or keys.
+
+API (same bearer key): `GET/PUT /v1/profile`, `POST /v1/memories`, `DELETE /v1/memories/{id}`. A running conversation keeps its tools and instructions; changes apply from the next call. The phone app reaches this through the gateway's settings channel ([voice-app.md](voice-app.md#protocol)).
+
 ## Confirmations
 
 Confirmations are enforced in code, not left to the model. Every tool call

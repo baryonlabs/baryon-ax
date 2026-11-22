@@ -96,6 +96,17 @@ class MainActivity : FlutterActivity() {
         val messenger = flutterEngine.dartExecutor.binaryMessenger
         MethodChannel(messenger, "baryon/voice").setMethodCallHandler { call, result ->
             when (call.method) {
+                "secretary" -> {
+                    val token = prefs().getString("token", "").orEmpty()
+                    if (token.isBlank()) {
+                        result.success("""{"ok":false,"error":"기기 토큰이 없어요"}""")
+                    } else {
+                        val body = org.json.JSONObject(call.argument<String>("request") ?: "{}")
+                        SecretarySettings.request(prefs().getString("server", DEFAULT_SERVER).orEmpty(), token, body) {
+                            main.post { result.success(it) }
+                        }
+                    }
+                }
                 "config" -> result.success(mapOf(
                     "server" to prefs().getString("server", DEFAULT_SERVER),
                     "hasToken" to !prefs().getString("token", "").isNullOrBlank(),

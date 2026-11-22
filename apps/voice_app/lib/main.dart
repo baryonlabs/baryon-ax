@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'secretary_page.dart';
+
 /// 바리온 비서: talk to your voice secretary hands-free, or type to it.
 ///
 /// The call itself (microphone, speaker, Bluetooth, Android's call system) runs natively in
@@ -598,6 +600,21 @@ class _CallScreenState extends State<CallScreen> {
               controller: controller,
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
               children: [
+                Card(
+                  margin: const EdgeInsets.only(top: 8),
+                  child: ListTile(
+                    key: const Key('secretary'),
+                    leading: const Icon(Icons.badge_outlined),
+                    title: const Text('비서에게 알려 주기'),
+                    subtitle: const Text('나에 대해 · 이렇게 써 줘 · 기억 · 연결(MCP)'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const SecretaryPage(),
+                      ),
+                    ),
+                  ),
+                ),
                 section('화면'),
                 Wrap(
                   spacing: 8,

@@ -571,3 +571,31 @@ def test_a_neighbours_voice_never_reaches_the_secretary_and_the_app_can_relax_th
         collector.cancel()
         server.close()
     asyncio.run(run())
+
+
+def test_settings_requests_are_relayed_to_the_secretary_and_nothing_else() -> None:
+    import httpx
+
+    seen: list = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, request.content.decode() or None))
+        if request.url.path == "/v1/profile":
+            return httpx.Response(200, json={"about": "나", "memories": [], "mcp": []})
+        if request.method == "DELETE":
+            return httpx.Response(404, json={"detail": "no such memory"})
+        return httpx.Response(200, json={"id": "abc123", "text": "기억"})
+
+    async def run() -> None:
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        relay = lambda message: gateway.settings_request(client, "http://secretary", message)
+        assert (await relay('{"id": 1, "op": "profile.get"}')) == {"id": 1, "ok": True,
+                                                                   "data": {"about": "나", "memories": [], "mcp": []}}
+        await relay('{"id": 2, "op": "profile.put", "about": "새 소개", "mcp": ["kb"], "token": "x"}')
+        assert seen[-1] == ("PUT", "/v1/profile", '{"about":"새 소개","mcp":["kb"]}')  # only known fields pass
+        assert (await relay('{"id": 3, "op": "memory.add", "text": "기억"}'))["data"]["id"] == "abc123"
+        assert (await relay('{"id": 4, "op": "memory.delete", "memory": "../../v1/sessions"}'))["ok"] is False
+        assert seen[-1][1] == "/v1/memories/1e"  # "../../v1/sessions" reduced to its hex letters: no path tricks
+        assert (await relay('{"id": 5, "op": "sessions.delete"}')) == {"id": 5, "ok": False, "error": "unknown op"}
+        assert (await relay("not json"))["ok"] is False
+    asyncio.run(run())
