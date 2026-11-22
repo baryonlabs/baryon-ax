@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .ingest.ir import normalize_text
+from .ontology import Extraction, pack_structure, rule_extract
 
 # --------------------------------------------------------------------------
 # detection
@@ -476,27 +477,15 @@ def build_pack(
     name: str,
     gaps: list[KnowledgeGap],
     cluster: GapCluster | None = None,
+    extraction: Extraction | None = None,
 ) -> dict[str, Any]:
-    terms: list[str] = []
-    for gap in gaps:
-        for term in gap.terms or salient_terms(gap.question):
-            if term not in terms:
-                terms.append(term)
-    terms = terms[:12] or ([cluster.label] if cluster else ["지식"])
+    """A reviewable draft: typed entities and the slots (missing values) the gap questions ask for.
 
-    entities = [
-        {"name": term, "type": "concept", "synonyms": [], "source": "knowledge_gap"}
-        for term in terms
-    ]
-    relations = []
-    if len(terms) >= 2:
-        for index in range(min(6, len(terms) - 1)):
-            relations.append({
-                "from": terms[index],
-                "type": "related_to",
-                "to": terms[index + 1],
-                "confidence": "candidate",
-            })
+    `extraction` comes from `ontology.model_extract` when a model is configured; without it the
+    question-pattern rules are used. See docs/ontology-quality.md."""
+    extraction = extraction or rule_extract([gap.question for gap in gaps])
+    structure = pack_structure(extraction)
+    terms = [entity["name"] for entity in structure["entities"]] or ([cluster.label] if cluster else ["지식"])
 
     sources = cluster.required_sources if cluster else suggest_sources(terms)
     pack_id = "ont_" + uuid.uuid4().hex[:16]
@@ -510,8 +499,7 @@ def build_pack(
         "created_at": datetime.now(timezone.utc).isoformat(),
         "source_gap_ids": [gap.id for gap in gaps],
         "source_questions": [gap.question for gap in gaps][:20],
-        "entities": entities,
-        "relations": relations,
+        **structure,
         "required_sources": sources,
         "acceptance_questions": [gap.question for gap in gaps][:10],
         "notes": "자동 생성된 초안입니다. 관리자 검토 후 엔티티·관계·소스를 확정하세요.",

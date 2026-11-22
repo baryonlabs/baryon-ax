@@ -1,0 +1,27 @@
+{
+  "description": "Korean knowledge-gap questions with what a reviewer expects in an ontology pack. entities: must appear (spacing ignored). ok: also acceptable. slots: the unknown value each question asks for: subject (any of the alternatives), relation, value_type.",
+  "relations": ["한도", "기한", "승인자", "신고처", "담당", "제출처", "근거"],
+  "value_types": ["금액", "기간", "사람·조직", "시스템", "문서·규정"],
+  "questions": [
+    {"q": "법인카드 해외 결제 한도는 얼마야?", "entities": ["법인카드"], "ok": ["해외 결제", "해외결제"], "slots": [{"subject": ["법인카드"], "relation": "한도", "value_type": "금액"}]},
+    {"q": "법인카드 분실하면 누구에게 신고해?", "entities": ["법인카드"], "ok": ["법인카드 분실", "분실"], "slots": [{"subject": ["법인카드"], "relation": "신고처", "value_type": "사람·조직"}]},
+    {"q": "해외 출장비 정산 마감이 언제야?", "entities": ["출장비"], "ok": ["해외 출장비", "출장비 정산", "정산", "해외 출장비 정산"], "slots": [{"subject": ["출장비"], "relation": "기한", "value_type": "기간"}]},
+    {"q": "출장비 정산은 어느 시스템에 올려?", "entities": ["출장비"], "ok": ["출장비 정산", "정산"], "slots": [{"subject": ["출장비"], "relation": "제출처", "value_type": "시스템"}]},
+    {"q": "출장 숙박비 상한은 얼마야?", "entities": ["숙박비"], "ok": ["출장", "출장 숙박비"], "slots": [{"subject": ["숙박비"], "relation": "한도", "value_type": "금액"}]},
+    {"q": "연차 휴가는 누가 승인해?", "entities": ["연차 휴가"], "ok": ["연차", "휴가"], "slots": [{"subject": ["연차", "휴가"], "relation": "승인자", "value_type": "사람·조직"}]},
+    {"q": "연차 휴가 신청은 며칠 전까지 해야 해?", "entities": ["연차 휴가"], "ok": ["연차", "휴가", "신청", "연차 휴가 신청"], "slots": [{"subject": ["연차", "휴가"], "relation": "기한", "value_type": "기간"}]},
+    {"q": "신규 입사자 노트북은 누구한테 요청해?", "entities": ["노트북"], "ok": ["신규 입사자", "입사자", "신규 입사자 노트북"], "slots": [{"subject": ["노트북"], "relation": "담당", "value_type": "사람·조직"}]},
+    {"q": "VPN 계정 발급은 어디서 신청해?", "entities": ["VPN 계정"], "ok": ["vpn", "계정", "발급", "VPN 계정 발급"], "slots": [{"subject": ["vpn", "계정"], "relation": "제출처", "value_type": "시스템"}]},
+    {"q": "계약서 법무 검토는 며칠 걸려?", "entities": ["계약서"], "ok": ["법무 검토", "법무", "검토", "계약서 법무 검토"], "slots": [{"subject": ["계약서", "법무 검토"], "relation": "기한", "value_type": "기간"}]},
+    {"q": "계약서 날인은 누가 승인해?", "entities": ["계약서"], "ok": ["날인", "계약서 날인"], "slots": [{"subject": ["계약서", "날인"], "relation": "승인자", "value_type": "사람·조직"}]},
+    {"q": "외부 강사 강의료 기준은 뭐야?", "entities": ["강의료"], "ok": ["외부 강사", "강사", "외부 강사 강의료"], "slots": [{"subject": ["강의료"], "relation": "근거", "value_type": "문서·규정"}]},
+    {"q": "고객 데이터 반출은 누구 승인이 필요해?", "entities": ["고객 데이터"], "ok": ["데이터", "반출", "고객 데이터 반출"], "slots": [{"subject": ["고객 데이터", "데이터"], "relation": "승인자", "value_type": "사람·조직"}]},
+    {"q": "보안 사고가 나면 어디에 신고해?", "entities": ["보안 사고"], "ok": ["보안", "사고"], "slots": [{"subject": ["보안 사고", "사고"], "relation": "신고처", "value_type": "사람·조직"}]},
+    {"q": "회의실 예약은 어떤 시스템에서 해?", "entities": ["회의실"], "ok": ["예약", "회의실 예약"], "slots": [{"subject": ["회의실"], "relation": "제출처", "value_type": "시스템"}]},
+    {"q": "야근 식대 한도는 얼마야?", "entities": ["식대"], "ok": ["야근", "야근 식대"], "slots": [{"subject": ["식대"], "relation": "한도", "value_type": "금액"}]},
+    {"q": "경조사비 지급 기준 문서는 어디 있어?", "entities": ["경조사비"], "ok": ["지급", "경조사비 지급", "기준 문서"], "slots": [{"subject": ["경조사비"], "relation": "근거", "value_type": "문서·규정"}]},
+    {"q": "구매 요청 결재선은 어떻게 돼?", "entities": ["구매 요청"], "ok": ["구매", "요청", "결재선"], "slots": [{"subject": ["구매"], "relation": "승인자", "value_type": "사람·조직"}]},
+    {"q": "재택근무 신청 마감은 언제야?", "entities": ["재택근무"], "ok": ["신청", "재택근무 신청"], "slots": [{"subject": ["재택근무"], "relation": "기한", "value_type": "기간"}]},
+    {"q": "서버 장애 나면 누구한테 연락해?", "entities": ["서버 장애"], "ok": ["서버", "장애"], "slots": [{"subject": ["서버", "장애"], "relation": "신고처", "value_type": "사람·조직"}]}
+  ]
+}
