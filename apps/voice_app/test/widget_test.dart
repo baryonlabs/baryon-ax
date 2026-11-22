@@ -113,5 +113,10 @@ void main() {
     await tester.drag(find.byKey(const Key('text-scale')), const Offset(200, 0));
     await tester.pumpAndSettle();
     expect(prefs.getDouble('scale'), greaterThan(1.0));
+
+    await tester.ensureVisible(find.byKey(const Key('pin-shortcut')));
+    await tester.tap(find.byKey(const Key('pin-shortcut')));
+    await tester.pumpAndSettle();
+    expect(calls.map((call) => call.method), contains('pinShortcut'));
   });
 }

@@ -483,6 +483,27 @@ class _CallScreenState extends State<CallScreen> {
                     ),
                     const SizedBox(height: 4),
                     ListTile(
+                      key: const Key('pin-shortcut'),
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.add_to_home_screen),
+                      title: const Text('홈 화면에 바로가기 추가'),
+                      subtitle: const Text('한 번 누르면 바로 비서에게 전화'),
+                      onTap: () async {
+                        final messenger = ScaffoldMessenger.of(this.context);
+                        Navigator.pop(context);
+                        final ok =
+                            await _channel.invokeMethod<bool>('pinShortcut') ??
+                            false;
+                        if (!ok) {
+                          messenger.showSnackBar(
+                            const SnackBar(
+                              content: Text('이 런처는 바로가기 추가를 지원하지 않아요.'),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.dns_outlined),
                       title: const Text('서버 설정'),

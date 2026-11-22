@@ -4,6 +4,9 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ShortcutInfo
+import android.content.pm.ShortcutManager
+import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -27,11 +30,53 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         provision(intent)
+        publishShortcuts()
+        callIfAsked(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         provision(intent)
+        callIfAsked(intent)
+    }
+
+    /** "비서에게 전화" from the home screen or the icon's long-press menu: one tap, the call starts. */
+    private fun callIfAsked(intent: Intent?) {
+        if (intent?.action != ACTION_CALL_SECRETARY || VoiceEngine.isRunning) return
+        intent.action = Intent.ACTION_MAIN // not again on rotation
+        main.postDelayed({ withPermissions { startCall() } }, 300)
+    }
+
+    private fun startCall() {
+        val token = prefs().getString("token", "").orEmpty()
+        if (token.isBlank()) {
+            VoiceEngine.emit("error", "message" to "설정에서 기기 토큰을 넣어 주세요.")
+            return
+        }
+        if (VoiceEngine.isRunning && !VoiceEngine.audioCall) VoiceEngine.stop("switch")
+        CallConnectionService.place(applicationContext, prefs().getString("server", DEFAULT_SERVER).orEmpty(), token)
+    }
+
+    private fun callShortcut(): ShortcutInfo =
+        ShortcutInfo.Builder(this, "call-secretary")
+            .setShortLabel(getString(R.string.call_secretary))
+            .setLongLabel(getString(R.string.call_secretary))
+            .setIcon(Icon.createWithResource(this, R.mipmap.ic_launcher))
+            .setIntent(Intent(this, MainActivity::class.java).setAction(ACTION_CALL_SECRETARY))
+            .build()
+
+    private fun publishShortcuts() {
+        try {
+            getSystemService(ShortcutManager::class.java)?.dynamicShortcuts = listOf(callShortcut())
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Ask the launcher to put a "비서에게 전화" icon on the home screen (the system shows a confirmation). */
+    private fun pinShortcut(): Boolean {
+        val manager = getSystemService(ShortcutManager::class.java) ?: return false
+        if (!manager.isRequestPinShortcutSupported) return false
+        return manager.requestPinShortcut(callShortcut(), null)
     }
 
     private fun provision(intent: Intent?) {
@@ -64,16 +109,10 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "start" -> withPermissions {
-                    val server = prefs().getString("server", DEFAULT_SERVER).orEmpty()
-                    val token = prefs().getString("token", "").orEmpty()
-                    if (token.isBlank()) {
-                        VoiceEngine.emit("error", "message" to "설정에서 기기 토큰을 넣어 주세요.")
-                    } else {
-                        if (VoiceEngine.isRunning && !VoiceEngine.audioCall) VoiceEngine.stop("switch")
-                        CallConnectionService.place(applicationContext, server, token)
-                    }
+                    startCall()
                     result.success(true)
                 }
+                "pinShortcut" -> result.success(pinShortcut())
                 "stop" -> { CallConnectionService.hangUp(applicationContext); result.success(true) }
                 "text" -> {
                     // Typing works with or without a call: without one, open a text-only conversation.
@@ -139,5 +178,6 @@ class MainActivity : FlutterActivity() {
     companion object {
         // Development default: `adb reverse tcp:9093 tcp:9093` forwards this to the gateway over USB.
         const val DEFAULT_SERVER = "ws://127.0.0.1:9093/v1/voice/call"
+        const val ACTION_CALL_SECRETARY = "ai.baryon.baryon_voice.CALL_SECRETARY"
     }
 }
