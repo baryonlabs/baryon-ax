@@ -52,7 +52,8 @@ class MainActivity : FlutterActivity() {
     /**
      * Debug builds only: type a message as if from the input box, for demos and screenshots over USB
      * (adb cannot type Korean):
-     *   adb shell am start -n ai.baryon.baryon_voice/.MainActivity --es ask "해외 출장비 정산 마감이 언제야?"
+     *   adb shell "am start -n ai.baryon.baryon_voice/.MainActivity --es ask '해외 출장비 정산 마감이 언제야?'"
+     * Quote the whole command: adb joins the arguments and the phone's shell splits them again at spaces.
      */
     private fun askIfDebug(intent: Intent?) {
         if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE == 0) return
