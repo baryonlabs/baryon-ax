@@ -37,6 +37,7 @@ from .ingest.parsers import ParseError
 from .ingest.pipeline import PipelineConfig, PermanentError, run_pipeline
 from .feedback import FeedbackStore
 from .gaps import GapStore, PackStore, build_pack, cluster_gaps, verify_pack
+from .ontology import Extraction as OntologyExtraction, model_extract as ontology_model_extract, rule_extract as ontology_rule_extract
 from .mcp import MCPClient, MCPGatewayError
 from .mcp_server import MCPServer, Tool, ToolError, parse_body
 from .open_source import open_source_payload
@@ -3040,6 +3041,25 @@ async def gap_clusters(
     }
 
 
+async def ontology_extraction(questions: list[str]) -> OntologyExtraction:
+    """Typed entities and slots for a pack: the configured model when there is one (validated, with
+    question-pattern relations), the rules otherwise. ONTOLOGY_EXTRACTOR=rules forces the rules."""
+    if os.getenv("ONTOLOGY_EXTRACTOR", "auto").lower() == "rules" or not model_adapter.base_url:
+        return ontology_rule_extract(questions)
+
+    async def complete(messages: list[dict[str, str]]) -> str:
+        async with httpx.AsyncClient(timeout=MODEL_TIMEOUT_SECONDS) as client:
+            body = {"model": model_adapter.model, "messages": messages, "temperature": 0, "stream": False,
+                    "response_format": {"type": "json_object"}}
+            if os.getenv("MODEL_DISABLE_THINKING", "false").lower() == "true":
+                body["chat_template_kwargs"] = {"enable_thinking": False}
+            response = await client.post(f"{model_adapter.base_url}/chat/completions", headers=model_adapter.headers(), json=body)
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+
+    return await ontology_model_extract(questions, complete)
+
+
 @app.post("/v1/admin/ontology-packs")
 async def create_ontology_pack(
     payload: OntologyPackRequest,
@@ -3057,6 +3077,7 @@ async def create_ontology_pack(
         name=payload.name or (cluster.suggested_pack_name if cluster else ""),
         gaps=gaps,
         cluster=cluster,
+        extraction=await ontology_extraction([gap.question for gap in gaps]),
     )
     pack_store.save(pack)
     gap_store.mark_converted(principal.organization_id, [gap.id for gap in gaps], pack["id"])

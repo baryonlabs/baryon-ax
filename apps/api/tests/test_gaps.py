@@ -114,8 +114,11 @@ def test_build_pack_is_reviewable_draft() -> None:
     assert pack["status"] == "draft"
     assert pack["organization_id"] == "org_gaps"
     assert pack["name"] == "예산 온톨로지"
-    assert {entity["name"] for entity in pack["entities"]} >= {"인건비", "예산"}
-    assert all(relation["type"] == "related_to" for relation in pack["relations"])
+    assert {entity["name"] for entity in pack["entities"]} == {"인건비 예산", "예산 편성"}  # compound concepts kept whole
+    # "예산 편성 기준은?" asks for the rule behind budgeting: one open slot, no made-up links.
+    assert pack["slots"] == [{"subject": "예산 편성", "relation": "근거", "value_type": "문서·규정",
+                              "question": "예산 편성 기준은?", "status": "open"}]
+    assert pack["relations"] == [{"from": "예산 편성", "type": "근거", "to": "?문서·규정", "confidence": "missing"}]
     assert pack["source_gap_ids"] == ["1", "2"]
     assert pack["acceptance_questions"] == ["인건비 예산은?", "예산 편성 기준은?"]
 
