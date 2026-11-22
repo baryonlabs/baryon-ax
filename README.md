@@ -37,9 +37,9 @@
 <a id="one-page"></a>
 ## 한 장으로 보기
 
-**Glean + Palantir 온톨로지 + ChatGPT Enterprise + Slack AI + Siri·Claude Code ≈ Baryon AX**. 다만 전부 사내 서버 안에서 돌고, 모델은 골라 쓰며, 답하지 못한 질문은 전문가에게 먼저 묻습니다.
+**Glean + Palantir 온톨로지 + ChatGPT Enterprise + Slack AI + OpenAI dots·Pickle ≈ Baryon AX**. 다만 전부 사내 서버 안에서 돌고, 모델은 골라 쓰며, 답하지 못한 질문은 전문가에게 먼저 묻습니다.
 
-<p align="center"><img src="docs/images/baryon-ax-figure1-ko.png" width="920" alt="그림 1. (a) 구성: Glean(사내 검색) + Palantir 온톨로지(지식 지도) + ChatGPT Enterprise(근거 대화) + Slack AI(메신저 에이전트) + Siri + Claude Code(음성 비서·코딩 에이전트) ≈ Baryon AX(사내 설치·모델 선택·소스 공개). (b) 하나의 사내 스택: 회사 서버 안에서 데이터 → 조각 지식 → 온톨로지 → 근거 대화 → 슬랙 에이전트 → 상주형 음성 비서. 모르는 질문은 전문가에게 먼저 묻고, 답은 온톨로지와 지식으로 돌아간다."></p>
+<p align="center"><img src="docs/images/baryon-ax-figure1-ko.png" width="920" alt="그림 1. (a) 구성: Glean(사내 검색) + Palantir 온톨로지(지식 지도) + ChatGPT Enterprise(근거 대화) + Slack AI(메신저 에이전트) + OpenAI dots · Pickle(상주형 에이전트·개인 기억) ≈ Baryon AX(사내 설치·모델 선택·소스 공개). (b) 하나의 사내 스택: 회사 서버 안에서 데이터 → 조각 지식 → 온톨로지 → 근거 대화 → 슬랙 에이전트 → 상주형 음성 비서. 모르는 질문은 전문가에게 먼저 묻고, 답은 온톨로지와 지식으로 돌아간다."></p>
 
 **그림 읽는 법**
 
@@ -50,7 +50,7 @@
 <details>
 <summary>단계별 세로 그림 보기</summary>
 
-<p align="center"><img src="docs/images/baryon-ax-ladder.svg" width="900" alt="데이터 → 조각 지식 → 온톨로지 → 근거 대화 → 슬랙 에이전트 → 상주형 비서. 각 단계 옆에 비슷한 상용 제품: Google Drive·SharePoint, Glean, Palantir 온톨로지, ChatGPT Enterprise, Slack AI, Siri + Claude Code. 답하지 못한 질문은 전문가를 거쳐 온톨로지와 지식으로 돌아간다."></p>
+<p align="center"><img src="docs/images/baryon-ax-ladder.svg" width="900" alt="데이터 → 조각 지식 → 온톨로지 → 근거 대화 → 슬랙 에이전트 → 상주형 비서. 각 단계 옆에 비슷한 상용 제품: Google Drive·SharePoint, Glean, Palantir 온톨로지, ChatGPT Enterprise, Slack AI, OpenAI dots · Pickle. 답하지 못한 질문은 전문가를 거쳐 온톨로지와 지식으로 돌아간다."></p>
 
 </details>
 
@@ -61,7 +61,7 @@
 | 3. 온톨로지 | 사람·업무·용어의 관계, 문서에 없는 암묵지를 전문가 답으로 채움 | Palantir 온톨로지 |
 | 4. 근거 대화 | 출처·인용을 단 답, 근거 없으면 지어내지 않음 | ChatGPT Enterprise |
 | 5. 슬랙 에이전트 | 멘션하면 출처와 함께 답하고, 모르면 담당자에게 먼저 질문 | Slack AI |
-| 6. 상주형 비서 | 전화로 요약·메일·일정, 코딩·조사는 목표 에이전트가 병렬로 | Siri + Claude Code |
+| 6. 상주형 비서 | 전화로 요약·메일·일정, 나를 기억하고, 코딩·조사는 목표 에이전트가 병렬로 | OpenAI dots · Pickle |
 
 <sub>제품명은 이해를 돕기 위한 비유이며 각 회사의 상표입니다. Baryon AX는 이 회사들과 관계가 없습니다.</sub>
 
@@ -891,9 +891,9 @@ API_BASE=http://127.0.0.1:8000 REQUIRE_FULL=1 python3 scripts/smoke_full_stack.p
 - **Voice secretary**: dictation, interruptible live conversation, and a resident secretary you can phone, by SIP or from the **바리온 비서** Android app. It shows up as a normal call, so car Bluetooth works. The secretary summarizes mail, calendar, to-dos and PRs, and acts only after a spoken "yes". It hands long work to **goal agents** that run in parallel on their own sandboxed git branches and report back by voice. Speech-to-text and text-to-speech stay on-premises.
 - **Governance**: OIDC with delegated identity for bots and MCP gateways, audit events in PostgreSQL/JSONL, Langfuse traces, and a security sweep that blocks P0/P1 findings on every PR.
 
-<p align="center"><img src="docs/images/baryon-ax-figure1-en.png" width="920" alt="Figure 1. (a) Composition: Glean + Palantir Ontology + ChatGPT Enterprise + Slack AI + Siri + Claude Code ≈ Baryon AX. (b) One on-premises stack: data, knowledge chunks, ontology, grounded chat, Slack agent and resident voice secretary on the company server, with an ask-the-expert loop back to the ontology."></p>
+<p align="center"><img src="docs/images/baryon-ax-figure1-en.png" width="920" alt="Figure 1. (a) Composition: Glean + Palantir Ontology + ChatGPT Enterprise + Slack AI + OpenAI dots · Pickle ≈ Baryon AX. (b) One on-premises stack: data, knowledge chunks, ontology, grounded chat, Slack agent and resident voice secretary on the company server, with an ask-the-expert loop back to the ontology."></p>
 
-In one picture: roughly Glean + Palantir's ontology + ChatGPT Enterprise + Slack AI + Siri and Claude Code, all running on your own servers.
+In one picture: roughly Glean + Palantir's ontology + ChatGPT Enterprise + Slack AI + OpenAI dots and Pickle, all running on your own servers.
 
 Start with one line (Docker only, no GPU or API key): see [Quick start](#quick-start). The English website is at [baryon-ax.baryon.ai/en](https://baryon-ax.baryon.ai/en/).
 
