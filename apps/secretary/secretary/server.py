@@ -29,12 +29,14 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from .goals import Goal, GoalManager
 from .session import Session
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -47,6 +49,8 @@ MCP_NAMES = [name.strip() for name in os.getenv("SECRETARY_MCP", "").split(",") 
 MAX_SESSIONS = int(os.getenv("SECRETARY_MAX_SESSIONS", "2"))
 IDLE_SECONDS = float(os.getenv("SECRETARY_IDLE_SECONDS", "900"))
 HEARTBEAT_SECONDS = 15.0
+STATE_DIR = Path(os.getenv("SECRETARY_STATE_DIR", str(Path.home() / ".baryon-secretary")))
+MAX_GOALS = int(os.getenv("SECRETARY_MAX_GOALS", "3"))
 
 sessions: dict[str, Session] = {}
 
@@ -59,6 +63,24 @@ def default_client_factory(options: Any) -> Any:
 
 client_factory: Callable[[Any], Any] = default_client_factory
 session_kwargs: dict[str, Any] = {}
+goal_manager: GoalManager | None = None
+
+GOAL_SPOKEN = {
+    "done": "목표 '{title}' 작업이 끝났어요. 보고: {summary}",
+    "failed": "목표 '{title}' 작업이 실패했어요. {summary}",
+    "needs_input": "목표 '{title}' 에이전트가 물어봐요(id {id}): {question}",
+}
+
+
+def on_goal(goal: Goal, event: str) -> None:
+    """Show every change on the app's screen; say the ones that need the user (done, failed, a question)."""
+    for session in list(sessions.values()):
+        if session.closed:
+            continue
+        session.emit({"type": "task", "id": goal.id, "tool": "goal", "to": "목표 에이전트", "summary": goal.title,
+                      "status": goal.status, "step": goal.steps[-1] if goal.steps else "", "question": goal.question})
+        if event in GOAL_SPOKEN:
+            session.notify(GOAL_SPOKEN[event].format(**goal.brief()))
 
 
 async def reap_idle() -> None:
@@ -74,6 +96,9 @@ async def reap_idle() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    global goal_manager
+    if goal_manager is None and "options_factory" not in session_kwargs:
+        goal_manager = GoalManager(STATE_DIR, client_factory, on_goal, model=MODEL, max_parallel=MAX_GOALS)
     reaper = asyncio.create_task(reap_idle())
     yield
     reaper.cancel()
@@ -108,7 +133,16 @@ class TurnBody(BaseModel):
 
 @app.get("/health")
 async def health() -> dict:
-    return {"ok": True, "sessions": len(sessions), "model": MODEL, "mcp": MCP_NAMES, "configured": bool(API_KEY)}
+    active = goal_manager.list(active_only=True) if goal_manager else []
+    return {"ok": True, "sessions": len(sessions), "model": MODEL, "mcp": MCP_NAMES, "configured": bool(API_KEY),
+            "goals_running": len(active)}
+
+
+@app.get("/v1/goals")
+async def goals(authorization: str | None = Header(None)) -> dict:
+    """Goal agents and their state, for a dashboard or the app (no file paths)."""
+    require_key(authorization)
+    return {"data": [goal.brief() for goal in goal_manager.list()] if goal_manager else []}
 
 
 @app.post("/v1/sessions")
@@ -122,7 +156,8 @@ async def start(body: StartBody, authorization: str | None = Header(None)) -> di
         oldest = min(idle, key=lambda s: s.last_active)
         sessions.pop(oldest.id, None)
         await oldest.close()
-    session = Session(client_factory, owner=body.owner, cwd=CWD, model=MODEL, mcp_names=MCP_NAMES, **session_kwargs)
+    extra = {"goals": goal_manager} if goal_manager is not None else {}
+    session = Session(client_factory, owner=body.owner, cwd=CWD, model=MODEL, mcp_names=MCP_NAMES, **extra, **session_kwargs)
     try:
         await session.start()
     except Exception as error:

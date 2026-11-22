@@ -34,6 +34,7 @@ AUTO_MCP_SUFFIXES = (
     "__search_files", "__read_file_content", "__get_file_metadata", "__list_recent_files",
     "__kb_query", "__kb_documents", "__notion-search", "__notion-fetch",
     "__list_issues", "__get_issue", "__list_comments",
+    "__list_goals", "__answer_goal", "__cancel_goal",  # the user's own background agents
 )
 
 DENY_BASH = re.compile(
@@ -107,6 +108,8 @@ def confirmation_prompt(tool: str, tool_input: dict) -> str:
     if name in {"browser_run", "browser_screenshot"}:
         steps = _spoken_steps(tool_input.get("instructions") or tool_input.get("url"))
         return f"브라우저 노드에서 이 작업을 할까요? {_short(steps)}"
+    if name == "start_goal":
+        return f"목표 에이전트에게 맡길까요? {_short(tool_input.get('title') or tool_input.get('goal'))}"
     if name in {"create_task", "create_dynamic_task"}:
         return f"할 일을 만들까요? {_short(tool_input.get('title') or tool_input.get('description'))}"
     if name in {"update_task"}:
