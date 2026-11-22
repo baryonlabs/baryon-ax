@@ -146,7 +146,7 @@
 **📚 지식**
 - HWP · HWPX · PDF · Office · 이미지 · 텍스트 업로드(MIME 라우팅)
 - 구조 인식 청킹(제목 경로 · 표 머리글)
-- Qdrant 벡터 검색, 하이브리드 검색(벡터 + 어휘 RRF)
+- Qdrant 벡터 검색, 하이브리드 검색(벡터 + 어휘 RRF, 기본값). 어휘가 다른 질문에서 근거 검색 성공률 39% → 91% ([벤치](docs/retrieval.md#bench))
 - FastEmbed 또는 OpenAI 호환 임베딩
 - Apache Ossie 의미 모델 가져오기 · 내보내기
 
@@ -279,6 +279,7 @@ docker compose up -d --build                     # 운영 구성이면 -f docker
 curl -s http://localhost:8000/health             # 버전과 연결 상태 확인
 ```
 
+- 어휘 검색만 쓰던 설치는 업데이트 후 Qdrant가 함께 뜹니다. 기존 문서는 자동으로 색인되고(`QDRANT_REINDEX_ON_START=auto`), `docker compose exec api python -m baryon.reindex`로 직접 돌려 결과를 볼 수도 있습니다. 되돌리기는 `RETRIEVAL_MODE=lexical`. [docs/retrieval.md](docs/retrieval.md#migration)
 - 빌드 후에도 `docker compose ps`가 옛 컨테이너를 보여 주면 `docker compose up -d --force-recreate api web`으로 다시 만듭니다.
 - 파서 사이드카를 쓰면 파서도 다시 빌드합니다: `docker compose -f docker-compose.yml -f docker-compose.parsers.yml --profile parsers up -d --build`
 - Docker 없이 개발 중이면 `cd apps/api && uv sync --extra dev`로 의존성을 다시 맞춥니다.
@@ -288,7 +289,7 @@ curl -s http://localhost:8000/health             # 버전과 연결 상태 확�
 
 | 구성 | 실행되는 것 | 최소 사양 | 시작 |
 | --- | --- | --- | --- |
-| Basic Core | `api`, `web`, `demo-local`, 파일 저장소 | 2 vCPU · 4 GB · GPU 없음 | `docker compose up --build` |
+| Basic Core | `api`, `web`, `qdrant`(하이브리드 검색), `demo-local`, 파일 저장소 | 2 vCPU · 4 GB · GPU 없음 | `docker compose up --build` |
 | + 파서 | kordoc, docling, Tika | 디스크 여유(docling 이미지 10 GB+) | `-f docker-compose.parsers.yml --profile parsers` |
 | 운영 구성 | + Qdrant, PostgreSQL, Redis, Langfuse, Mem0 | 8 vCPU · 16 GB | `-f docker-compose.full.yml --profile deps` |
 | + 인증 | Keycloak (OIDC) | — | `-f docker-compose.auth.yml` · [auth-oidc.md](docs/auth-oidc.md) |
@@ -753,8 +754,9 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 | `MODEL_TIMEOUT_SECONDS` | `180` | 모델 연결·응답 제한 시간 |
 | `AUTH_MODE` | `dev` | `oidc`면 Bearer 토큰 검증. [auth-oidc.md](docs/auth-oidc.md) |
 | `TENANCY_MODE` | `single` | `pooled`면 공유 인스턴스(등록된 테넌트만 허용, 쿼터·계량). [multi-tenancy.md](docs/multi-tenancy.md) |
-| `QDRANT_URL` | 비어 있음 | 벡터 저장소 (비우면 어휘 검색) |
-| `RETRIEVAL_MODE` | `vector` | `hybrid`면 벡터 + 어휘 검색 RRF |
+| `QDRANT_URL` | Compose: `http://qdrant:6333` | 벡터 저장소. Compose에서는 `QDRANT_URL_DOCKER=`로 비우면 어휘 검색만 |
+| `RETRIEVAL_MODE` | `hybrid` | `hybrid` 벡터 + 어휘 가중 RRF · `vector` · `lexical`. [docs/retrieval.md](docs/retrieval.md) |
+| `QDRANT_REINDEX_ON_START` | `auto` | 컬렉션이 비어 있으면 기존 문서를 백그라운드로 색인 (`true` 매번 · `false` 안 함) |
 | `RETRIEVAL_MIN_SCORE` | `0.3` | 인용으로 인정할 최소 유사도 |
 | `EMBEDDING_PROVIDER` | `fastembed` | `openai`면 OpenAI 호환 `/v1/embeddings` |
 | `EMBEDDING_MODEL` / `EMBEDDING_DIMENSION` | multilingual MiniLM / `384` | 임베딩 모델과 차원 |
@@ -862,6 +864,7 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 | 설치 · 운영 구성 | [full-stack.md](docs/full-stack.md) · [hardware-requirements.md](docs/hardware-requirements.md) · [model-hardware-selection.md](docs/model-hardware-selection.md) · [operations.md](docs/operations.md) |
 | GPU 서버 배포 | [b300-host-deploy.md](docs/b300-host-deploy.md) · [b300-vllm.md](docs/b300-vllm.md) |
 | AWS 배포 · 멀티테넌트 | [aws-deploy.md](docs/aws-deploy.md) · [multi-tenancy.md](docs/multi-tenancy.md) |
+| 검색 (Qdrant 하이브리드 · 재색인 · 벤치) | [retrieval.md](docs/retrieval.md) |
 | 구조 · 설계 | [architecture.md](docs/architecture.md) · [ingestion/architecture.md](docs/ingestion/architecture.md) · [ux-principles.md](docs/ux-principles.md) · [research/knowledge-gap-loop.md](docs/research/knowledge-gap-loop.md) |
 | 기능 전체 | [features.md](docs/features.md) · [screenshots.md](docs/screenshots.md) |
 | 인증 · 보안 | [auth-oidc.md](docs/auth-oidc.md) · [multi-tenancy.md](docs/multi-tenancy.md) · [security.md](docs/security.md) · [security-ci.md](docs/security-ci.md) · [SECURITY.md](SECURITY.md) |
@@ -923,7 +926,7 @@ API_BASE=http://127.0.0.1:8000 REQUIRE_FULL=1 python3 scripts/smoke_full_stack.p
 **Baryon AX** is an on-premises, model-agnostic, source-available platform for enterprise AI agents that answer from your documents with citations and **ask experts first** for the tacit knowledge that was never written down. It ships with **바리온 비서**, an Android app you call like a person ("네, 비서입니다. 말씀하세요."): hear summaries and hand off work by voice while driving, with speech processed only on your own servers.
 
 - **Grounded answers**: streaming chat with source, chunk, and quote citations; a warning instead of a guess when evidence is missing; organization and role ACLs applied before retrieval reaches the model.
-- **Korean-document ready**: MIME-based routing to kordoc (HWP/HWPX), docling (PDF/Office/images), and Tika; structure-aware chunking; vector or hybrid retrieval.
+- **Korean-document ready**: MIME-based routing to kordoc (HWP/HWPX), docling (PDF/Office/images), and Tika; structure-aware chunking; hybrid retrieval (Qdrant vectors + lexical, the default), which finds the source for reworded questions 91% of the time vs 39% for word matching ([benchmark](docs/retrieval.md#bench)).
 - **Ask-first loop**: unanswered questions become knowledge gaps, experts answer from a question queue, and published answers are indexed through the same pipeline.
 - **Integrations**: OpenAI-compatible `/v1/chat/completions`, an MCP server at `POST /mcp`, an MCP tool picker, Slack and Discord bots, and Apache Ossie import/export.
 - **Voice secretary**: dictation, interruptible live conversation, and a resident secretary you can phone, by SIP or from the **바리온 비서** Android app. It shows up as a normal call, so car Bluetooth works. The secretary summarizes mail, calendar, to-dos and PRs, and acts only after a spoken "yes". It hands long work to **goal agents** that run in parallel on their own sandboxed git branches and report back by voice. Speech-to-text and text-to-speech stay on-premises.

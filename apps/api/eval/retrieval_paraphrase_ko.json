@@ -1,0 +1,124 @@
+{
+  "description": "Vocabulary-mismatch retrieval benchmark (Korean). A fictional organization's policies; each question asks for a fact in words the source does not use. 'control' questions share the source's vocabulary and guard against hybrid regressing on lexical wins.",
+  "documents": [
+    {"title": "hr-leave-policy.md", "chunks": [
+      "연차휴가는 입사일 기준 1년을 근무하면 15일이 부여되고, 이후 2년마다 1일씩 가산되어 최대 25일까지 늘어난다.",
+      "1년 미만 근무자에게는 매월 개근 시 1일의 유급휴가가 발생한다. 미사용 연차는 다음 해 3월 말까지 이월할 수 있다.",
+      "반차는 오전(09~13시) 또는 오후(14~18시) 단위로 신청하며 0.5일이 차감된다."
+    ]},
+    {"title": "travel-expense.md", "chunks": [
+      "국내 출장 숙박비는 1박 기준 서울·광역시 10만 원, 그 밖의 지역 8만 원까지 실비로 정산한다.",
+      "출장 일비는 하루 3만 원이 정액 지급되며, 식대는 일비에 포함되어 별도로 청구하지 않는다.",
+      "해외 출장은 출발 2주 전까지 전자결재로 승인받아야 하고, 항공권은 일반석을 원칙으로 한다."
+    ]},
+    {"title": "remote-work.md", "chunks": [
+      "재택근무는 주 2회까지 허용되며, 팀장 승인 후 근태 시스템에 전날 18시까지 등록한다.",
+      "재택근무 중에도 10시부터 16시까지는 메신저 응답이 가능해야 하는 집중 근무 시간이다.",
+      "재택근무 시 회사 노트북과 VPN을 사용해야 하며 개인 PC로 사내망에 접속하는 것은 금지된다."
+    ]},
+    {"title": "it-security.md", "chunks": [
+      "사내 계정 비밀번호는 12자 이상이어야 하며 90일마다 변경해야 한다. 최근 5개는 재사용할 수 없다.",
+      "의심스러운 메일을 받으면 첨부파일을 열지 말고 보안팀 신고 채널로 전달한 뒤 삭제한다.",
+      "USB 저장장치는 보안팀에 등록된 암호화 장치만 사용할 수 있다."
+    ]},
+    {"title": "equipment.md", "chunks": [
+      "신규 입사자에게는 입사 첫날 노트북 1대와 모니터 1대가 지급되며 교체 주기는 4년이다.",
+      "장비가 고장 나면 IT 헬프데스크에 티켓을 등록하고, 수리 기간 동안 대여 장비를 받을 수 있다.",
+      "퇴사 시 지급 장비는 마지막 근무일에 반납해야 한다."
+    ]},
+    {"title": "family-events.md", "chunks": [
+      "본인 결혼 시 경조휴가 5일과 축하금 50만 원을 지급한다.",
+      "부모 또는 배우자 부모가 사망하면 휴가 5일과 조위금 100만 원을 지급하고, 조화를 회사 명의로 보낸다.",
+      "자녀 출산 시 배우자 출산휴가 10일을 유급으로 사용할 수 있다."
+    ]},
+    {"title": "education-support.md", "chunks": [
+      "직무 관련 외부 교육과 자격증 응시료는 연 200만 원 한도에서 회사가 전액 지원한다.",
+      "교육비를 지원받은 뒤 1년 안에 퇴사하면 지원액의 50%를 반환해야 한다.",
+      "도서 구입비는 월 3만 원까지 법인카드로 결제할 수 있다."
+    ]},
+    {"title": "overtime.md", "chunks": [
+      "평일 20시 이후까지 근무하면 저녁 식대 1만 2천 원을 지원한다.",
+      "22시 이후 퇴근 시 택시비를 실비로 정산하며 영수증을 첨부해야 한다.",
+      "연장근로는 사전에 팀장 승인을 받아야 하며 주 12시간을 넘을 수 없다."
+    ]},
+    {"title": "parking.md", "chunks": [
+      "본사 지하 주차장은 임원과 장애인, 임산부 차량에 우선 배정된다.",
+      "일반 직원은 월 5만 원의 정기권을 신청할 수 있고 대기 순번에 따라 배정된다.",
+      "방문객 차량은 안내데스크에서 2시간 무료 주차권을 받을 수 있다."
+    ]},
+    {"title": "incident-response.md", "chunks": [
+      "운영 서버 장애가 감지되면 당번 엔지니어는 15분 안에 장애 채널에 상황을 공유한다.",
+      "1등급 장애는 고객 영향이 있는 전면 중단으로, CTO에게 즉시 전화로 보고한다.",
+      "장애가 복구되면 5영업일 안에 원인 분석 보고서(포스트모템)를 작성해 공유한다."
+    ]},
+    {"title": "parental-leave.md", "chunks": [
+      "만 8세 이하 자녀가 있는 직원은 최대 1년의 육아휴직을 사용할 수 있다.",
+      "육아휴직 기간은 근속기간에 포함되며, 복직 시 원래 직무 또는 동등한 직무에 배치된다.",
+      "육아기 근로시간 단축은 주 15~35시간 범위에서 신청할 수 있다."
+    ]},
+    {"title": "resignation.md", "chunks": [
+      "퇴사하려면 희망 퇴사일 30일 전까지 사직서를 인사팀에 제출한다.",
+      "퇴직금은 퇴사일로부터 14일 안에 퇴직연금 계좌로 지급된다.",
+      "퇴사 전 인수인계 문서를 작성하고 팀장 확인을 받아야 한다."
+    ]},
+    {"title": "meeting-room.md", "chunks": [
+      "회의실은 그룹웨어 캘린더에서 최대 2주 전부터 예약할 수 있다.",
+      "예약 후 10분 안에 입실하지 않으면 예약이 자동으로 취소된다.",
+      "대회의실(20인)은 외부 손님 행사에 우선 배정한다."
+    ]},
+    {"title": "corporate-card.md", "chunks": [
+      "법인카드는 팀장 이상에게 발급되며 월 한도는 300만 원이다.",
+      "법인카드 사용 내역은 다음 달 5일까지 증빙과 함께 경비 시스템에 등록한다.",
+      "주말과 공휴일 사용, 유흥업소 결제는 사유서 없이 승인되지 않는다."
+    ]},
+    {"title": "clubs.md", "chunks": [
+      "사내 동호회는 회원 5명 이상이면 결성할 수 있고 1인당 월 2만 원의 활동비를 지원한다.",
+      "동호회 활동비는 분기마다 활동 보고서를 제출해야 지급된다."
+    ]}
+  ],
+  "questions": [
+    {"q": "1년 일하면 쉬는 날을 며칠 받나요?", "doc": "hr-leave-policy.md", "chunk": 1, "kind": "paraphrase"},
+    {"q": "입사한 지 몇 달 안 된 사람도 돈 받으면서 쉴 수 있어?", "doc": "hr-leave-policy.md", "chunk": 2, "kind": "paraphrase"},
+    {"q": "지방에 일 보러 가서 호텔 잡으면 얼마까지 돼요?", "doc": "travel-expense.md", "chunk": 1, "kind": "paraphrase"},
+    {"q": "외근 나가서 밥값 따로 받을 수 있나?", "doc": "travel-expense.md", "chunk": 2, "kind": "paraphrase"},
+    {"q": "외국 가는 비행기 좌석 등급은?", "doc": "travel-expense.md", "chunk": 3, "kind": "paraphrase"},
+    {"q": "집에서 일하는 건 일주일에 몇 번까지 돼?", "doc": "remote-work.md", "chunk": 1, "kind": "paraphrase"},
+    {"q": "집에 있는 내 컴퓨터로 회사 시스템 들어가도 돼?", "doc": "remote-work.md", "chunk": 3, "kind": "paraphrase"},
+    {"q": "로그인 암호는 몇 글자 이상이어야 해?", "doc": "it-security.md", "chunk": 1, "kind": "paraphrase"},
+    {"q": "피싱 같은 이상한 이메일이 오면 어떻게 하죠?", "doc": "it-security.md", "chunk": 2, "kind": "paraphrase"},
+    {"q": "처음 온 사람한테 컴퓨터 뭐 줘요?", "doc": "equipment.md", "chunk": 1, "kind": "paraphrase"},
+    {"q": "노트북이 망가졌을 때 어떻게 해?", "doc": "equipment.md", "chunk": 2, "kind": "paraphrase"},
+    {"q": "회사 그만둘 때 받은 기기는 언제 돌려줘?", "doc": "equipment.md", "chunk": 3, "kind": "paraphrase"},
+    {"q": "장가가면 회사에서 축의금 줘요?", "doc": "family-events.md", "chunk": 1, "kind": "paraphrase"},
+    {"q": "아버지가 돌아가시면 며칠 쉴 수 있나요?", "doc": "family-events.md", "chunk": 2, "kind": "paraphrase"},
+    {"q": "아내가 아이를 낳으면 남편 휴가는?", "doc": "family-events.md", "chunk": 3, "kind": "paraphrase"},
+    {"q": "회사 돈으로 강의 듣고 바로 나가면 토해내야 해?", "doc": "education-support.md", "chunk": 2, "kind": "paraphrase"},
+    {"q": "책 사는 돈도 지원돼?", "doc": "education-support.md", "chunk": 3, "kind": "paraphrase"},
+    {"q": "밤늦게까지 남아 있으면 저녁 먹을 돈 나와?", "doc": "overtime.md", "chunk": 1, "kind": "paraphrase"},
+    {"q": "늦게 끝나서 집에 갈 차비는?", "doc": "overtime.md", "chunk": 2, "kind": "paraphrase"},
+    {"q": "추가로 일하는 시간은 일주일에 최대 얼마야?", "doc": "overtime.md", "chunk": 3, "kind": "paraphrase"},
+    {"q": "건물 밑에 차 세울 자리는 누가 먼저 받아?", "doc": "parking.md", "chunk": 1, "kind": "paraphrase"},
+    {"q": "손님이 차를 가지고 오면 공짜로 세울 수 있어?", "doc": "parking.md", "chunk": 3, "kind": "paraphrase"},
+    {"q": "서비스가 다운되면 언제까지 알려야 해?", "doc": "incident-response.md", "chunk": 1, "kind": "paraphrase"},
+    {"q": "문제가 해결된 다음 회고 문서는 언제까지 써?", "doc": "incident-response.md", "chunk": 3, "kind": "paraphrase"},
+    {"q": "애 키우느라 쉬려면 얼마나 쉴 수 있어?", "doc": "parental-leave.md", "chunk": 1, "kind": "paraphrase"},
+    {"q": "아이 때문에 일하는 시간을 줄일 수 있어?", "doc": "parental-leave.md", "chunk": 3, "kind": "paraphrase"},
+    {"q": "그만두고 싶으면 며칠 전에 말해야 해?", "doc": "resignation.md", "chunk": 1, "kind": "paraphrase"},
+    {"q": "나갈 때 하던 일 넘기는 건 어떻게 해?", "doc": "resignation.md", "chunk": 3, "kind": "paraphrase"},
+    {"q": "미팅 공간은 며칠 전부터 잡을 수 있어?", "doc": "meeting-room.md", "chunk": 1, "kind": "paraphrase"},
+    {"q": "방을 잡아놓고 안 가면 어떻게 돼?", "doc": "meeting-room.md", "chunk": 2, "kind": "paraphrase"},
+    {"q": "회사 카드로 한 달에 얼마까지 쓸 수 있어?", "doc": "corporate-card.md", "chunk": 1, "kind": "paraphrase"},
+    {"q": "토요일에 회사 카드를 긁으면 어떻게 돼?", "doc": "corporate-card.md", "chunk": 3, "kind": "paraphrase"},
+    {"q": "취미 모임을 만들려면 몇 명 있어야 해?", "doc": "clubs.md", "chunk": 1, "kind": "paraphrase"},
+    {"q": "연차휴가 이월 기한은?", "doc": "hr-leave-policy.md", "chunk": 2, "kind": "control"},
+    {"q": "반차 신청 단위", "doc": "hr-leave-policy.md", "chunk": 3, "kind": "control"},
+    {"q": "출장 일비 금액", "doc": "travel-expense.md", "chunk": 2, "kind": "control"},
+    {"q": "육아휴직 기간이 근속기간에 포함되나요", "doc": "parental-leave.md", "chunk": 2, "kind": "control"},
+    {"q": "법인카드 사용 내역 등록 기한", "doc": "corporate-card.md", "chunk": 2, "kind": "control"},
+    {"q": "동호회 활동비 지급 조건", "doc": "clubs.md", "chunk": 2, "kind": "control"},
+    {"q": "포스트모템 작성 기한", "doc": "incident-response.md", "chunk": 3, "kind": "control"},
+    {"q": "사직서 제출 기한", "doc": "resignation.md", "chunk": 1, "kind": "control"},
+    {"q": "비밀번호 변경 주기", "doc": "it-security.md", "chunk": 1, "kind": "control"},
+    {"q": "퇴직금 지급 시점", "doc": "resignation.md", "chunk": 2, "kind": "control"}
+  ]
+}
