@@ -12,6 +12,11 @@ signed in) and is reached only by the Baryon AX API, which authenticates the own
     PUT    /v1/profile                      {about?, usage?, mcp?: [names]}
     POST   /v1/memories                     {text}                    -> the new memory
     DELETE /v1/memories/{id}
+    GET    /v1/notifications                waiting and unacknowledged phone notifications (notify.py)
+    POST   /v1/notifications                {title, text?, when?, alarm?}: ring the phone now or later
+    DELETE /v1/notifications/{id}           cancel one
+    POST   /v1/notifications/{id}/ack       the phone showed it
+    GET    /v1/notifications/stream         server-sent events the phone gateway passes to the app
     GET    /health
 
 Environment:
@@ -42,6 +47,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from .goals import Goal, GoalManager
+from .notify import Notifier, public
 from .profile import Profile
 from .session import Session
 
@@ -71,6 +77,7 @@ client_factory: Callable[[Any], Any] = default_client_factory
 session_kwargs: dict[str, Any] = {}
 goal_manager: GoalManager | None = None
 profile: Profile | None = None
+notifier: Notifier | None = None
 
 GOAL_SPOKEN = {
     "done": "목표 '{title}' 작업이 끝났어요. 보고: {summary}",
@@ -103,9 +110,12 @@ async def reap_idle() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global goal_manager, profile
+    global goal_manager, profile, notifier
     if profile is None:
         profile = Profile(STATE_DIR, MCP_NAMES)
+    if notifier is None:
+        notifier = Notifier(STATE_DIR)
+    ticker = asyncio.create_task(notifier.run())
     if goal_manager is None and "options_factory" not in session_kwargs:
         goal_manager = GoalManager(STATE_DIR, client_factory, on_goal, model=MODEL, max_parallel=MAX_GOALS,
                                    brain=lambda: profile.goal_agent_brain(MODEL) if profile else
@@ -113,6 +123,7 @@ async def lifespan(_: FastAPI):
     reaper = asyncio.create_task(reap_idle())
     yield
     reaper.cancel()
+    ticker.cancel()
     for session in list(sessions.values()):
         await session.close()
     sessions.clear()
@@ -148,6 +159,13 @@ class ProfileBody(BaseModel):
 
 class MemoryBody(BaseModel):
     text: str = Field(min_length=1, max_length=300)
+
+
+class NotifyBody(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    text: str = Field("", max_length=600)
+    when: str | None = Field(None, max_length=40)
+    alarm: bool = False
 
 
 class TurnBody(BaseModel):
@@ -218,6 +236,8 @@ async def start(body: StartBody, authorization: str | None = Header(None)) -> di
     extra: dict[str, Any] = {"goals": goal_manager} if goal_manager is not None else {}
     if profile is not None:
         extra["profile"] = profile
+    if notifier is not None:
+        extra["notifier"] = notifier
     mcp_names = profile.mcp_enabled if profile is not None else MCP_NAMES
     brain = profile.conversation_brain(MODEL) if profile is not None else {"model": MODEL}
     if brain.get("effort"):
@@ -270,5 +290,63 @@ async def events(session_id: str, authorization: str | None = Header(None)) -> S
                 yield ": ping\n\n"
                 continue
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
+def get_notifier() -> Notifier:
+    if notifier is None:
+        raise HTTPException(503, "notifier not loaded")
+    return notifier
+
+
+@app.get("/v1/notifications")
+async def list_notifications(authorization: str | None = Header(None)) -> dict:
+    require_key(authorization)
+    return {"data": [dict(public(item), status=item["status"]) for item in get_notifier().pending()]}
+
+
+@app.post("/v1/notifications")
+async def add_notification(body: NotifyBody, authorization: str | None = Header(None)) -> dict:
+    require_key(authorization)
+    try:
+        item = get_notifier().add(body.title, body.text, body.when, body.alarm, source="api")
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    return dict(public(item), status=item["status"])
+
+
+@app.delete("/v1/notifications/{notification_id}")
+async def cancel_notification(notification_id: str, authorization: str | None = Header(None)) -> dict:
+    require_key(authorization)
+    if not get_notifier().cancel(notification_id):
+        raise HTTPException(404, "no such notification")
+    return {"ok": True}
+
+
+@app.post("/v1/notifications/{notification_id}/ack")
+async def ack_notification(notification_id: str, authorization: str | None = Header(None)) -> dict:
+    require_key(authorization)
+    return {"ok": get_notifier().ack(notification_id)}
+
+
+@app.get("/v1/notifications/stream")
+async def notification_stream(authorization: str | None = Header(None)) -> StreamingResponse:
+    require_key(authorization)
+    source = get_notifier()
+    queue = source.listen()
+
+    async def stream():
+        try:
+            yield ": connected\n\n"
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), HEARTBEAT_SECONDS)
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+                    continue
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        finally:
+            source.unlisten(queue)
 
     return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})

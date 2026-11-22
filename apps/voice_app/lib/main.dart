@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'alerts_settings.dart';
 import 'secretary_page.dart';
 
 /// 바리온 비서: talk to your voice secretary hands-free, or type to it.
@@ -615,6 +616,8 @@ class _CallScreenState extends State<CallScreen> {
                     ),
                   ),
                 ),
+                section('알림'),
+                const AlertsSettings(),
                 section('화면'),
                 Wrap(
                   spacing: 8,

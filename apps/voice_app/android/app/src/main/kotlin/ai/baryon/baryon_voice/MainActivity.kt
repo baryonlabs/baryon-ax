@@ -31,6 +31,8 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         provision(intent)
         publishShortcuts()
+        Alerts.channels(this)
+        NotifyService.startIfWanted(applicationContext)
         callIfAsked(intent)
         askIfDebug(intent)
     }
@@ -106,6 +108,42 @@ class MainActivity : FlutterActivity() {
             if (!server.isNullOrBlank()) putString("server", server)
             if (!token.isNullOrBlank()) putString("token", token)
         }.apply()
+        restartNotifications()
+    }
+
+    /** The notification connection follows the server and token: reconnect after either changes. */
+    private fun restartNotifications() {
+        if (!NotifyService.enabled(this)) return
+        NotifyService.stop(applicationContext)
+        main.postDelayed({ NotifyService.startIfWanted(applicationContext) }, 500)
+    }
+
+    private fun alertsState(): Map<String, Any> {
+        val notifications = getSystemService(android.app.NotificationManager::class.java)
+        return mapOf(
+            "on" to NotifyService.enabled(this),
+            "connected" to NotifyService.connected,
+            "status" to NotifyService.lastStatus,
+            "notificationsAllowed" to notifications.areNotificationsEnabled(),
+            "fullScreenAllowed" to (Build.VERSION.SDK_INT < 34 || notifications.canUseFullScreenIntent()),
+            "batteryExempt" to getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(packageName),
+        )
+    }
+
+    /** Open the system screen that fixes one thing the alerts need (the owner flips the switch there). */
+    @android.annotation.SuppressLint("BatteryLife") // a self-hosted push connection is the documented exception
+    private fun fixAlerts(what: String) {
+        val uri = android.net.Uri.parse("package:$packageName")
+        val intent = when (what) {
+            "notifications" -> Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+            "fullScreen" -> if (Build.VERSION.SDK_INT >= 34) Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, uri) else null
+            "battery" -> Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, uri)
+            else -> null
+        } ?: return
+        try { startActivity(intent) } catch (_: Exception) {
+            startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, uri))
+        }
     }
 
     private fun prefs() = getSharedPreferences("baryon_voice", Context.MODE_PRIVATE)
@@ -136,6 +174,7 @@ class MainActivity : FlutterActivity() {
                         call.argument<String>("server")?.takeIf { it.isNotBlank() }?.let { putString("server", it) }
                         call.argument<String>("token")?.takeIf { it.isNotBlank() }?.let { putString("token", it) }
                     }.apply()
+                    restartNotifications()
                     result.success(true)
                 }
                 "start" -> withPermissions {
@@ -143,6 +182,19 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "pinShortcut" -> result.success(pinShortcut())
+                "alertsState" -> result.success(alertsState())
+                "alerts" -> {
+                    val on = call.argument<Boolean>("on") == true
+                    prefs().edit().putBoolean("alerts", on).apply()
+                    if (on) {
+                        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 43)
+                        }
+                        NotifyService.startIfWanted(applicationContext)
+                    } else NotifyService.stop(applicationContext)
+                    result.success(true)
+                }
+                "fixAlerts" -> { fixAlerts(call.argument<String>("what").orEmpty()); result.success(true) }
                 "typing" -> { VoiceEngine.typing(); result.success(true) }
                 "callPrefs" -> {
                     VoiceEngine.prefsJson = org.json.JSONObject().put("type", "prefs")
