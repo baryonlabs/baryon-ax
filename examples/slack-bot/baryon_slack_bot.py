@@ -80,6 +80,7 @@ class Answer:
     text: str
     citations: list[dict] = field(default_factory=list)
     trace_id: str = ""
+    answered: bool = True  # False when the documents did not answer it (baryon-ax `grounding.answered`)
 
 
 class BaryonClient:
@@ -114,7 +115,9 @@ class BaryonClient:
         response.raise_for_status()
         data = response.json()
         text = data["choices"][0]["message"]["content"]
-        return Answer(text=text, citations=data.get("citations") or [], trace_id=data.get("id", ""))
+        grounding = data.get("grounding") or {}
+        return Answer(text=text, citations=data.get("citations") or [], trace_id=data.get("id", ""),
+                      answered=bool(grounding.get("answered", True)))
 
     def snippets(self, query: str, slack_user: str) -> dict[tuple[str, int], str]:
         """Chunk text for quoting; the chat endpoint returns only document id/title/chunk."""
@@ -197,9 +200,13 @@ def source_lines(citations: list[dict], snippets: dict[tuple[str, int], str], ma
 
 def build_blocks(answer: Answer, snippets: dict[tuple[str, int], str], max_sources: int) -> list[dict]:
     blocks: list[dict] = [{"type": "section", "text": {"type": "mrkdwn", "text": _clip(to_mrkdwn(answer.text), SECTION_LIMIT)}}]
-    lines = source_lines(answer.citations, snippets, max_sources)
+    lines = source_lines(answer.citations, snippets, max_sources) if answer.answered else []
     blocks.append({"type": "divider"})
-    if lines:
+    if not answer.answered:
+        # Retrieval may still return passages, but they did not answer the question: listing them as sources misleads.
+        blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text":
+            ":mag: 문서에서 답을 찾지 못해 지식 공백으로 남겼습니다. 담당자가 답하면 다음부터는 바로 답합니다."}]})
+    elif lines:
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": _clip("*:bookmark_tabs: 근거*\n" + "\n".join(lines), SECTION_LIMIT)}})
     else:
         blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": ":warning: 근거 문서를 찾지 못했습니다. 문서에 없는 내용일 수 있습니다."}]})
@@ -286,7 +293,7 @@ class Responder:
         pending = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=PENDING_TEXT)
         try:
             result = self.baryon.ask(messages, user, thread_id=f"slack:{channel}:{thread_ts}")
-            snippets = self.baryon.snippets(question, user) if self.config.show_snippets and result.citations else {}
+            snippets = self.baryon.snippets(question, user) if self.config.show_snippets and result.citations and result.answered else {}
             web.chat_update(channel=channel, ts=pending["ts"], text=result.text,
                             blocks=build_blocks(result, snippets, self.config.max_sources))
             self._react(web, channel, event["ts"], "white_check_mark", add=True)

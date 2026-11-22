@@ -208,3 +208,12 @@ def test_gap_detection_is_organization_scoped() -> None:
     assert all(item["organization_id"] == "org-gap-scope-a" for item in a)
     assert all(item["organization_id"] == "org-gap-scope-b" for item in b)
     assert {item["question"] for item in a}.isdisjoint({item["question"] for item in b})
+
+
+def test_chat_response_says_whether_documents_answered() -> None:
+    org = "org-grounding"
+    response = client.post("/v1/chat/completions", headers=headers(organization=org),
+                           json={"messages": [{"role": "user", "content": "2031년 우주 출장 규정은?"}], "stream": False, "use_retrieval": True})
+    body = response.json()
+    assert body["grounding"]["answered"] is False and "no_citations" in body["grounding"]["reasons"]
+    assert body["knowledge_gap"] and body["knowledge_gap"]["question"] == "2031년 우주 출장 규정은?"

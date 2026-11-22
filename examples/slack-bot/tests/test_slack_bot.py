@@ -177,3 +177,10 @@ def test_subscriptions_expire() -> None:
     subs = ThreadSubscriptions(ttl_seconds=-1)
     subs.add("C", "1")
     assert ("C", "1") not in subs
+
+
+def test_unanswered_question_lists_no_sources() -> None:
+    """Retrieval returned passages, but the model said the documents do not answer it: no "근거" list."""
+    blocks = build_blocks(Answer("문서에서 찾지 못했습니다", CITATIONS, "trace-2", answered=False), {}, max_sources=4)
+    text = json.dumps(blocks, ensure_ascii=False)
+    assert "근거*" not in text and "지식 공백" in text
