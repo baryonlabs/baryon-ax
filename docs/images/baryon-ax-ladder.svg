@@ -33,7 +33,7 @@
 
   <!-- formula -->
   <rect x="40" y="108" width="1120" height="76" rx="14" fill="#1f6f5c"/>
-  <text x="64" y="142" class="formula">Glean + Palantir 온톨로지 + ChatGPT Enterprise + Slack AI + Siri·Claude Code  ≈  Baryon AX</text>
+  <text x="64" y="142" class="formula">Glean + Palantir 온톨로지 + ChatGPT Enterprise + Slack AI + OpenAI dots·Pickle  ≈  Baryon AX</text>
   <text x="64" y="168" class="formula-sub">다만 전부 사내 설치 · 모델은 골라 쓰고 · 답 못한 질문은 전문가에게 먼저 묻고 · 소스 공개</text>
 
   <!-- connectors between rows -->
@@ -131,7 +131,7 @@
     <text x="330" y="1026" class="line">코딩 · 조사는 목표 에이전트가 병렬로 하고 끝나면 먼저 보고</text>
     <rect x="860" y="972" width="284" height="74" rx="12" fill="#e3f3f6"/>
     <text x="878" y="996" class="like">비슷한 상용 제품</text>
-    <text x="878" y="1026" class="prod" fill="#0b5566">Siri + Claude Code</text>
+    <text x="878" y="1026" class="prod" fill="#0b5566">OpenAI dots · Pickle</text>
   </g>
 
   <!-- loop label -->
