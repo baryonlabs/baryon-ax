@@ -80,6 +80,18 @@ For development without any network setup:
 adb reverse tcp:9093 tcp:9093   # the app's default server is ws://127.0.0.1:9093/v1/voice/call
 ```
 
+Without USB, over a Tailscale or headscale tailnet (debug builds only):
+
+1. Publish the gateway's app port on the server's tailnet address as well, for example
+   `-p <tailnet-ip>:9093:9093` next to `-p 127.0.0.1:9093:9093`. The device token is still required.
+2. In the app: Settings → server → `ws://<tailnet-ip>:9093/v1/voice/call`.
+
+Debug builds allow plain `ws://` (`android/app/src/debug/res/xml/network_security_config.xml`), because tailnet
+traffic is already encrypted by WireGuard. Release builds keep `wss://` everywhere except the USB tunnel to
+`127.0.0.1`. To install a new debug build without USB, serve the APK on the tailnet address
+(`python3 -m http.server --bind <tailnet-ip>`) and open it in the phone's browser; it updates the installed app
+in place when both are signed with the same debug key.
+
 ## Protocol
 
 Messages from the client:
