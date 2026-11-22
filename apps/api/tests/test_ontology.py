@@ -63,3 +63,46 @@ def test_rules_meet_the_quality_bar_on_the_korean_gold_set() -> None:
     legacy = module.summarize([module.score_question(item, module.legacy_extract(item["q"])) for item in gold])
     assert rules["entity_precision"] >= 0.8 and rules["noise_rate"] == 0 and rules["slot_recall"] >= 0.8
     assert rules["entity_precision"] > legacy["entity_precision"] and legacy["noise_rate"] > 0
+
+
+def test_amounts_are_not_entities_and_unknown_types_are_kept_as_concepts() -> None:
+    extraction = parse_model_output(json.dumps({"entities": [{"name": "렌터카 비용", "type": "금액"}],
+                                                "slots": []}, ensure_ascii=False), [])
+    assert [(entity.name, entity.type) for entity in extraction.entities] == [("렌터카 비용", "개념")]
+
+
+def test_synonyms_merge_into_the_name_earlier_packs_use() -> None:
+    from baryon.ontology import resolve_synonyms
+
+    extraction = rule_extract(["회사카드 해외 결제 한도는 얼마야?", "연차휴가는 누가 승인해?"])
+    names = [entity.name for entity in extraction.entities]
+    assert "연차휴가" in names
+
+    async def model(messages):  # the model may only pick listed names; the made-up pair is ignored
+        return json.dumps({"same": [{"new": "회사카드 해외", "existing": "법인카드"},
+                                    {"new": "회사카드", "existing": "법인카드"},
+                                    {"new": "없는 이름", "existing": "법인카드"}]}, ensure_ascii=False)
+
+    merged = asyncio.run(resolve_synonyms(extraction, ["법인카드", "연차 휴가"], model))
+    by_name = {entity.name: entity for entity in merged.entities}
+    assert "연차 휴가" in by_name and "연차휴가" in by_name["연차 휴가"].synonyms   # spacing: no model needed
+    assert "법인카드" in by_name and "회사카드 해외" in by_name["법인카드"].synonyms  # model decision
+    assert {slot.subject for slot in merged.slots} == {"법인카드", "연차 휴가"}
+    assert asyncio.run(resolve_synonyms(extraction, [], model)) is extraction        # nothing earlier: unchanged
+
+
+def test_each_question_gets_its_own_model_call() -> None:
+    from baryon.ontology import model_extract_each
+
+    seen: list[str] = []
+
+    async def model(messages):
+        question = messages[-1]["content"].split("- ", 1)[1]
+        seen.append(question)
+        subject = "법인카드" if "카드" in question else "렌터카"
+        return json.dumps({"entities": [subject], "slots": [{"subject": subject, "relation": "한도", "value_type": "금액",
+                                                           "question": question}]}, ensure_ascii=False)
+
+    merged = asyncio.run(model_extract_each(["법인카드 한도는 얼마야?", "렌터카 반납이 늦으면 누구에게 연락해?"], model))
+    assert sorted(seen) == ["렌터카 반납이 늦으면 누구에게 연락해?", "법인카드 한도는 얼마야?"]
+    assert {(slot.subject, slot.relation) for slot in merged.slots} == {("법인카드", "한도"), ("렌터카", "신고처")}
