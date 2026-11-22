@@ -23,6 +23,7 @@ AUTO_BASH_PREFIXES = (
     # Google mail and calendar through gogcli (`gog`), read-only commands only
     "gog gmail search ", "gog gmail get ", "gog gmail thread get ", "gog gmail url ", "gog gmail labels list",
     "gog calendar events", "gog calendar event ", "gog calendar calendars",
+    "gog calendar freebusy", "gog calendar conflicts", "gog calendar search ", "gog calendar time",
     "gh pr list", "gh pr view", "gh pr checks", "gh pr status", "gh pr diff", "gh run list", "gh run view",
     "gh issue list", "gh issue view", "gh repo view",
     "git status", "git log", "git diff", "git show", "git branch --show-current", "git branch -a", "git branch -v", "git remote -v", "git fetch",
@@ -38,6 +39,7 @@ AUTO_MCP_SUFFIXES = (
     "__kb_query", "__kb_documents", "__notion-search", "__notion-fetch",
     "__list_issues", "__get_issue", "__list_comments",
     "__list_goals", "__answer_goal", "__cancel_goal",  # the user's own background agents
+    "__slack__search_messages", "__slack__read_channel", "__slack__list_conversations",  # reading Slack
     "__memory__remember", "__memory__list_memories", "__memory__forget",  # the secretary's own notes about its owner (profile.py)
     # Baryon AX's own MCP server (POST /mcp): reading company knowledge. Saving or publishing an answer
     # (record_answer, publish_answer) changes the knowledge base, so it still needs a spoken yes.
@@ -79,7 +81,17 @@ def _read_only_shell(command: str) -> bool:
     return True
 
 
+# KakaoTalk through a deskclaw node (DureClaw). Listing rooms changes nothing; opening a room marks it read
+# for the other side, and sending is a message on the owner's behalf.
+_KAKAO_READONLY = re.compile(r"^\s*\[KAKAO\]\s+(rooms|unread|triage)\b")
+_KAKAO_DRY_SEND = re.compile(r"^\s*\[KAKAO\]\s+send\b(?!.*--yes)")
+
+
 def decide(tool: str, tool_input: dict) -> Decision:
+    if tool.endswith("__send_task"):
+        instructions = str(tool_input.get("instructions", ""))
+        if _KAKAO_READONLY.search(instructions) or _KAKAO_DRY_SEND.search(instructions):
+            return Decision("auto")
     if tool == "Bash":
         command = str(tool_input.get("command", "")).strip()
         if DENY_BASH.search(command):
@@ -122,9 +134,47 @@ def _gog_send_prompt(command: str) -> str:
     return "메일을 보낼까요? " + ", ".join(part for part in parts if part)
 
 
+def _when(value: str) -> str:
+    """2026-11-25T15:00:00+09:00 → 11월 25일 15:00"""
+    match = re.match(r"(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?", value or "")
+    if not match:
+        return value
+    year, month, day, hour, minute = match.groups()
+    return f"{int(month)}월 {int(day)}일" + (f" {hour}:{minute}" if hour else "")
+
+
+def _gog_calendar_prompt(command: str) -> str:
+    """Read the event back before it is written: what, when, who."""
+    verb = re.search(r"\bgog\s+calendar\s+(\S+)", command).group(1)
+    action = {"update": "바꿀까요", "edit": "바꿀까요", "set": "바꿀까요", "propose-time": "새 시간을 제안할까요",
+              "respond": "답할까요", "rsvp": "답할까요", "reply": "답할까요"}.get(verb, "등록할까요")
+    title = _flag(command, "summary") or _flag(command, "title")
+    start, end = _flag(command, "from"), _flag(command, "to")
+    attendees = _flag(command, "attendees")
+    parts = [title and f"'{_short(title, 30)}'", start and f"{_when(start)}" + (f"부터 {_when(end).split(' ')[-1]}까지" if end else ""),
+             attendees and f"참석자 {_short(attendees, 40)}", verb in {"respond", "rsvp", "reply"} and _flag(command, "status")]
+    return f"일정을 {action}? " + ", ".join(part for part in parts if part)
+
+
+def _kakao_prompt(instructions: str) -> str:
+    room = re.search(r'"([^"]+)"', instructions)
+    room_name = room.group(1) if room else "카톡 방"
+    if re.search(r"\[KAKAO\]\s+send\b", instructions):
+        texts = re.findall(r'"([^"]+)"', instructions)
+        text = texts[1] if len(texts) > 1 else ""
+        return f"카톡 '{_short(room_name, 20)}'에 보낼까요? 내용 {_short(text, 60)}"
+    if re.search(r"\[KAKAO\]\s+read\b", instructions):
+        return f"카톡 '{_short(room_name, 20)}' 방을 열어 읽을까요? 상대에게 읽음으로 표시돼요."
+    return f"카톡 작업을 할까요? {_short(instructions, 50)}"
+
+
 def confirmation_prompt(tool: str, tool_input: dict) -> str:
     """One short spoken question that says what will happen."""
     name = tool.rsplit("__", 1)[-1]
+    if name == "send_task" and "[KAKAO]" in str(tool_input.get("instructions", "")):
+        return _kakao_prompt(str(tool_input.get("instructions", "")))
+    if name == "post_message":
+        return f"슬랙에 보낼까요? {_short(tool_input.get('channel'), 30)}에, 내용 {_short(tool_input.get('text'), 60)}"
     if name == "send_task":
         target = tool_input.get("to") or "플릿"
         return f"{target}에게 이 작업을 보낼까요? {_short(_spoken_steps(tool_input.get('instructions')))}"
@@ -149,6 +199,9 @@ def confirmation_prompt(tool: str, tool_input: dict) -> str:
         return f"일정을 등록할까요? {_short(tool_input.get('summary') or tool_input.get('title'))}"
     if name in {"delete_event", "trash_message", "trash_thread", "delete_draft"}:
         return "삭제할까요? 되돌리기 어려울 수 있어요."
+    if tool == "Bash" and re.search(r"\bgog\s+calendar\s+(create|add|new|update|edit|set|propose-time|respond|rsvp|reply)\b",
+                                    str(tool_input.get("command", ""))):
+        return _gog_calendar_prompt(str(tool_input.get("command", "")))
     if tool == "Bash" and re.search(r"\bgog\s+gmail\s+send\b", str(tool_input.get("command", ""))):
         return _gog_send_prompt(str(tool_input.get("command", "")))
     if tool == "Bash":
@@ -209,6 +262,8 @@ def status_label(tool: str, tool_input: dict) -> str:
             return "메일을 보내고 있어요."
         if command.startswith("gog gmail"):
             return "메일을 확인하고 있어요."
+        if re.match(r"gog calendar (create|add|new|update|edit|set|propose-time|respond)", command):
+            return "일정을 등록하고 있어요."
         if command.startswith("gog calendar"):
             return "일정을 확인하고 있어요."
         return "명령을 실행하고 있어요."
