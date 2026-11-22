@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'alerts_settings.dart';
 import 'cards.dart';
+import 'face.dart';
 import 'secretary_page.dart';
 
 /// 바리온 비서: talk to your voice secretary hands-free, or type to it.
@@ -64,6 +66,7 @@ class ViewPrefs {
     this.haptics = true,
     this.showSteps = true,
     this.autoCall = false,
+    this.showFace = true,
   });
 
   final double scale;
@@ -76,6 +79,7 @@ class ViewPrefs {
   final bool haptics;
   final bool showSteps;
   final bool autoCall;
+  final bool showFace; // the floating face (face.dart)
 
   Palette get palette => palettes.firstWhere(
     (p) => p.id == paletteId,
@@ -93,6 +97,7 @@ class ViewPrefs {
     bool? haptics,
     bool? showSteps,
     bool? autoCall,
+    bool? showFace,
   }) => ViewPrefs(
     scale: scale ?? this.scale,
     paletteId: paletteId ?? this.paletteId,
@@ -104,6 +109,7 @@ class ViewPrefs {
     haptics: haptics ?? this.haptics,
     showSteps: showSteps ?? this.showSteps,
     autoCall: autoCall ?? this.autoCall,
+    showFace: showFace ?? this.showFace,
   );
 
   static Future<ViewPrefs> load() async {
@@ -120,6 +126,7 @@ class ViewPrefs {
         haptics: p.getBool('haptics') ?? true,
         showSteps: p.getBool('showSteps') ?? true,
         autoCall: p.getBool('autoCall') ?? false,
+        showFace: p.getBool('showFace') ?? true,
       );
     } catch (_) {
       return const ViewPrefs();
@@ -139,6 +146,7 @@ class ViewPrefs {
       await p.setBool('haptics', haptics);
       await p.setBool('showSteps', showSteps);
       await p.setBool('autoCall', autoCall);
+      await p.setBool('showFace', showFace);
     } catch (_) {}
   }
 }
@@ -330,9 +338,55 @@ class _CallScreenState extends State<CallScreen> {
   String? uploadStage; // sending | transcribing, while a recording becomes text
   double uploadShare = 0;
   String recordAsk = '';
+  // The floating face: levels from the phone (VoiceEngine "level"), and where it was dragged to.
+  double micLevel = 0;
+  double voiceLevel = 0;
+  Offset? facePosition;
+  bool faceLarge = false;
 
   bool get inCall =>
       line == Line.connecting || line == Line.connected || line == Line.muted;
+
+  FaceMood get faceMood {
+    if (error != null && !working) return FaceMood.error;
+    if (question != null) return FaceMood.question;
+    if (speaking) return FaceMood.speaking;
+    if (working) return FaceMood.thinking;
+    final listening = hearing || recording || (inCall && line != Line.muted);
+    if (listening) return FaceMood.listening;
+    return FaceMood.idle;
+  }
+
+  /// The face floats over the conversation; drag it anywhere, tap to make it bigger or smaller.
+  Widget floatingFace(BoxConstraints box) {
+    final size = faceLarge ? 168.0 : 96.0;
+    final position = facePosition ?? Offset(box.maxWidth - size - 8, 56);
+    final clamped = Offset(
+      position.dx.clamp(0, math.max(0, box.maxWidth - size)).toDouble(),
+      position.dy.clamp(0, math.max(0, box.maxHeight - size)).toDouble(),
+    );
+    return Positioned(
+      left: clamped.dx,
+      top: clamped.dy,
+      child: GestureDetector(
+        key: const Key('face'),
+        onTap: () => setState(() => faceLarge = !faceLarge),
+        onPanUpdate: (drag) =>
+            setState(() => facePosition = clamped + drag.delta),
+        child: FloatingFace(
+          size: size,
+          state: FaceState(
+            mood: faceMood,
+            mic: hearing || recording
+                ? (recording ? recordLevel : micLevel)
+                : 0,
+            voice: speaking ? voiceLevel : 0,
+          ),
+        ),
+      ),
+    );
+  }
+
   bool get open => inCall || line == Line.typing;
   ViewPrefs get prefs => widget.prefs;
 
@@ -523,6 +577,9 @@ class _CallScreenState extends State<CallScreen> {
             (event['text'] as String? ?? '').trim(),
             (event['seconds'] as num? ?? 0).toDouble(),
           );
+        case 'level':
+          micLevel = (event['mic'] as num? ?? 0).toDouble();
+          voiceLevel = (event['out'] as num? ?? 0).toDouble();
         case 'upload_error':
           uploadStage = null;
           recording = false;
@@ -957,6 +1014,16 @@ class _CallScreenState extends State<CallScreen> {
                   value: current.showSteps,
                   onChanged: (value) => apply(current.copy(showSteps: value)),
                 ),
+                SwitchListTile(
+                  key: const Key('show-face'),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('비서 얼굴'),
+                  subtitle: const Text(
+                    '듣고 생각하고 말할 때 표정이 바뀌는 떠 있는 얼굴 · 끌어서 옮기고 눌러서 크기 변경',
+                  ),
+                  value: current.showFace,
+                  onChanged: (value) => apply(current.copy(showFace: value)),
+                ),
                 section('소리'),
                 SwitchListTile(
                   key: const Key('earcons'),
@@ -1300,6 +1367,14 @@ class _CallScreenState extends State<CallScreen> {
                 ),
               ],
             ),
+            // The secretary's face, floating over the conversation.
+            if (prefs.showFace)
+              Positioned.fill(
+                child: LayoutBuilder(
+                  builder: (context, box) =>
+                      Stack(children: [floatingFace(box)]),
+                ),
+              ),
             // Floating call controls, out of the conversation's way.
             if (!keyboard)
               Positioned(

@@ -53,6 +53,22 @@ object VoiceEngine {
     private val playback = LinkedBlockingQueue<ByteArray>()
     private var recordThread: Thread? = null
     private var playThread: Thread? = null
+    private var levelThread: Thread? = null
+    @Volatile private var micLevel = 0.0
+    @Volatile private var outLevel = 0.0
+    private const val LEVEL_MS = 66L
+
+    /** Root mean square of 16-bit little-endian PCM, 0..1. */
+    private fun rms(pcm: ByteArray, length: Int): Double {
+        var sum = 0.0
+        var i = 0
+        while (i + 1 < length) {
+            val v = ((pcm[i + 1].toInt() shl 8) or (pcm[i].toInt() and 0xff)).toShort().toDouble()
+            sum += v * v
+            i += 2
+        }
+        return Math.sqrt(sum / maxOf(1, length / 2)) / 32768.0
+    }
     private val effects = mutableListOf<android.media.audiofx.AudioEffect>()
 
     private val client = OkHttpClient.Builder()
@@ -195,6 +211,7 @@ object VoiceEngine {
         socket = null
         recordThread?.interrupt()
         playThread?.interrupt()
+        levelThread?.interrupt()
         try { recorder?.stop() } catch (_: Exception) {}
         recorder?.release(); recorder = null
         effects.forEach { try { it.release() } catch (_: Exception) {} }
@@ -259,13 +276,33 @@ object VoiceEngine {
                     if (n <= 0) break
                     read += n
                 }
-                if (read == FRAME_BYTES) webSocket.send((if (muted) silence else buffer).toByteString(0, FRAME_BYTES))
+                if (read == FRAME_BYTES) {
+                    webSocket.send((if (muted) silence else buffer).toByteString(0, FRAME_BYTES))
+                    micLevel = if (muted) 0.0 else maxOf(micLevel, rms(buffer, FRAME_BYTES))
+                }
             }
         }, "baryon-mic").apply { start() }
+
+        // The face's mouth and ears: the loudest level of the last ~70 ms, sent to the screen.
+        levelThread = Thread({
+            var quiet = false
+            while (running && !Thread.currentThread().isInterrupted) {
+                try { Thread.sleep(LEVEL_MS) } catch (_: InterruptedException) { break }
+                val mic = micLevel
+                val out = outLevel
+                micLevel = 0.0
+                outLevel = 0.0
+                val silent = mic < 0.002 && out < 0.002
+                if (silent && quiet) continue // one zero is enough
+                quiet = silent
+                emit("level", "mic" to mic, "out" to out)
+            }
+        }, "baryon-level").apply { start() }
 
         playThread = Thread({
             while (running && !Thread.currentThread().isInterrupted) {
                 val frame = try { playback.take() } catch (_: InterruptedException) { break }
+                outLevel = maxOf(outLevel, rms(frame, frame.size))
                 out.write(frame, 0, frame.size)
             }
         }, "baryon-speaker").apply { start() }
