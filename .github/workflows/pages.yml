@@ -18,11 +18,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  # Upload in one job and deploy in the next (GitHub's own Pages starter layout). Deploying in the
+  # same job as the upload raced the artifact listing: "No artifacts named github-pages were found"
+  # right after a successful upload.
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       # Pinned by commit SHA; bump deliberately with a reviewed PR.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -32,5 +32,13 @@ jobs:
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
