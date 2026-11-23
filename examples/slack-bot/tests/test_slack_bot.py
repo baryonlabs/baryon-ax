@@ -72,6 +72,115 @@ def responder(requests, **kwargs) -> Responder:
     return Responder(config, BaryonClient(config, http=fake_api(requests, **kwargs)), BOT)
 
 
+def test_direct_messages_are_answered_without_mention() -> None:
+    requests: list[httpx.Request] = []
+    bot, web = responder(requests), FakeWeb()
+    dm = {"channel": "D1", "channel_type": "im", "user": "U1", "ts": "100.1", "text": "연차휴가는 며칠이야?"}
+    assert bot.is_direct_message(dm)
+    assert bot.is_direct_message({**dm, "subtype": "file_share"})
+    assert not bot.should_follow_up({**dm, "thread_ts": "100.1"})  # never answered twice
+    assert not bot.is_direct_message({**dm, "bot_id": "B"})
+    assert not bot.is_direct_message({**dm, "subtype": "message_changed"})
+    assert not bot.is_direct_message({**dm, "channel_type": "channel"})
+
+    bot.answer(dm, web)
+    assert json.loads(requests[0].content)["thread_id"] == "slack:D1:100.1"
+    assert web.named("post")[0]["thread_ts"] == "100.1"
+
+    empty = FakeWeb()
+    bot.answer({**dm, "text": "  "}, empty)
+    assert "@봇" not in empty.named("post")[0]["text"]
+
+    file_only = FakeWeb()
+    bot.answer({**dm, "text": "", "subtype": "file_share", "files": [{"id": "F1", "name": "a.xlsx"}]}, file_only)
+    assert not file_only.calls  # waits for the question that follows
+
+    bot.config.direct_messages = False
+    assert not bot.is_direct_message(dm)
+
+
+def long_answer_api(requests: list[httpx.Request], answer: str) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/v1/chat/completions":
+            return httpx.Response(200, json={"id": "trace-2", "choices": [{"message": {"content": answer}}],
+                                             "citations": [{"document_id": "rfp", "title": "rfp.md", "chunk": 46}]})
+        if request.url.path == "/v1/documents/rfp":
+            assert request.url.params["chunk"] == "46"
+            return httpx.Response(200, json={"cited_chunk": {"number": 46, "content": "REQ-007 분석 에이전트 (Text-to-SQL 엔진)"}})
+        return httpx.Response(200, json={"data": []})  # the follow-up's own words find nothing
+    return httpx.Client(base_url="http://api.test", transport=httpx.MockTransport(handler))
+
+
+def test_long_answer_is_split_and_text_stays_under_the_limit() -> None:
+    from baryon_slack_bot import SECTION_LIMIT, TEXT_LIMIT, answer_sections
+
+    answer = "\n\n".join(f"{n}) " + "복합 질의 처리 요건 " * 40 for n in range(1, 12))  # about 9,000 characters
+    parts = answer_sections(answer)
+    assert len(parts) > 2 and all(len(p) <= SECTION_LIMIT for p in parts)
+    assert " ".join(parts).split() == answer.split()  # nothing lost, only the breaks moved
+
+    requests: list[httpx.Request] = []
+    config = Config(api_url="http://api.test", organization_id="org", roles="member")
+    bot, web = Responder(config, BaryonClient(config, http=long_answer_api(requests, answer)), BOT), FakeWeb()
+    bot.answer({"channel": "C1", "user": "U1", "ts": "100.1", "text": "<@UBOT> 다시 해봐"}, web)
+    update = web.named("update")[0]
+    assert len(update["text"]) <= TEXT_LIMIT  # msg_too_long otherwise
+    sections = [b for b in update["blocks"] if b["type"] == "section"]
+    assert len(sections) == len(parts) + 1  # answer parts + sources
+    # the cited chunk is quoted even though a search on "다시 해봐" did not return it
+    assert "> REQ-007 분석 에이전트 (Text-to-SQL 엔진)" in sections[-1]["text"]["text"]
+
+
+def test_question_with_attachment_explains_how_to_read_the_file() -> None:
+    web = FakeWeb()
+    responder([]).answer({"channel": "C1", "user": "U1", "ts": "100.1", "text": "<@UBOT> 이 문서 안에 설명되어 있는지 확인하라",
+                          "files": [{"id": "F1", "name": "rfp.hwp"}]}, web)
+    assert "문서로 추가하고 분석해줘" in str(web.named("update")[0]["blocks"])
+    plain = FakeWeb()
+    responder([]).answer({"channel": "C1", "user": "U1", "ts": "100.1", "text": "<@UBOT> 연차는?"}, plain)
+    assert "문서로 추가하고 분석해줘" not in str(plain.named("update")[0]["blocks"])
+
+
+class LinkWeb(FakeWeb):
+    def conversations_replies(self, **kwargs):
+        self.calls.append(("replies", kwargs))
+        if kwargs["channel"] == "CLOCKED":
+            raise RuntimeError("not_in_channel")
+        return {"messages": [{"user": "U7", "text": "회의 메모: 일정 점검 필요"}, {"user": "U8", "text": "<@UBOT> 다음 주까지 계획 정리"}]}
+
+
+def test_slack_links_are_expanded_or_marked_unreadable() -> None:
+    from baryon_slack_bot import FOREIGN_LINK_NOTE, UNREADABLE_LINK_NOTE, slack_domain
+
+    assert slack_domain("https://acme.slack.com/") == "acme"
+    bot, web = responder([]), LinkWeb()
+    bot.team_domain = "acme"
+    messages = [
+        {"role": "user", "content": "이것 봐 <https://acme.slack.com/archives/C1/p1795410004281229?thread_ts=1795410000.000100|링크>"},
+        {"role": "assistant", "content": "https://acme.slack.com/archives/C1/p1795410004281229"},
+        {"role": "user", "content": "그리고 <https://other-org.slack.com/archives/C9/p1795407816704509|other> 와 "
+                                    "https://acme.slack.com/archives/CLOCKED/p1795410004281229"},
+    ]
+    expanded, notes = bot.expand_links(web, messages)
+    assert "회의 메모: 일정 점검 필요" in expanded[0]["content"] and "다음 주까지 계획 정리" in expanded[0]["content"]
+    assert web.named("replies")[0]["ts"] == "1795410000.000100"  # the thread the link points into
+    assert expanded[1] == messages[1]  # the bot's own turns are left alone
+    assert "다른 Slack 워크스페이스(other-org)" in expanded[2]["content"]
+    assert "[링크된 Slack 대화: 읽지 못함]" in expanded[2]["content"]
+    assert notes == [FOREIGN_LINK_NOTE, UNREADABLE_LINK_NOTE]
+
+    requests: list[httpx.Request] = []
+    linked = responder(requests)
+    linked.team_domain = "acme"
+    answer_web = LinkWeb()
+    linked.answer({"channel": "C1", "user": "U1", "ts": "1.0", "text": "<@UBOT> <https://other-org.slack.com/archives/C9/p1795407816704509|x> 분석해줘"},
+                  answer_web)
+    sent = json.loads(requests[0].content)["messages"][-1]["content"]
+    assert "봇이 읽을 수 없음" in sent
+    assert "다른 Slack 워크스페이스의 링크는" in str(answer_web.named("update")[0]["blocks"])
+
+
 def test_strip_mentions_and_mrkdwn() -> None:
     assert strip_mentions("<@UBOT> 연차는 며칠? <@U123|kim>") == "연차는 며칠?"
     assert to_mrkdwn("## 요약\n[RFP](https://x.test/a)") == "*요약*\n<https://x.test/a|RFP>"
