@@ -28,6 +28,7 @@ import re
 import subprocess
 import sys
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
@@ -120,10 +121,41 @@ def list_worktree(repo: Path, exclude: list[str]) -> dict[str, str]:
     return {p: f"file:{p}" for p in paths if not matches(p, exclude) and (repo / p).is_file()}
 
 
-def code_markdown(repo_name: str, ref: str, path: str, text: str, block_lines: int = CODE_BLOCK_LINES) -> str:
+SUMMARY_PROMPT = ("다음 소스 파일이 무엇을 하는지 한국어 두 문장 이내로 설명하세요. 화면·기능·업무 용어(예: 로그인, 회원가입, 검증, "
+                  "권한, 통계 조회)를 넣고, 코드를 옮겨 적지 말고 설명만 씁니다.\n\n파일: {path}\n\n{text}")
+
+
+class Summarizer:
+    """One or two sentences per source file from an OpenAI-compatible chat endpoint.
+
+    Code is English identifiers; questions are often in another language. A summary in the question's language
+    at the top of every block lets a question like "로그인 폼 검증 규칙" find the code that does it."""
+
+    def __init__(self, base_url: str, model: str, api_key: str = "", http: httpx.Client | None = None,
+                 prompt: str = SUMMARY_PROMPT, max_chars: int = 6000) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        self.http = http or httpx.Client(timeout=120)
+        self.prompt = prompt
+        self.max_chars = max_chars
+
+    def __call__(self, path: str, text: str) -> str:
+        body = {"model": self.model, "temperature": 0.1, "max_tokens": 220,
+                "messages": [{"role": "user", "content": self.prompt.format(path=path, text=text[: self.max_chars])}]}
+        response = self.http.post(f"{self.base_url}/chat/completions", json=body, headers=self.headers)
+        response.raise_for_status()
+        content = response.json()["choices"][0]["message"]["content"] or ""
+        content = re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
+        return " ".join(content.split())[:400]
+
+
+def code_markdown(repo_name: str, ref: str, path: str, text: str, block_lines: int = CODE_BLOCK_LINES,
+                  summary: str = "") -> str:
     """A source file as Markdown: a header (path, size, symbols, endpoints), then blocks of ``block_lines`` lines.
 
-    Each block's heading repeats the path and line range, so a retrieved chunk says where the code is."""
+    Each block's heading repeats the path and line range, so a retrieved chunk says where the code is; with a
+    ``summary`` every block also starts with it, so each chunk carries what the file does in plain words."""
     suffix = PurePosixPath(path).suffix.lower()
     language = CODE_EXT.get(suffix)
     lines = text.replace("\r\n", "\n").split("\n")
@@ -131,6 +163,8 @@ def code_markdown(repo_name: str, ref: str, path: str, text: str, block_lines: i
     routes = endpoints(text) if language else []
     head = [f"# {repo_name} · {path}", "",
             f"> 소스 코드 파일 `{path}` ({ref} 기준, {len(lines)}줄). 자동 생성."]
+    if summary:
+        head.append(f"> 요약: {summary}")
     if found:
         head.append(f"> 정의: {', '.join(found[:25])}")
     if routes:
@@ -139,7 +173,8 @@ def code_markdown(repo_name: str, ref: str, path: str, text: str, block_lines: i
     for start in range(0, len(lines), block_lines):
         chunk = lines[start:start + block_lines]
         end = start + len(chunk)
-        blocks.append(f"## {path} L{start + 1}-{end}\n\n```{FENCE.get(suffix, '')}\n" + "\n".join(chunk).rstrip() + "\n```\n")
+        about = f"> {summary}\n\n" if summary else ""
+        blocks.append(f"## {path} L{start + 1}-{end}\n\n{about}```{FENCE.get(suffix, '')}\n" + "\n".join(chunk).rstrip() + "\n```\n")
     return "\n".join(head) + "\n\n" + "\n".join(blocks)
 
 
@@ -280,7 +315,7 @@ def title_for(repo_name: str, path: str, suffix: str = "") -> str:
     return name if not suffix or name.endswith(suffix) else name + suffix
 
 
-def sync(args: argparse.Namespace, uploader: Uploader | None = None) -> dict:
+def sync(args: argparse.Namespace, uploader: Uploader | None = None, summarizer=None) -> dict:
     repo = Path(args.repo).resolve()
     name = args.name or repo.name
     worktree = args.worktree or not is_git_repo(repo)
@@ -301,12 +336,17 @@ def sync(args: argparse.Namespace, uploader: Uploader | None = None) -> dict:
             if matches(path, args.include) and not matches(path, args.exclude):
                 version = sha if not worktree else hashlib.sha256(read_blob(repo, sha)).hexdigest()
                 wanted[f"doc:{path}"] = (version, None, title_for(name, path), "doc")
+    if args.summarize and summarizer is None:
+        summarizer = Summarizer(args.summary_url, args.summary_model, os.getenv("SUMMARY_API_KEY", ""))
+    # A summarized document's version ends in "+s": turning summaries on re-uploads once, and a file whose
+    # summary failed (version without "+s") is tried again next run.
+    want_summary = "+s" if summarizer else ""
     if args.code:
         for path, sha in files.items():
             if not matches(path, args.code_include) or matches(path, args.exclude) or matches(path, args.code_exclude):
                 continue
             version = sha if not worktree else hashlib.sha256(read_blob(repo, sha)).hexdigest()
-            wanted[f"code:{path}"] = (version, None, title_for(name, path, ".md"), "code")
+            wanted[f"code:{path}"] = (version + want_summary, None, title_for(name, path, ".md"), "code")
     if not args.no_code_map:
         for module in build_code_map(repo, files, args.module_depth, args.exclude).values():
             for key, markdown in module.render(name, ref_label):
@@ -317,33 +357,54 @@ def sync(args: argparse.Namespace, uploader: Uploader | None = None) -> dict:
         body = build_history(repo, args.ref, args.history).encode("utf-8")
         wanted["history"] = (hashlib.sha256(body).hexdigest(), body, title_for(name, "최근 변경 이력", ".md"), "history")
 
-    report = {"uploaded": 0, "unchanged": 0, "deleted": 0, "failed": []}
-    for key, (version, payload, title, kind) in sorted(wanted.items()):
-        known = state.get(key)
-        if known and known.get("version") == version:
-            report["unchanged"] += 1
-            continue
-        if payload is None:
-            path = key.split(":", 1)[1]
-            payload = read_blob(repo, files[path])
-            if kind == "code":
-                if len(payload) > MAX_CODE_BYTES or b"\0" in payload[:4096]:
-                    continue
-                payload = code_markdown(name, ref_label, path, payload.decode("utf-8", "replace")).encode("utf-8")
-        if len(payload) > MAX_DOC_BYTES or not payload.strip():
-            continue
+    report = {"uploaded": 0, "unchanged": 0, "deleted": 0, "failed": [], "summarized": 0}
+    todo = sorted((k, v) for k, v in wanted.items() if not (state.get(k) and state[k].get("version") == v[0]))
+    report["unchanged"] = len(wanted) - len(todo)
+
+    def source_of(key: str) -> tuple[str, bytes]:
+        path = key.split(":", 1)[1]
+        return path, read_blob(repo, files[path])
+
+    def summarize(key: str) -> str:
+        path, raw = source_of(key)
+        if len(raw) > MAX_CODE_BYTES or b"\0" in raw[:4096]:
+            return ""
+        base = wanted[key][0].removesuffix("+s")
+        cached = state.get(key, {})
+        if cached.get("summary") and cached.get("source") == base:  # same file, summary already written
+            return cached["summary"]
         try:
-            document_id = uploader.upload(title, payload, [f"repo:{name}", f"kind:{kind}", f"ref:{ref_label}"])
-        except Exception as error:  # parse failure, API down: keep the old document, retry next run
-            report["failed"].append(f"{key}: {error}")
-            logger.warning("upload failed %s: %s", key, error)
-            continue
-        if known:
-            uploader.delete(known["id"])
-        state[key] = {"version": version, "id": document_id, "title": title}
-        report["uploaded"] += 1
-        state_path.parent.mkdir(parents=True, exist_ok=True)
-        state_path.write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")  # resumable
+            return summarizer(path, raw.decode("utf-8", "replace"))
+        except Exception as error:
+            logger.warning("summary failed %s: %s", key, error)
+            return ""
+
+    pool = ThreadPoolExecutor(max_workers=max(1, args.summary_workers)) if summarizer else None
+    summaries = {k: pool.submit(summarize, k) for k, (_, _, _, kind) in todo if kind == "code"} if pool else {}
+    try:
+        for key, (version, payload, title, kind) in todo:
+            known = state.get(key)
+            summary = ""
+            if payload is None:
+                path, payload = source_of(key)
+                if kind == "code":
+                    if len(payload) > MAX_CODE_BYTES or b"\0" in payload[:4096]:
+                        continue
+                    summary = summaries[key].result() if key in summaries else ""
+                    if want_summary and not summary:
+                        version = version.removesuffix("+s")  # retried next run
+                    report["summarized"] += bool(summary)
+                    payload = code_markdown(name, ref_label, path, payload.decode("utf-8", "replace"),
+                                            summary=summary).encode("utf-8")
+            uploaded = _upload_one(uploader, state, report, key, version, payload, title, kind, name, ref_label, known)
+            if uploaded and kind == "code":
+                state[key].update({"source": version.removesuffix("+s"), "summary": summary})
+            if uploaded:
+                state_path.parent.mkdir(parents=True, exist_ok=True)
+                state_path.write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")  # resumable
+    finally:
+        if pool:
+            pool.shutdown(wait=False, cancel_futures=True)
 
     for key in [k for k in state if k not in wanted]:
         uploader.delete(state.pop(key)["id"])
@@ -351,6 +412,23 @@ def sync(args: argparse.Namespace, uploader: Uploader | None = None) -> dict:
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
     return report
+
+
+def _upload_one(uploader, state, report, key, version, payload, title, kind, name, ref_label, known) -> bool:
+    """Upload one document and replace the old one. On failure the old document stays (retried next run)."""
+    if len(payload) > MAX_DOC_BYTES or not payload.strip():
+        return False
+    try:
+        document_id = uploader.upload(title, payload, [f"repo:{name}", f"kind:{kind}", f"ref:{ref_label}"])
+    except Exception as error:  # parse failure, API down
+        report["failed"].append(f"{key}: {error}")
+        logger.warning("upload failed %s: %s", key, error)
+        return False
+    if known:
+        uploader.delete(known["id"])
+    state[key] = {"version": version, "id": document_id, "title": title}
+    report["uploaded"] += 1
+    return True
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -369,6 +447,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="also index the source files themselves (one document each, blocks headed by path and lines)")
     parser.add_argument("--code-include", nargs="*", default=DEFAULT_CODE_INCLUDE)
     parser.add_argument("--code-exclude", nargs="*", default=DEFAULT_CODE_EXCLUDE, help="tests and generated code by default")
+    parser.add_argument("--summarize", action="store_true",
+                        help="with --code: a one-or-two sentence summary per file at the top of every block (LLM)")
+    parser.add_argument("--summary-url", default=os.getenv("SUMMARY_BASE_URL", os.getenv("MODEL_BASE_URL", "")),
+                        help="OpenAI-compatible base URL (…/v1); key from SUMMARY_API_KEY")
+    parser.add_argument("--summary-model", default=os.getenv("SUMMARY_MODEL", os.getenv("MODEL_NAME", "")))
+    parser.add_argument("--summary-workers", type=int, default=4)
     parser.add_argument("--worktree", action="store_true",
                         help="read files on disk instead of --ref (automatic for a folder that is not a git repo)")
     parser.add_argument("--api", default=os.getenv("BARYON_API_URL", "http://127.0.0.1:8000"))

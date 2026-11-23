@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -143,6 +143,50 @@ def test_code_mode_indexes_source_files_with_path_and_lines(tmp_path: Path) -> N
         "## web/src/Cart.tsx L1-80", "## web/src/Cart.tsx L81-160", "## web/src/Cart.tsx L161-171"]
     assert all("kind:code" in tags for _, _, tags in up.docs.values())
     assert rs.sync(args_for(repo, tmp_path, "--code", "--no-docs", "--no-code-map", "--history", "0"), up)["uploaded"] == 0
+
+
+def test_summaries_sit_on_every_block_and_are_reused(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    write(repo, "web/src/Cart.tsx", "\n".join(f"export const line{i} = {i};" for i in range(1, 171)) + "\n")
+    commit(repo, "code")
+    calls: list[str] = []
+
+    def summarizer(path: str, text: str) -> str:
+        calls.append(path)
+        if path.endswith("app.py"):
+            raise RuntimeError("model down")
+        return f"{PurePosixPath(path).name} 요약"
+
+    up = FakeUploader()
+    args = args_for(repo, tmp_path, "--code", "--no-docs", "--no-code-map", "--history", "0")
+    report = rs.sync(args, up, summarizer=summarizer)
+    assert report["summarized"] == 2 and report["failed"] == []
+    cart = next(p.decode() for t, p, _ in up.docs.values() if "Cart.tsx" in t)
+    assert "> 요약: Cart.tsx 요약" in cart
+    assert cart.count("> Cart.tsx 요약") == 3  # one per 80-line block
+    py = next(p.decode() for t, p, _ in up.docs.values() if "app.py" in t)
+    assert "요약" not in py  # summary failed: uploaded without it
+
+    calls.clear()
+    again = rs.sync(args, up, summarizer=summarizer)
+    assert calls == ["tools/app.py"] and again["uploaded"] == 1  # only the file whose summary failed is retried
+
+    plain = rs.sync(args_for(repo, tmp_path, "--code", "--no-docs", "--no-code-map", "--history", "0"), up)
+    assert plain["uploaded"] == 2  # turning summaries off re-uploads the summarized files (app.py had none)
+
+
+def test_summarizer_calls_an_openai_compatible_endpoint() -> None:
+    import httpx
+
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"], seen["body"] = str(request.url), request.content.decode()
+        return httpx.Response(200, json={"choices": [{"message": {"content": "<think>x</think>\n로그인 화면을\n구성합니다."}}]})
+
+    summarize = rs.Summarizer("http://llm.test/v1/", "m1", http=httpx.Client(transport=httpx.MockTransport(handler)))
+    assert summarize("a/sign-in.tsx", "code") == "로그인 화면을 구성합니다."
+    assert seen["url"] == "http://llm.test/v1/chat/completions" and '"model":"m1"' in seen["body"]
 
 
 def test_plain_folder_is_read_from_disk(tmp_path: Path) -> None:
