@@ -312,7 +312,7 @@
 
 ## 9. 배포 · 운영
 
-> 기본 `docker compose up`은 `api` + `web`만 실행합니다. `docker-compose.full.yml` + `--profile deps`는 PostgreSQL, Redis, Qdrant와 호스트 Ollama/Langfuse를 연결합니다.
+> 기본 `docker compose up`은 `api` + `web` + `qdrant`(하이브리드 검색, [retrieval.md](retrieval.md))를 실행합니다. `docker-compose.full.yml` + `--profile deps`는 PostgreSQL, Redis와 호스트 Ollama/Langfuse를 더 연결합니다.
 
 | 기능 | 상태 | 설명 |
 | --- | --- | --- |
