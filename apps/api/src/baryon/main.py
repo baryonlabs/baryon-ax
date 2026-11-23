@@ -13,6 +13,7 @@ import uuid
 from collections import deque
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
+import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, AsyncIterator, Literal, TypedDict
@@ -27,6 +28,7 @@ from pydantic import BaseModel, Field
 from starlette.datastructures import Headers
 
 from . import __version__, assistant, gateway_status, voice
+from . import web as web_pages
 from .auth import PLATFORM_ADMIN, OIDCConfig, OIDCAuthMiddleware, current_acting_service
 from .connectors import CONNECTOR_BY_ID, CONNECTORS, TOOLS, connector_payload, decide_tool, get_connector, get_tool, search_tools, tool_payload
 from .ingest import Acl as IngestAcl
@@ -2521,6 +2523,114 @@ async def models() -> dict:
     return {"object": "list", "data": [{"id": model_adapter.model, "object": "model", "owned_by": "baryon"}]}
 
 
+WEB_REFRESH_SECONDS = float(os.getenv("WEB_REFRESH_HOURS", "24")) * 3600
+
+
+def find_web_document(principal: Principal, url: str) -> Document | None:
+    """The newest stored copy of a web page this person may read."""
+    copies = [document for document in documents.documents.values()
+              if document.organization_id == principal.organization_id and document.metadata.get("source_url") == url
+              and documents.can_view(principal, document)]
+    return max(copies, key=lambda document: document.created_at, default=None)
+
+
+async def store_web_page(principal: Principal, page: "web_pages.Page", trace_id: str, roles: set[str],
+                         category: str = "web", tags: list[str] | None = None) -> Document:
+    """Index one fetched page like an upload, replacing an older copy of the same address."""
+    filename, payload = web_pages.page_document(page)
+    old = find_web_document(principal, page.url)
+    host = urllib.parse.urlsplit(page.url).netloc
+    document = await ingest_upload(principal, filename, payload, roles, trace_id, mime=sniff_mime(filename, payload),
+                                   category=category, tags=normalize_tags(["web", f"site:{host}", *(tags or [])]))
+    document.metadata.update({"source_url": page.url, "source_type": "web", "fetched_at": now()})
+    documents._persist(document)
+    if old and old.id != document.id:
+        try:
+            documents.delete(principal, old.id)  # only the owner or an administrator; otherwise the newer copy wins
+        except HTTPException:
+            pass
+    audit.emit("document.web_fetched", principal, trace_id, document_id=document.id, url=page.url)
+    return document
+
+
+async def read_links(principal: Principal, text: str, trace_id: str) -> tuple[list[Document], list[str]]:
+    """The pages linked in a question, fetched or reused (fresher than WEB_REFRESH_HOURS), and why any failed."""
+    found: list[Document] = []
+    notes: list[str] = []
+    for url in web_pages.extract_urls(text):
+        existing = find_web_document(principal, url)
+        if existing:
+            fetched = existing.metadata.get("fetched_at") or existing.created_at
+            try:
+                age = (datetime.now(timezone.utc) - datetime.fromisoformat(fetched)).total_seconds()
+            except ValueError:
+                age = WEB_REFRESH_SECONDS
+            if age < WEB_REFRESH_SECONDS:
+                found.append(existing)
+                continue
+        try:
+            page = await web_pages.fetch(url)
+            if len(page.markdown) < 40:
+                notes.append(f"{url}: 읽을 글이 거의 없어요(자바스크립트로 그리는 페이지일 수 있어요)")
+                if not page.markdown:
+                    continue
+            found.append(await store_web_page(principal, page, trace_id, {"member", "admin"}))
+        except web_pages.WebError as error:
+            notes.append(f"{url}: {error}")
+        except HTTPException as error:
+            notes.append(f"{url}: {error.detail}")
+    return found, notes
+
+
+def web_citations(pages: list[Document], question: str, others: list[dict], limit: int = 6) -> list[dict]:
+    """Evidence for a question about linked pages: their opening and best-matching chunks first."""
+    query = web_pages.URL_PATTERN.sub(" ", question)
+    terms = search_terms(query)
+    picked: list[dict] = []
+    for document in pages:
+        texts = [normalize_text(str(item.get("text") or "")) for item in document.chunks] or chunk_text(document.content)
+        ranked = sorted(range(len(texts)), key=lambda index: (-sum(1 for term in terms if term in texts[index].lower()), index))
+        for index in sorted(set([0, *ranked[:3]])):
+            picked.append({"document_id": document.id, "title": document.title, "chunk": index + 1,
+                           "content": texts[index], "score": 10.0})
+    ids = {document.id for document in pages}
+    rest = [item for item in others if item.get("document_id") not in ids]
+    return (picked + rest)[:max(limit, len(picked))]
+
+
+class WebPagesBody(BaseModel):
+    url: str = Field(min_length=8, max_length=2000)
+    pages: int = Field(1, ge=1, le=20)
+    allowed_roles: str = "member,admin"
+    category: str = Field("web", max_length=80)
+    tags: str = ""
+
+
+@app.post("/v1/documents/url")
+async def add_web_pages(body: WebPagesBody, x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None),
+                        x_roles: str | None = Header(None)) -> dict:
+    """Read a web page (and up to ``pages - 1`` pages it links to on the same site) into the knowledge base."""
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if not web_pages.enabled():
+        raise HTTPException(403, "Reading web pages is turned off (WEB_FETCH_ENABLED)")
+    trace_id = str(uuid.uuid4())
+    try:
+        pages = await web_pages.read_site(body.url.strip(), body.pages)
+    except web_pages.WebError as error:
+        raise HTTPException(422, str(error)) from error
+    roles = roles_from_header(body.allowed_roles)
+    stored = []
+    for page in pages:
+        if not page.markdown.strip():
+            continue
+        document = await store_web_page(principal, page, trace_id, roles, normalize_text(body.category).strip()[:80],
+                                        parse_tags(body.tags))
+        stored.append({"id": document.id, "title": document.title, "url": page.url, "chunks": len(document.chunks)})
+    if not stored:
+        raise HTTPException(422, "No readable text on that page (it may be drawn by JavaScript)")
+    return {"data": stored, "trace_id": trace_id}
+
+
 @app.post("/v1/documents")
 async def upload_document(
     background_tasks: BackgroundTasks,
@@ -2985,7 +3095,19 @@ async def chat(
                    f"{rate_limiter.limit}/min" if rate_limiter.enabled else "비활성")]
     if request.messages and is_small_talk(request.messages[-1].content):
         request.use_retrieval = False  # a greeting: answer it, but do not attach unrelated documents as sources
+    # A link in the question: read the page first, so the answer is about it (web.py).
+    web_documents: list[Document] = []
+    if request.messages and request.use_retrieval and web_pages.enabled() and web_pages.extract_urls(request.messages[-1].content):
+        web_started = time.perf_counter()
+        web_documents, web_notes = await read_links(principal, request.messages[-1].content, trace_id)
+        steps.append(_step("web_fetch", round((time.perf_counter() - web_started) * 1000, 2),
+                           "ok" if web_documents else "failed", f"{len(web_documents)}쪽" + (f" · {web_notes[0]}" if web_notes else "")))
+        if web_notes:
+            request.messages.insert(len(request.messages) - 1, Message(role="system", content=(
+                "사용자가 준 링크 중 읽지 못한 것이 있다. 답의 첫 문장에서 그 사실과 이유를 짧게 말하라: " + "; ".join(web_notes))))
     citations, memories, pipeline_steps = await pipeline.prepare(request, principal)
+    if web_documents:
+        citations = web_citations(web_documents, request.messages[-1].content, citations)
     steps.extend(pipeline_steps)
     trace_payload = {
         "trace_id": trace_id, "steps": steps, "total_ms": None,
