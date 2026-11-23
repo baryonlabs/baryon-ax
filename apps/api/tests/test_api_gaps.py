@@ -221,6 +221,21 @@ def test_chat_response_says_whether_documents_answered() -> None:
     assert body["knowledge_gap"] and body["knowledge_gap"]["question"] == "2031년 우주 출장 규정은?"
 
 
+def test_a_greeting_is_answered_without_sources_or_a_gap() -> None:
+    org = "org-small-talk"
+    upload = client.post("/v1/documents", headers=headers(organization=org),
+                         files={"file": ("smoke-note.md", "Baryon AX는 Qdrant와 LangGraph를 사용합니다. 안녕 gg 고마워".encode())})
+    assert upload.status_code == 200
+    for greeting in ("gg", "안녕하세요!", "고마워요 ㅎㅎ"):
+        body = client.post("/v1/chat/completions", headers=headers(organization=org),
+                           json={"messages": [{"role": "user", "content": greeting}], "stream": False}).json()
+        assert body["citations"] == [], greeting  # nothing unrelated attached as a source
+        assert body["grounding"]["answered"] is True and body["knowledge_gap"] is None
+    real = client.post("/v1/chat/completions", headers=headers(organization=org),
+                       json={"messages": [{"role": "user", "content": "Baryon AX는 무엇을 사용해?"}], "stream": False}).json()
+    assert real["citations"]  # a real question still searches
+
+
 def test_gap_rechecks_coalesce_a_burst_of_uploads() -> None:
     import threading
     import time
