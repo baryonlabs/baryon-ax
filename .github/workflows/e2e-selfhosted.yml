@@ -1,0 +1,56 @@
+# End to end on the team's own Mac mini: the whole stack in Docker, every test suite, live checks
+# (scripts/e2e_all.sh). GitHub's hosted runners cannot run the Compose stack, the Flutter app and the
+# web e2e together on Apple silicon; the Mac mini can.
+#
+# This repository is public. A self-hosted runner must never run code from a fork, so this workflow has
+# no pull_request trigger: it runs on pushes to main (merged code only), on a schedule and by hand.
+# Setup and safety notes: docs/selfhosted-runner.md, scripts/setup_selfhosted_runner.sh.
+name: e2e (self-hosted)
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "30 18 * * *"  # 03:30 KST every day
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-selfhosted
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: [self-hosted, macOS, ARM64, baryon-e2e]
+    timeout-minutes: 75
+    env:
+      # A separate Compose project and ports, so a stack people use on the same machine is left alone.
+      COMPOSE_PROJECT_NAME: baryon-e2e
+      API_PORT: "18000"
+      WEB_PORT: "13001"
+      POSTGRES_PORT: "15433"
+      REDIS_PORT: "16379"
+      QDRANT_HTTP_PORT: "16333"
+      BIND_HOST: 127.0.0.1
+      E2E_API: http://127.0.0.1:18000
+      E2E_BASE_URL: http://127.0.0.1:13001
+      E2E_REQUIRE_LIVE: "1"
+      E2E_SECRETARY: http://127.0.0.1:1   # the voice secretary is not part of this stack
+      E2E_GATEWAY: 127.0.0.1:1
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Start the stack
+        run: |
+          cp .env.example .env
+          docker compose up -d --build api web
+          for i in $(seq 1 90); do curl -fsS "$E2E_API/health" >/dev/null && break; sleep 2; done
+          curl -fsS "$E2E_API/health"
+      - name: End to end
+        run: scripts/e2e_all.sh
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v --remove-orphans

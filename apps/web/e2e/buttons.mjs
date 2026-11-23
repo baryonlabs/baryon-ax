@@ -210,7 +210,7 @@ async function main() {
     await nav("지식");
     await page.locator(".upload-meta input").nth(0).fill("E2E분류");
     await page.locator(".upload-meta input").nth(1).fill("e2e,자동");
-    await page.locator(".knowledge input[type=file]").setInputFiles([doc1, doc2]);
+    await page.locator(".knowledge input[type=file][multiple]").setInputFiles([doc1, doc2]);
     await page.waitForFunction(
       ({ a, b }) => {
         const text = document.body.innerText;
@@ -254,7 +254,8 @@ async function main() {
   // -------------------------------------------------------------------- tacit
   await step("tacit answer button reveals and focuses the form", async () => {
     await nav("암묵지");
-    await page.getByRole("button", { name: "답하기" }).first().click();
+    // A template question: fixed text, unlike knowledge gaps people happened to leave in this organization.
+    await page.locator(".tacit-question", { hasText: "템플릿" }).first().getByRole("button", { name: "답하기" }).click();
     await expectVisible("#tacit-form");
     await page.waitForTimeout(500);
     const focused = await page.evaluate(() => document.activeElement?.tagName);
