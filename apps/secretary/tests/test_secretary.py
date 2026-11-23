@@ -674,10 +674,11 @@ def test_a_draft_is_saved_as_given_and_sent_only_as_read_back(monkeypatch) -> No
     from secretary.mail_tools import Mail
 
     gog = FakeGog()
-    mail = Mail(gog)
+    mail = Mail(gog, account="owner@example.com")
     body = "안녕하세요, 바리온랩스입니다.\n\n협력을 제안드립니다. \"폐쇄형 AROOM\" & 파일럿"
     saved = mail.save_draft("", "[협력 제안] AROOM", body)
     assert "초안 id r-1" in saved and "받는 사람은 아직 비어 있음" in saved
+    assert "Gmail에서 열기: https://mail.google.com/mail/?authuser=owner@example.com#drafts?compose=m-1" in saved
     assert gog.calls[0] == ["drafts", "create", "--subject", "[협력 제안] AROOM", "--body", body]  # no shell: text as is
     assert "받는 사람이 없어요" in mail.send_draft("r-1", "a@b.com", "[협력 제안] AROOM")
     mail.save_draft("partner@gonggong.ai", "", "", draft_id="r-1")  # only the recipient: subject and body stay
