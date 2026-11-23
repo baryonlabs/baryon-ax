@@ -2547,7 +2547,7 @@ async def store_web_page(principal: Principal, page: "web_pages.Page", trace_id:
     if old and old.id != document.id:
         try:
             documents.delete(principal, old.id)  # only the owner or an administrator; otherwise the newer copy wins
-        except HTTPException:
+        except (HTTPException, PermissionError):
             pass
     audit.emit("document.web_fetched", principal, trace_id, document_id=document.id, url=page.url)
     return document
@@ -2596,6 +2596,131 @@ def web_citations(pages: list[Document], question: str, others: list[dict], limi
     ids = {document.id for document in pages}
     rest = [item for item in others if item.get("document_id") not in ids]
     return (picked + rest)[:max(limit, len(picked))]
+
+
+@dataclass
+class CrawlJob:
+    """A whole-site crawl started by a person (web screen, chat, MCP). Kept in memory; pages are documents."""
+    id: str
+    organization_id: str
+    owner_id: str
+    url: str
+    max_pages: int
+    path_prefix: str = ""
+    state: str = "queued"  # queued | running | done | failed | cancelled
+    pages: list[dict] = field(default_factory=list)  # {id, title, url}
+    error: str = ""
+    created_at: str = field(default_factory=now)
+    finished_at: str = ""
+
+    def public(self) -> dict:
+        return {"id": self.id, "url": self.url, "max_pages": self.max_pages, "path_prefix": self.path_prefix,
+                "state": self.state, "pages_done": len(self.pages), "pages": self.pages[-50:], "error": self.error,
+                "owner_id": self.owner_id, "created_at": self.created_at, "finished_at": self.finished_at}
+
+
+CRAWLS: dict[str, CrawlJob] = {}
+CRAWL_TASKS: dict[str, asyncio.Task] = {}
+
+
+def start_crawl(principal: Principal, url: str, max_pages: int, path_prefix: str = "",
+                roles: set[str] | None = None, category: str = "web", tags: list[str] | None = None) -> CrawlJob:
+    """Start crawling a site in the background; at most two crawls per organization at once."""
+    running = [job for job in CRAWLS.values()
+               if job.organization_id == principal.organization_id and job.state in {"queued", "running"}]
+    if len(running) >= int(os.getenv("WEB_CRAWL_PER_ORG", "2")):
+        raise HTTPException(429, "Two crawls are already running for this organization; wait or cancel one")
+    job = CrawlJob(id=str(uuid.uuid4()), organization_id=principal.organization_id, owner_id=principal.user_id,
+                   url=url, max_pages=max(1, min(max_pages, web_pages.crawl_limit())), path_prefix=path_prefix)
+    CRAWLS[job.id] = job
+    trace_id = str(uuid.uuid4())
+    audit.emit("crawl.started", principal, trace_id, crawl_id=job.id, url=url, max_pages=job.max_pages)
+
+    async def store(page: web_pages.Page) -> None:
+        document = await store_web_page(principal, page, trace_id, roles or {"member", "admin"}, category, tags)
+        job.pages.append({"id": document.id, "title": document.title, "url": page.url})
+
+    async def run() -> None:
+        job.state = "running"
+        try:
+            await web_pages.crawl(url, job.max_pages, path_prefix, on_page=store,
+                                  should_stop=lambda: job.state == "cancelled")
+            if job.state != "cancelled":
+                job.state = "done"
+        except web_pages.WebError as error:
+            job.state, job.error = "failed", str(error)
+        except Exception as error:  # noqa: BLE001 - the job reports it; the server keeps going
+            logger.exception("crawl %s failed", job.id)
+            job.state, job.error = "failed", type(error).__name__
+        finally:
+            job.finished_at = now()
+            CRAWL_TASKS.pop(job.id, None)
+            audit.emit("crawl.finished", principal, trace_id, crawl_id=job.id, state=job.state, pages=len(job.pages))
+
+    CRAWL_TASKS[job.id] = asyncio.create_task(run())
+    return job
+
+
+def visible_crawl(principal: Principal, crawl_id: str) -> CrawlJob:
+    job = CRAWLS.get(crawl_id)
+    if not job or job.organization_id != principal.organization_id or (
+            job.owner_id != principal.user_id and "admin" not in principal.roles):
+        raise HTTPException(404, "Crawl not found")
+    return job
+
+
+class CrawlBody(BaseModel):
+    url: str = Field(min_length=8, max_length=2000)
+    max_pages: int = Field(30, ge=1, le=1000)
+    path_prefix: str = Field("", max_length=300)
+    allowed_roles: str = "member,admin"
+    category: str = Field("web", max_length=80)
+    tags: str = ""
+
+
+@app.post("/v1/crawls", status_code=202)
+async def create_crawl(body: CrawlBody, x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None),
+                       x_roles: str | None = Header(None)) -> dict:
+    """Crawl a whole site into the knowledge base: sitemap, robots.txt, same host, up to WEB_CRAWL_MAX_PAGES pages."""
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    if not web_pages.enabled():
+        raise HTTPException(403, "Reading web pages is turned off (WEB_FETCH_ENABLED)")
+    url = body.url.strip()
+    try:
+        await asyncio.to_thread(web_pages.check_host, url)
+    except web_pages.WebError as error:
+        raise HTTPException(422, str(error)) from error
+    prefix = body.path_prefix.strip()
+    if prefix and not prefix.startswith("/"):
+        prefix = "/" + prefix
+    job = start_crawl(principal, url, body.max_pages, prefix, roles_from_header(body.allowed_roles),
+                      normalize_text(body.category).strip()[:80] or "web", parse_tags(body.tags))
+    return job.public()
+
+
+@app.get("/v1/crawls")
+async def list_crawls(x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None),
+                      x_roles: str | None = Header(None)) -> dict:
+    principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
+    jobs = [job for job in CRAWLS.values() if job.organization_id == principal.organization_id
+            and (job.owner_id == principal.user_id or "admin" in principal.roles)]
+    return {"data": [job.public() for job in sorted(jobs, key=lambda job: job.created_at, reverse=True)[:20]]}
+
+
+@app.get("/v1/crawls/{crawl_id}")
+async def get_crawl(crawl_id: str, x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None),
+                    x_roles: str | None = Header(None)) -> dict:
+    return visible_crawl(principal_from_headers(x_user_id, x_organization_id, x_roles), crawl_id).public()
+
+
+@app.delete("/v1/crawls/{crawl_id}")
+async def cancel_crawl(crawl_id: str, x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None),
+                       x_roles: str | None = Header(None)) -> dict:
+    """Stop a crawl; the pages already read stay as documents."""
+    job = visible_crawl(principal_from_headers(x_user_id, x_organization_id, x_roles), crawl_id)
+    if job.state in {"queued", "running"}:
+        job.state = "cancelled"
+    return job.public()
 
 
 class WebPagesBody(BaseModel):
@@ -3105,6 +3230,17 @@ async def chat(
         if web_notes:
             request.messages.insert(len(request.messages) - 1, Message(role="system", content=(
                 "사용자가 준 링크 중 읽지 못한 것이 있다. 답의 첫 문장에서 그 사실과 이유를 짧게 말하라: " + "; ".join(web_notes))))
+        # "이 사이트 크롤링해 줘": read the whole site in the background; this answer uses the first page.
+        if web_documents and web_pages.wants_crawl(request.messages[-1].content):
+            try:
+                crawl_job = start_crawl(principal, web_documents[0].metadata.get("source_url", ""),
+                                        int(os.getenv("WEB_CRAWL_CHAT_PAGES", "50")))
+                request.messages.insert(len(request.messages) - 1, Message(role="system", content=(
+                    f"사이트 전체 크롤링을 시작했다(최대 {crawl_job.max_pages}쪽, 작업 {crawl_job.id[:8]}). 지금 답은 첫 페이지를 "
+                    "근거로 하고, 마지막에 '사이트 전체를 읽는 중이며 몇 분 뒤 다시 물으면 전체를 근거로 답한다'고 한 문장으로 알려라.")))
+                steps.append(_step("web_crawl", 0.0, "ok", f"{crawl_job.id[:8]} · 최대 {crawl_job.max_pages}쪽"))
+            except HTTPException as error:
+                steps.append(_step("web_crawl", 0.0, "failed", str(error.detail)))
     citations, memories, pipeline_steps = await pipeline.prepare(request, principal)
     if web_documents:
         citations = web_citations(web_documents, request.messages[-1].content, citations)
@@ -4153,6 +4289,28 @@ async def _mcp_search(arguments: dict, identity: dict) -> tuple[str, dict]:
     return "\n\n".join(lines), {"results": results}
 
 
+async def _mcp_crawl(arguments: dict, identity: dict) -> tuple[str, dict]:
+    principal = principal_from_headers(identity.get("user"), identity.get("organization"), identity.get("roles"))
+    try:
+        if arguments.get("crawl_id"):
+            job = visible_crawl(principal, str(arguments["crawl_id"]))
+        else:
+            if not web_pages.enabled():
+                raise ToolError("Reading web pages is turned off")
+            url = str(arguments.get("url") or "").strip()
+            try:
+                await asyncio.to_thread(web_pages.check_host, url)
+            except web_pages.WebError as error:
+                raise ToolError(str(error)) from error
+            job = start_crawl(principal, url, _int_arg(arguments, "max_pages", 30, 1, 200),
+                              str(arguments.get("path_prefix") or ""))
+    except HTTPException as error:
+        raise ToolError(f"{error.status_code}: {error.detail}") from error
+    data = job.public()
+    return (f"Crawl {job.id} {job.state}: {len(job.pages)}/{job.max_pages} pages from {job.url}"
+            + (f" ({job.error})" if job.error else "")), data
+
+
 async def _mcp_ask(arguments: dict, identity: dict) -> tuple[str, dict]:
     question = str(arguments["question"]).strip()
     history = arguments.get("history") or []
@@ -4256,6 +4414,16 @@ for _tool in (
              "question": {"type": "string"}, "answer": {"type": "string"},
              "gap_id": {"type": "string", "description": "Knowledge gap this answers, from list_knowledge_gaps."}},
           "required": ["question", "answer"]}, _mcp_record, read_only=False),
+    Tool("crawl_site", "Crawl a website",
+         "Read a whole website (same host, sitemap and robots.txt respected) into the organization's documents in the "
+         "background, so later questions about it are answered with its pages as sources. Returns a crawl id; call again "
+         "with only crawl_id to see progress.",
+         {"type": "object", "properties": {
+             "url": {"type": "string", "description": "Start page, e.g. https://www.example.com/"},
+             "max_pages": {"type": "integer", "minimum": 1, "maximum": 200, "default": 30},
+             "path_prefix": {"type": "string", "description": "Only pages under this path, e.g. /docs"},
+             "crawl_id": {"type": "string", "description": "Progress of an earlier crawl instead of starting one."}}},
+         _mcp_crawl, read_only=False),
     Tool("publish_answer", "Publish a draft answer",
          "Index a draft answer as a searchable document and resolve its gap. Only the author or an administrator may publish; "
          "confirm with the author first.",

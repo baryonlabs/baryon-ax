@@ -257,3 +257,125 @@ def page_document(page: Page) -> tuple[str, bytes]:
     safe_title = " ".join(re.sub(r"[\\/:*?\"<>|\n\r]+", " ", page.title).split())[:80] or host
     body = f"# {page.title}\n\n출처: {page.url}\n\n{page.markdown}\n"
     return f"웹 · {safe_title} ({host}).md", body.encode("utf-8")
+
+
+# --- crawling a whole site -------------------------------------------------------------------
+
+TRACKING = re.compile(r"^(utm_\w+|fbclid|gclid|ref|mc_cid|mc_eid)$", re.I)
+SKIP_PATH = re.compile(r"\.(pdf|jpe?g|png|gif|webp|svg|ico|zip|gz|mp3|mp4|mov|avi|css|js|json|xml|rss|woff2?|ttf|exe|dmg)$", re.I)
+CRAWL_INTENT = re.compile(r"크롤링|크롤|사이트\s*전체|전체\s*(?:페이지|사이트)|모든\s*(?:페이지|쪽)|싹\s*다|다\s*읽어|crawl", re.I)
+
+
+def crawl_limit() -> int:
+    return int(os.getenv("WEB_CRAWL_MAX_PAGES", "200"))
+
+
+def normalize_url(url: str) -> str:
+    """One spelling per page: no fragment, no tracking parameters, lowercase host, no trailing slash but the root."""
+    parts = urllib.parse.urlsplit(url.strip())
+    query = urllib.parse.urlencode([(key, value) for key, value in urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+                                    if not TRACKING.match(key)])
+    path = parts.path or "/"
+    if len(path) > 1 and path.endswith("/"):
+        path = path.rstrip("/")
+    return urllib.parse.urlunsplit((parts.scheme.lower(), parts.netloc.lower(), path, query, ""))
+
+
+def wants_crawl(text: str) -> bool:
+    """"이 사이트 크롤링해 줘", "전체 페이지 다 읽어": a whole site, not just the linked page."""
+    return bool(CRAWL_INTENT.search(URL_PATTERN.sub(" ", text or "")))
+
+
+def sitemap_urls(xml: str) -> list[str]:
+    return [" ".join(match.split()) for match in re.findall(r"<loc>\s*([^<]+?)\s*</loc>", xml or "", re.I)]
+
+
+async def crawl(url: str, max_pages: int = 30, path_prefix: str = "", client: httpx.AsyncClient | None = None,
+                on_page=None, should_stop=None, delay: float | None = None) -> list[Page]:
+    """Breadth-first over one site: the start page, its sitemap, then links found on the pages read.
+
+    Stays on the start page's host and under ``path_prefix`` (default: the whole site), obeys robots.txt
+    and its Crawl-delay (at least ``delay`` seconds between requests, WEB_CRAWL_DELAY, default 0.5),
+    skips files that are not pages, and calls ``on_page(page)`` after each page so a job can store it
+    and report progress. ``should_stop()`` ends the crawl early (a cancelled job)."""
+    import asyncio
+
+    own = client is None
+    client = client or httpx.AsyncClient(timeout=15, headers={"User-Agent": USER_AGENT,
+                                                             "Accept": "text/html,application/xhtml+xml,text/plain;q=0.8"})
+    max_pages = max(1, min(max_pages, crawl_limit()))
+    try:
+        start = normalize_url(url)
+        first = await fetch(start, client)
+        origin = urllib.parse.urlsplit(first.url)
+        prefix = path_prefix or "/"
+        robots = urllib.robotparser.RobotFileParser()
+        sitemaps: list[str] = [f"{origin.scheme}://{origin.netloc}/sitemap.xml"]
+        try:
+            robots_text = (await fetch(f"{origin.scheme}://{origin.netloc}/robots.txt", client)).markdown
+            robots.parse(robots_text.splitlines())
+            sitemaps = [line.split(":", 1)[1].strip() for line in robots_text.splitlines()
+                        if line.lower().startswith("sitemap:")] or sitemaps
+        except WebError:
+            robots.parse([])
+        pause = max(delay if delay is not None else float(os.getenv("WEB_CRAWL_DELAY", "0.5")),
+                    float(robots.crawl_delay(USER_AGENT) or 0))
+        pause = min(pause, 5.0)
+
+        def wanted(link: str) -> bool:
+            parts = urllib.parse.urlsplit(link)
+            return (parts.scheme in {"http", "https"} and parts.netloc.lower() == origin.netloc.lower()
+                    and parts.path.startswith(prefix) and not SKIP_PATH.search(parts.path)
+                    and robots.can_fetch(USER_AGENT, link))
+
+        queue: list[str] = []
+        seen = {normalize_url(first.url), start}
+        for sitemap in sitemaps[:3]:
+            try:
+                for link in sitemap_urls((await _raw(sitemap, client)))[:max_pages * 3]:
+                    link = normalize_url(link)
+                    if link not in seen and wanted(link):
+                        seen.add(link)
+                        queue.append(link)
+            except WebError:
+                continue
+        pages = [first]
+        digests = {hash(first.markdown)}  # "/" and "/index.html" are often the same page
+        if on_page:
+            await on_page(first)
+        frontier = list(first.links)
+        while len(pages) < max_pages and not (should_stop and should_stop()):
+            for link in frontier:
+                link = normalize_url(link)
+                if link not in seen and wanted(link):
+                    seen.add(link)
+                    queue.append(link)
+            frontier = []
+            if not queue:
+                break
+            link = queue.pop(0)
+            await asyncio.sleep(pause)
+            try:
+                page = await fetch(link, client)
+            except WebError:
+                continue
+            if not page.markdown.strip() or hash(page.markdown) in digests:
+                continue
+            digests.add(hash(page.markdown))
+            pages.append(page)
+            frontier = page.links
+            if on_page:
+                await on_page(page)
+        return pages
+    finally:
+        if own:
+            await client.aclose()
+
+
+async def _raw(url: str, client: httpx.AsyncClient) -> str:
+    """A sitemap's XML as text (fetch() would turn XML into page text)."""
+    check_host(url)
+    response = await client.get(url, follow_redirects=False)
+    if response.status_code >= 400:
+        raise WebError(f"{response.status_code}")
+    return response.text[:5_000_000]
