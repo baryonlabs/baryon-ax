@@ -64,9 +64,30 @@ def addresses(value: str) -> set[str]:
     return {address.lower() for address in re.findall(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+", value or "")}
 
 
+def draft_link(message_id: str, account: str = "") -> str:
+    """Open the draft in Gmail's web compose window, in the right account."""
+    where = f"?authuser={account}" if account else "u/0/"
+    return f"https://mail.google.com/mail/{where}#drafts?compose={message_id}" if message_id else ""
+
+
 class Mail:
-    def __init__(self, run: Runner = gog_runner) -> None:
+    def __init__(self, run: Runner = gog_runner, account: str | None = None) -> None:
         self.run = run
+        self._account = account
+
+    @property
+    def account(self) -> str:
+        """The Gmail address drafts go to: SECRETARY_GOG_ACCOUNT, or gog's default sign-in."""
+        if self._account is None:
+            self._account = os.getenv("SECRETARY_GOG_ACCOUNT", "")
+            if not self._account:
+                try:
+                    listing = subprocess.run(["gog", "auth", "list", "-j"], capture_output=True, text=True, timeout=20)  # noqa: S603,S607
+                    accounts = json.loads(listing.stdout or "{}").get("accounts") or []
+                    self._account = next((item.get("email", "") for item in accounts if "gmail" in item.get("services", [])), "")
+                except (OSError, ValueError, subprocess.SubprocessError):
+                    self._account = ""
+        return self._account
 
     def save_draft(self, to: str, subject: str, body: str, cc: str = "", draft_id: str = "",
                    reply_to_message_id: str = "") -> str:
@@ -88,9 +109,13 @@ class Mail:
         if reply_to_message_id.strip():
             args += ["--reply-to-message-id", reply_to_message_id.strip()]
         result = self.run(args)
-        saved = (result.get("draft") or result).get("id") or result.get("id") or draft_id
+        draft = result.get("draft") or result
+        saved = draft.get("id") or draft_id
+        message_id = (draft.get("message") or {}).get("id") or result.get("messageId", "")
         who = f"받는 사람 {to.strip()}" if to.strip() else "받는 사람은 아직 비어 있음"
-        return f"Gmail 임시보관함에 초안을 저장했어요 (초안 id {saved}, {who}, 제목 '{subject.strip()}'). 아직 보내지 않았어요."
+        link = draft_link(message_id, self.account)
+        return (f"Gmail 임시보관함에 초안을 저장했어요 (초안 id {saved}, {who}, 제목 '{subject.strip()}'). 아직 보내지 않았어요."
+                + (f" Gmail에서 열기: {link}" if link else ""))
 
     def list_drafts(self, limit: int = 5) -> str:
         listing = self.run(["drafts", "list", "--max", str(max(1, min(limit, 20)))])

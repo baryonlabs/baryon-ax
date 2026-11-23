@@ -41,8 +41,12 @@ class FakeSecretary:
 
 
 class FakeWeb:
-    def __init__(self) -> None:
+    def __init__(self, replies: list[dict] | None = None) -> None:
         self.calls: list[tuple[str, dict]] = []
+        self.replies = replies or []
+
+    def conversations_replies(self, **kwargs):
+        return {"messages": self.replies}
 
     def chat_postMessage(self, **kwargs):
         self.calls.append(("post", kwargs))
@@ -104,3 +108,28 @@ def test_cards_read_well_in_slack() -> None:
     assert card_mrkdwn({"kind": "list", "title": "할 일", "items": [{"label": "PR 리뷰", "badge": "오늘"}]}) == "*할 일*\n1. PR 리뷰 `오늘`"
     assert card_mrkdwn({"kind": "table", "title": "일정", "columns": ["시간", "제목"], "rows": [["15:00", "미팅"]],
                         "note": "캘린더"}) == "*일정*\n*시간* | *제목*\n15:00 | 미팅\n_캘린더_"
+
+
+def test_the_thread_before_the_request_goes_with_it() -> None:
+    secretary = FakeSecretary()
+    work = bridge(secretary)
+    thread = [
+        {"ts": "10.0", "user": OWNER, "text": "<@U0BOT> 공공에이아이와 협력한다면?"},
+        {"ts": "11.0", "bot_id": "B1", "user": "U0BOT", "text": "제안 1. 폐쇄형 AROOM\n제안 2. 문서 이해 엔진 <https://www.gonggong.ai/|gonggong.ai>"},
+        {"ts": "12.0", "user": "U0COLLEAGUE", "text": "좋네요. 미팅은 다음 주가 좋겠어요", "files": [{"name": "회사소개서.pdf"}]},
+        {"ts": "13.0", "user": OWNER, "text": "<@U0BOT> 위의 내용을 구글 메일 초안으로 올려놔두고 링크 줘"},
+    ]
+    web = FakeWeb(replies=thread)
+    work.handle({"channel": "C1", "ts": "13.0", "thread_ts": "10.0", "user": OWNER, "text": thread[-1]["text"]}, web)
+    first = secretary.turns[0]
+    assert "[이 슬랙 스레드의 앞선 메시지." in first and "baryon 봇: 제안 1. 폐쇄형 AROOM" in first
+    assert "https://www.gonggong.ai/" in first and "|gonggong.ai" not in first
+    assert "<@U0COLLEAGUE>: 좋네요. 미팅은 다음 주가 좋겠어요 (첨부: 회사소개서.pdf)" in first
+    assert first.count("위의 내용을 구글 메일 초안으로") == 1  # the request itself, not twice
+    # Next turn: only what is new in the thread, not the whole history again (and not the bridge's own posts).
+    web.replies = thread + [{"ts": "300.1", "bot_id": "B1", "text": ":robot_face: 비서가 일하고 있어요…"},
+                            {"ts": "14.0", "user": "U0COLLEAGUE", "text": "받는 분은 partner@gonggong.ai 예요"}]
+    work.handle({"channel": "C1", "ts": "15.0", "thread_ts": "10.0", "user": OWNER, "text": "응"}, web)
+    second = secretary.turns[1]
+    assert "partner@gonggong.ai" in second and "제안 1" not in second and "비서가 일하고" not in second
+
