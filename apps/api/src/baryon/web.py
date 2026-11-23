@@ -30,7 +30,7 @@ from html.parser import HTMLParser
 import httpx
 
 USER_AGENT = "BaryonAX-WebReader/0.7 (+https://baryon-ax.baryon.ai)"
-URL_PATTERN = re.compile(r"https?://[^\s<>\"'`)\]}>,]+", re.I)
+URL_PATTERN = re.compile(r"https?://[^\s<>\"'`)\]}>,|]+", re.I)  # "|": Slack sends links as <url|label>
 SKIP = {"script", "style", "noscript", "svg", "nav", "footer", "header", "form", "iframe", "template", "button", "select"}
 BLOCK = {"p", "div", "section", "article", "main", "br", "tr", "blockquote", "pre", "figure", "figcaption", "dd", "dt"}
 
