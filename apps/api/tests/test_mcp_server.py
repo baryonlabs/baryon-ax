@@ -47,7 +47,8 @@ def test_initialize_negotiates_version_and_lists_tools() -> None:
     assert rpc("ping")["result"] == {}
 
     tools = {tool["name"]: tool for tool in rpc("tools/list")["result"]["tools"]}
-    assert set(tools) == {"search_documents", "ask", "list_knowledge_gaps", "suggest_questions", "record_answer", "publish_answer"}
+    assert set(tools) == {"search_documents", "ask", "list_knowledge_gaps", "suggest_questions", "record_answer", "publish_answer",
+                          "crawl_site"}
     assert tools["search_documents"]["annotations"]["readOnlyHint"] is True
     assert tools["publish_answer"]["annotations"]["readOnlyHint"] is False
     assert tools["ask"]["inputSchema"]["required"] == ["question"]

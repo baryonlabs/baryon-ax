@@ -621,3 +621,24 @@ def test_http_turn_takes_photos(api) -> None:
     assert api.post(f"/v1/sessions/{session_id}/turn", headers=AUTH, json=body).json() == {"used": "answer"}
     bad = {"text": "x", "images": [{"media_type": "application/pdf", "data": "JVBERi0" * 4}]}
     assert api.post(f"/v1/sessions/{session_id}/turn", headers=AUTH, json=bad).status_code == 422
+
+
+def test_board_for_the_apps_home(api, monkeypatch, tmp_path) -> None:
+    from secretary.goals import Goal, GoalManager
+
+    goals = GoalManager(tmp_path / "goals", FakeClient, lambda goal, event: None)
+    for number, (title, status) in enumerate([("로그인 버그", "done"), ("테스트 보강", "running"), ("배포", "needs_input")], 1):
+        goals.goals[f"g{number}"] = Goal(id=f"g{number}", title=title, goal=title, done_when="", repo=".", status=status,
+                                         number=number, created=float(number), question="어느 서버?" if status == "needs_input" else "")
+    monkeypatch.setattr(server, "goal_manager", goals)
+    server.notifier.add("회의", when="30")
+    assert api.get("/v1/board").status_code == 401
+    board = api.get("/v1/board", headers=AUTH).json()
+    assert [goal["number"] for goal in board["in_progress"]] == [3, 2]
+    assert [goal["number"] for goal in board["closed"]] == [1]
+    assert [goal["question"] for goal in board["waiting"]] == ["어느 서버?"]
+    assert [item["title"] for item in board["reminders"]] == ["회의"]
+    assert api.get("/v1/goals/3", headers=AUTH).json()["title"] == "배포"  # by number
+    assert api.get("/v1/goals/9", headers=AUTH).status_code == 404
+    assert api.post("/v1/goals/2/answer", headers=AUTH, json={"text": "x"}).json() == {"ok": False}  # not asking
+    assert api.delete("/v1/goals/1", headers=AUTH).json() == {"ok": False}  # already done

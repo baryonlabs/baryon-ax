@@ -202,3 +202,22 @@ def test_slug_and_steps() -> None:
     assert goals_module.slug("Fix login timeout!") == "fix-login-timeout"
     assert goals_module.slug("로그인 버그") == "work"
     assert goals_module.describe_step("Bash", {"command": "npm test"}) == "명령: npm test"
+
+
+def test_goals_are_numbered_and_found_by_number(tmp_path) -> None:
+    async def run() -> None:
+        events: list = []
+        goals = manager(tmp_path, events)
+        first = goals.start("첫째", "a", "", str(tmp_path))
+        second = goals.start("둘째", "b ASK-FIRST", "", str(tmp_path))
+        assert (first.number, second.number) == (1, 2)
+        assert goals.find("2") is second and goals.find("#2") is second and goals.find("2번") is second
+        assert goals.find(first.id) is first and goals.find("9") is None
+        await wait_until(lambda: second.status == "needs_input")
+        assert goals.answer("#2", "30분")  # the owner answers by number
+        await wait_until(lambda: second.status == "done")
+        assert second.brief()["number"] == 2 and "steps" in second.detail()
+        # Numbers survive a restart, and goals saved before numbering get them in order.
+        again = manager(tmp_path, [])
+        assert again.find("1").id == first.id and again._next_number() == 3
+    asyncio.run(run())

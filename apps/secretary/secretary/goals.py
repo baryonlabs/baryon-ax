@@ -72,11 +72,18 @@ class Goal:
     cost_usd: float | None = None
     created: float = field(default_factory=time.time)
     updated: float = field(default_factory=time.time)
+    number: int = 0  # #1, #2 … : how the owner and the secretary refer to it ("3번 어때?")
 
     def brief(self) -> dict:
         """What the secretary and the app need: no paths."""
-        return {"id": self.id, "title": self.title, "status": self.status, "step": self.steps[-1] if self.steps else "",
-                "question": self.question, "summary": self.summary, "branch": self.branch}
+        return {"id": self.id, "number": self.number, "title": self.title, "status": self.status,
+                "step": self.steps[-1] if self.steps else "", "question": self.question, "summary": self.summary,
+                "branch": self.branch, "created": self.created, "updated": self.updated}
+
+    def detail(self) -> dict:
+        """The app's page for one goal: the brief, what was asked and the recent steps."""
+        return {**self.brief(), "goal": self.goal, "done_when": self.done_when, "steps": self.steps[-30:],
+                "cost_usd": self.cost_usd}
 
 
 def slug(text: str) -> str:
@@ -134,6 +141,10 @@ class GoalManager:
                 self.goals[goal.id] = goal
         except (OSError, ValueError, TypeError):
             pass
+        # Goals saved before numbering get numbers in the order they were started.
+        unnumbered = sorted((goal for goal in self.goals.values() if not goal.number), key=lambda goal: goal.created)
+        for goal in unnumbered:
+            goal.number = self._next_number()
 
     def _save(self) -> None:
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
@@ -151,12 +162,26 @@ class GoalManager:
         except Exception:
             logger.exception("notify failed")
 
+    def _next_number(self) -> int:
+        return max((goal.number for goal in self.goals.values()), default=0) + 1
+
+    def find(self, ref: str) -> Goal | None:
+        """A goal by id, or by its number as the owner says it: "3", "#3", "3번"."""
+        ref = str(ref).strip()
+        if ref in self.goals:
+            return self.goals[ref]
+        digits = ref.lstrip("#").removesuffix("번").strip()
+        if digits.isdigit():
+            return next((goal for goal in self.goals.values() if goal.number == int(digits)), None)
+        return None
+
     # --- the secretary's tools ----------------------------------------------------------
 
     def start(self, title: str, goal: str, done_when: str, repo: str) -> Goal:
         item = Goal(id=uuid.uuid4().hex[:6], title=title.strip()[:80], goal=goal.strip()[:2000],
                     done_when=(done_when.strip() or "요청한 변경이 동작하고 기존 테스트가 통과한다")[:500], repo=repo)
         item.branch = f"goal/{item.id}-{slug(title)}"
+        item.number = self._next_number()
         self.goals[item.id] = item
         self._save()
         self.tasks[item.id] = asyncio.create_task(self._run(item))
@@ -167,6 +192,8 @@ class GoalManager:
         return [goal for goal in goals if goal.status in ("queued", "running", "needs_input")] if active_only else goals[:10]
 
     def answer(self, goal_id: str, text: str) -> bool:
+        found = self.find(goal_id)
+        goal_id = found.id if found else goal_id
         future = self.answers.get(goal_id)
         if not future or future.done():
             return False
@@ -174,8 +201,8 @@ class GoalManager:
         return True
 
     def cancel(self, goal_id: str) -> bool:
-        task = self.tasks.get(goal_id)
-        goal = self.goals.get(goal_id)
+        goal = self.find(goal_id)
+        task = self.tasks.get(goal.id) if goal else None
         if not goal or goal.status not in ("queued", "running", "needs_input"):
             return False
         if task:
