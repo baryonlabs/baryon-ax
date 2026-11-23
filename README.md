@@ -213,6 +213,8 @@
 
 **다음 릴리스 (main에 반영됨) — 말로 일하는 비서**
 
+- **코드 저장소를 지식으로(repo-sync)**: 설계 문서만으로는 "현재 코드 기준으로 무엇을 더 할 수 있나"에 답할 수 없었습니다. git 저장소의 문서, 모듈별 코드 지도, 머지 이력을 주기적으로 올려 봇이 현재 구현 상태를 근거로 답합니다([examples/repo-sync](examples/repo-sync)).
+
 - **음성**: 받아쓰기와 음성 명령, 말하면 멈추는 라이브 대화. sherpa-onnx STT와 Supertonic TTS가 사내에서만 돕니다 ([voice.md](docs/voice.md)).
 - **음성 비서**: 메일 · 일정 · 할 일 · PR/CI를 요약하고 DureClaw 플릿에 일을 맡깁니다. 바뀌는 일은 음성 확인을 거쳐야 실행됩니다 ([voice-secretary.md](docs/voice-secretary.md)).
 - **목표 에이전트**: 대화로 맡긴 목표를 백그라운드 에이전트 여러 개가 각자 브랜치에서 병렬로 처리하고, 끝나면 비서가 먼저 알려 줍니다.
@@ -715,6 +717,7 @@ curl -s http://localhost:8000/v1/documents \
 | --- | --- |
 | [`examples/slack-bot`](examples/slack-bot) | Slack `@멘션`(Socket Mode)에 **답변 + 출처**(문서 · 청크 · 인용 구절)로 답하고, 같은 스레드에서는 멘션 없이 이어 답합니다. **proactive 모드**는 답하지 못한 질문을 데스크 채널에 올리고, 스레드 답글을 초안으로 받아 작성자 승인 후 게시하고, 원래 스레드에 결과를 돌려줍니다. |
 | [`examples/discord-bot`](examples/discord-bot) | 같은 기능의 Discord 봇(Gateway, 공개 URL 불필요). 멘션하면 스레드를 열어 답과 출처 embed를 보여 주고, 승인 버튼으로 답변을 게시합니다. |
+| [`examples/repo-sync`](examples/repo-sync) | git 저장소의 **문서 · 모듈별 코드 지도(클래스 · 함수 · HTTP 엔드포인트) · 최근 머지 이력**을 문서로 올려, 봇이 "지금 무엇이 구현돼 있나", "그 API는 어디 있나"에 답하게 합니다. 다시 실행하면 바뀐 파일만 갱신하고 지운 파일은 문서도 지웁니다. |
 
 봇은 OIDC 서비스 계정 하나로 인증하고 사람마다 `X-On-Behalf-Of: slack:<ID>`로 요청합니다. 역할은 서비스 계정 권한을 넘지 못하고, 감사 로그에는 사용자와 `acting_service`가 함께 남습니다.
 
@@ -882,7 +885,7 @@ apps/api/       FastAPI 게이트웨이와 API (Python, uv)
 apps/web/       React + Vite 채팅 워크스페이스 (받아쓰기 · 라이브 대화 포함)
 apps/secretary/ 상주 음성 비서와 목표 에이전트 (Claude Agent SDK)
 apps/voice_app/ 바리온 비서 안드로이드 앱 (Flutter + Kotlin 통화 엔진)
-examples/       공개 API로 만든 확장 예제 (Slack · Discord 봇)
+examples/       공개 API로 만든 확장 예제 (Slack · Discord 봇, 코드 저장소 동기화)
 deploy/         Compose · Kubernetes · 파서 · STT/TTS(stt) · 전화 게이트웨이(phone)
 docs/           아키텍처 · 운영 · 보안 · 연동 · 연구 문서
 site/           홈페이지 (GitHub Pages)
