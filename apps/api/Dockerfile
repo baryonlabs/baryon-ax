@@ -21,8 +21,8 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 RUN mkdir -p /data/fastembed /data/documents /data/audit /data/mem0 /data/gaps /data/ontology /data/tacit /data/feedback \
     && useradd --create-home --uid 10001 baryon \
-    && chown -R baryon:baryon /data \
-    && if [ "$PRELOAD_EMBEDDINGS" = "true" ]; then python -c "from fastembed import TextEmbedding; model = TextEmbedding('$EMBEDDING_MODEL'); list(model.embed(['warmup']))"; fi
+    && if [ "$PRELOAD_EMBEDDINGS" = "true" ]; then python -c "from fastembed import TextEmbedding; model = TextEmbedding('$EMBEDDING_MODEL'); list(model.embed(['warmup']))"; fi \
+    && chown -R baryon:baryon /data
 USER baryon
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s \

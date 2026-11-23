@@ -551,30 +551,44 @@ class DocumentService:
                 self.vector.delete_document(document.id)
         return {"documents": len(doomed), "raw_files": raw_files}
 
-    def search(self, principal: Principal, query: str, limit: int = 4) -> list[dict]:
-        if self.vector:
-            hybrid = os.getenv("RETRIEVAL_MODE", "vector").strip().lower() == "hybrid"
-            vector_results = self.vector.search(principal, query, limit * 2 if hybrid else limit)
+    def search(self, principal: Principal, query: str, limit: int = 4, mode: str | None = None) -> list[dict]:
+        """Permission-filtered retrieval. RETRIEVAL_MODE picks lexical, vector or hybrid (default).
+
+        Vector and hybrid fall back to lexical when Qdrant or the embedder is unavailable, so a
+        missing index never turns into "no evidence"."""
+        mode = (mode or retrieval_mode()).strip().lower()
+        if mode != "lexical" and self.vector:
+            candidates = max(limit, retrieval_candidates(limit)) if mode == "hybrid" else limit
+            vector_results = self.vector.search(principal, query, candidates)
             if vector_results is not None:
                 visible = []
                 for item in vector_results:
                     document = self.documents.get(item["document_id"])
                     if document and self.can_view(principal, document):
                         visible.append(item)
-                if not hybrid:
-                    return visible
-                return self._fuse(visible, self._lexical_search(principal, query, limit * 2), limit)
+                if mode == "vector":
+                    return visible[:limit]
+                return self._fuse(visible, self._lexical_search(principal, query, candidates), limit)
         return self._lexical_search(principal, query, limit)
 
     @staticmethod
-    def _fuse(vector_hits: list[dict], lexical_hits: list[dict], limit: int, k: int = 60) -> list[dict]:
-        """Reciprocal rank fusion of vector and lexical hits, keyed by (document, chunk)."""
+    def _fuse(
+        vector_hits: list[dict], lexical_hits: list[dict], limit: int, k: int | None = None,
+        weights: tuple[float, float] | None = None,
+    ) -> list[dict]:
+        """Weighted reciprocal rank fusion of vector and lexical hits, keyed by (document, chunk).
+
+        RRF combines ranks, not raw scores, because cosine similarity and term counts are on
+        different scales. RETRIEVAL_RRF_K, RETRIEVAL_VECTOR_WEIGHT and RETRIEVAL_LEXICAL_WEIGHT tune it."""
+        k = int(os.getenv("RETRIEVAL_RRF_K", "60")) if k is None else k
+        if weights is None:
+            weights = (float(os.getenv("RETRIEVAL_VECTOR_WEIGHT", "1.0")), float(os.getenv("RETRIEVAL_LEXICAL_WEIGHT", "1.0")))
         scores: dict[tuple, float] = {}
         items: dict[tuple, dict] = {}
-        for ranking in (vector_hits, lexical_hits):
+        for weight, ranking in zip(weights, (vector_hits, lexical_hits)):
             for rank, item in enumerate(ranking):
                 key = (item["document_id"], item.get("chunk"))
-                scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank + 1)
+                scores[key] = scores.get(key, 0.0) + weight / (k + rank + 1)
                 items.setdefault(key, item)
         ordered = sorted(scores, key=scores.get, reverse=True)[:limit]
         return [{**items[key], "score": round(scores[key], 6)} for key in ordered]
@@ -642,12 +656,34 @@ def search_terms(text: str) -> set[str]:
     return terms
 
 
-class VectorIndex:
-    """Qdrant-backed semantic index; returns None when unavailable so callers can fall back."""
+RETRIEVAL_MODES = ("lexical", "vector", "hybrid")
 
-    def __init__(self) -> None:
-        self.url = os.getenv("QDRANT_URL", "").rstrip("/")
-        self.collection = os.getenv("QDRANT_COLLECTION", "baryon_documents")
+
+def retrieval_mode() -> str:
+    """RETRIEVAL_MODE: lexical | vector | hybrid. Unknown values fall back to hybrid."""
+    mode = os.getenv("RETRIEVAL_MODE", "hybrid").strip().lower()
+    if mode not in RETRIEVAL_MODES:
+        logger.warning("Unknown RETRIEVAL_MODE=%r; using hybrid", mode)
+        return "hybrid"
+    return mode
+
+
+def retrieval_candidates(limit: int) -> int:
+    """How many hits each retriever contributes before fusion (RETRIEVAL_CANDIDATES, default 2x limit)."""
+    configured = os.getenv("RETRIEVAL_CANDIDATES", "").strip()
+    return int(configured) if configured.isdigit() and int(configured) > 0 else limit * 2
+
+
+class VectorIndex:
+    """Qdrant-backed semantic index; returns None when unavailable so callers can fall back.
+
+    QDRANT_URL accepts an http(s) URL, ``:memory:`` (in-process, for tests and benchmarks) or
+    ``path:/dir`` (embedded on-disk storage). ``embed`` overrides the embedder for tests."""
+
+    def __init__(self, url: str | None = None, collection: str | None = None, embed=None) -> None:
+        self.url = (os.getenv("QDRANT_URL", "") if url is None else url).rstrip("/")
+        self.collection = collection or os.getenv("QDRANT_COLLECTION", "baryon_documents")
+        self._embed_override = embed
         # EMBEDDING_PROVIDER=fastembed (local, default) or openai (any OpenAI-compatible /v1/embeddings endpoint)
         self.provider = os.getenv("EMBEDDING_PROVIDER", "fastembed").strip().lower()
         self.model_name = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
@@ -659,6 +695,8 @@ class VectorIndex:
         # Only the embedded text is truncated — the stored chunk keeps its full content.
         self.max_chars = max(100, int(os.getenv("EMBEDDING_MAX_CHARS", "6000")))
         self.dimension = int(os.getenv("EMBEDDING_DIMENSION", "384"))
+        self.query_prefix = os.getenv("EMBEDDING_QUERY_PREFIX", "query: ")
+        self.passage_prefix = os.getenv("EMBEDDING_PASSAGE_PREFIX", "passage: ")
         self.min_score = float(os.getenv("RETRIEVAL_MIN_SCORE", "0.3"))
         self.client = None
         self.embedder = None
@@ -666,14 +704,30 @@ class VectorIndex:
         self._embed_lock = threading.Lock()
         self.enabled = False
         self.last_error = ""
+        self._last_attempt = 0.0
+        self.retry_seconds = float(os.getenv("QDRANT_RETRY_SECONDS", "30"))
         if self.url:
             self._connect()
 
+    def _ready(self) -> bool:
+        """Enabled, or reconnected: Qdrant may start after the API (compose has no hard dependency)."""
+        if self.enabled and self.client:
+            return True
+        if self.url and time.monotonic() - self._last_attempt >= self.retry_seconds:
+            self._connect()
+        return self.enabled and self.client is not None
+
     def _connect(self) -> None:
+        self._last_attempt = time.monotonic()
         try:
             from qdrant_client import QdrantClient
             from qdrant_client.models import Distance, PayloadSchemaType, VectorParams
-            client = QdrantClient(url=self.url, timeout=5)
+            if self.url == ":memory:":
+                client = QdrantClient(location=":memory:")
+            elif self.url.startswith("path:"):
+                client = QdrantClient(path=self.url[len("path:"):])
+            else:
+                client = QdrantClient(url=self.url, timeout=5)
             client.get_collections()
             if not client.collection_exists(self.collection):
                 client.create_collection(self.collection, vectors_config=VectorParams(size=self.dimension, distance=Distance.COSINE))
@@ -683,20 +737,34 @@ class VectorIndex:
                 if size is not None and size != self.dimension:
                     raise RuntimeError(
                         f"Qdrant collection '{self.collection}' stores {size}-dim vectors but EMBEDDING_DIMENSION={self.dimension}; "
-                        "use a new QDRANT_COLLECTION (with QDRANT_REINDEX_ON_START=true) after changing EMBEDDING_MODEL"
+                        "use a new QDRANT_COLLECTION or run `python -m baryon.reindex --recreate` after changing EMBEDDING_MODEL"
                     )
-            for field in ("organization_id", "owner_id", "document_id", "allowed_roles"):
+            local = self.url == ":memory:" or self.url.startswith("path:")
+            for field in () if local else ("organization_id", "owner_id", "document_id", "allowed_roles"):
                 try:
                     client.create_payload_index(self.collection, field_name=field, field_schema=PayloadSchemaType.KEYWORD)
                 except Exception:
                     pass
+            if not local:
+                try:
+                    client.create_payload_index(self.collection, field_name="chunk", field_schema=PayloadSchemaType.INTEGER)
+                except Exception:
+                    pass
             self.client = client
             self.enabled = True
+            if self.last_error:
+                logger.info("Qdrant is reachable again at %s", self.url)
+            self.last_error = ""
         except Exception as error:
-            self.last_error = str(error)
-            logger.exception("Qdrant is unavailable; using lexical retrieval")
+            if self.last_error:
+                logger.warning("Qdrant is still unavailable (%s); using lexical retrieval", error)
+            else:
+                logger.exception("Qdrant is unavailable; using lexical retrieval")
+            self.last_error = str(error) or error.__class__.__name__
 
     def _embed(self, texts: list[str], query: bool = False) -> list[list[float]]:
+        if self._embed_override is not None:
+            return self._embed_override(texts, query)
         if self.provider == "openai":
             return self._embed_remote(texts, query)
         if self.embedder is None:
@@ -704,7 +772,9 @@ class VectorIndex:
                 if self.embedder is None:
                     from fastembed import TextEmbedding
                     self.embedder = TextEmbedding(self.model_name)
-        prefix = "query: " if query else "passage: "
+        # e5-style prefixes; vectors stored with one prefix must be queried with the same one,
+        # so changing EMBEDDING_QUERY_PREFIX/EMBEDDING_PASSAGE_PREFIX requires a reindex.
+        prefix = self.query_prefix if query else self.passage_prefix
         with self._embed_lock:
             return [vector.tolist() for vector in self.embedder.embed([prefix + text for text in texts])]
 
@@ -736,9 +806,9 @@ class VectorIndex:
         from qdrant_client.models import FieldCondition, Filter, MatchValue
         return Filter(must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))])
 
-    def index_document(self, document: Document) -> None:
-        if not self.enabled or not self.client:
-            return
+    def index_document(self, document: Document) -> bool:
+        if not self._ready():
+            return False
         try:
             from qdrant_client.models import PointStruct
             prepared = document.chunks or [{"text": chunk} for chunk in chunk_text(document.content)]
@@ -763,8 +833,47 @@ class VectorIndex:
                     payload["parser"] = document.metadata.get("parser", "text")
                 points.append(PointStruct(id=self._point_id(document.id, index), vector=vector, payload=payload))
             self.client.upsert(self.collection, points=points, wait=True)
+            self._delete_chunks_after(document.id, len(points))
+            return True
         except Exception:
             logger.exception("Could not index document %s in Qdrant", document.id)
+            return False
+
+    def _delete_chunks_after(self, document_id: str, count: int) -> None:
+        """Re-chunking can shrink a document; drop the points left over from the longer version."""
+        from qdrant_client.models import FieldCondition, Filter, MatchValue, Range
+        self.client.delete(self.collection, points_selector=Filter(must=[
+            FieldCondition(key="document_id", match=MatchValue(value=document_id)),
+            FieldCondition(key="chunk", range=Range(gt=count)),
+        ]), wait=True)
+
+    def count(self) -> int | None:
+        if not self.enabled or not self.client:
+            return None
+        try:
+            return int(self.client.count(self.collection, exact=True).count)
+        except Exception:
+            logger.exception("Could not count Qdrant points")
+            return None
+
+    def indexed_document_ids(self) -> set[str]:
+        """Every document id that has points, for pruning vectors of deleted documents."""
+        ids: set[str] = set()
+        offset = None
+        while True:
+            points, offset = self.client.scroll(self.collection, limit=512, offset=offset,
+                                                with_payload=["document_id"], with_vectors=False)
+            ids.update(str(point.payload.get("document_id")) for point in points if point.payload)
+            if offset is None:
+                return ids
+
+    def recreate(self) -> None:
+        """Drop and recreate the collection (embedding model change or full rebuild)."""
+        if not self.enabled or not self.client:
+            raise RuntimeError("Qdrant vector backend is not enabled")
+        self.client.delete_collection(self.collection)
+        self.enabled = False
+        self._connect()
 
     def delete_document(self, document_id: str) -> None:
         if not self.enabled or not self.client:
@@ -798,7 +907,7 @@ class VectorIndex:
             logger.exception("Could not update Qdrant ACLs for document %s", document_id)
 
     def search(self, principal: Principal, query: str, limit: int) -> list[dict] | None:
-        if not self.enabled or not self.client:
+        if not self._ready():
             return None
         try:
             from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
@@ -1387,12 +1496,38 @@ class MemoryService:
         return True
 
 
+async def backfill_empty_index(store: "DocumentService", wait_seconds: float | None = None, poll: float = 5.0) -> int:
+    """QDRANT_REINDEX_ON_START=auto: index stored documents once Qdrant is up, if its collection is empty.
+
+    This is the migration path from a lexical-only install: the first start with Qdrant fills the
+    index in the background, so the API is healthy at once and hybrid search keeps its lexical half
+    until the vectors land. A non-empty collection is left alone (use `python -m baryon.reindex`)."""
+    vector = store.vector
+    deadline = time.monotonic() + (float(os.getenv("QDRANT_WAIT_SECONDS", "600")) if wait_seconds is None else wait_seconds)
+    while not await asyncio.to_thread(vector._ready):  # a connect attempt blocks up to the client timeout
+        if time.monotonic() >= deadline:
+            logger.warning("Qdrant did not come up; skipping the automatic backfill")
+            return 0
+        await asyncio.sleep(poll)
+    if not store.documents or vector.count() != 0:
+        return 0
+    indexed = await asyncio.to_thread(store.reindex_all)
+    logger.info("Backfilled %s documents into the empty Qdrant collection %s", indexed, vector.collection)
+    return indexed
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    if documents.vector and documents.vector.enabled and os.getenv("QDRANT_REINDEX_ON_START", "false").lower() == "true":
+    reindex = os.getenv("QDRANT_REINDEX_ON_START", "auto").strip().lower()
+    background = None
+    if documents.vector and documents.vector.enabled and reindex == "true":
         indexed = await asyncio.to_thread(documents.reindex_all)
         logger.info("Reindexed %s documents into Qdrant", indexed)
+    elif documents.vector and getattr(documents.vector, "url", "") and reindex == "auto":
+        background = asyncio.create_task(backfill_empty_index(documents))
     yield
+    if background and not background.done():
+        background.cancel()
     usage_meter.flush()
 
 
@@ -2101,6 +2236,7 @@ async def health() -> dict:
         "auth_mode": AUTH_CONFIG.mode,
         "model_adapter": "openai-compatible" if model_adapter.base_url else "demo-local",
         "vector_backend": "qdrant" if vector.enabled else "lexical",
+        "retrieval_mode": retrieval_mode() if vector.enabled else "lexical",
         "audit_backend": "postgresql" if audit.db_ready else "jsonl",
         "cache_backend": "redis" if rate_limiter.enabled else "disabled",
         "tracing_backend": "langfuse" if tracer.enabled else "disabled",
