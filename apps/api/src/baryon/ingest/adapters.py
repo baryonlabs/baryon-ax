@@ -6,6 +6,7 @@ profile work without any external runtime.
 
     KORDOC_URL   http://kordoc:8080        # sidecar implementing POST /parse
     KORDOC_CMD   "npx -y kordoc"           # kordoc --format json
+    KORDOC_OFFICE true                     # kordoc also takes .docx/.pdf/.xlsx (after docling)
     DOCLING_URL  http://docling:5001       # sidecar implementing POST /parse
     DOCLING_CMD  "docling"                 # docling {input} --to md --output {output}
     TIKA_URL     http://tika:9998          # PUT /tika
@@ -22,6 +23,14 @@ from .sidecar import CliParser, HttpSidecarParser, TikaParser
 
 KORDOC_EXTENSIONS = (".hwp", ".hwpx", ".hwpml")
 KORDOC_MIMES = ("application/x-hwp", "application/hwp+zip", "application/hwpml")
+# kordoc 4.x also reads these. Registered after docling, so docling wins when both
+# are configured and a kordoc-only install still accepts the usual office files.
+KORDOC_OFFICE_EXTENSIONS = (".docx", ".pdf", ".xlsx")
+KORDOC_OFFICE_MIMES = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+)
 
 DOCLING_EXTENSIONS = (
     ".pdf",
@@ -70,33 +79,24 @@ def register_default_adapters(
 
     kordoc_url = env.get("KORDOC_URL", "").strip()
     kordoc_cmd = env.get("KORDOC_CMD", "").strip()
+    kordoc = None
     if kordoc_url:
-        parser = HttpSidecarParser("kordoc", kordoc_url, env.get("KORDOC_ENDPOINT", "/parse"), timeout, version="http")
-        registered.append(
-            ParserSpec(
-                "kordoc",
-                KORDOC_EXTENSIONS,
-                KORDOC_MIMES,
-                parser.parse,
-                version=parser.version,
-                priority=10,
-                available=parser.available,
-            )
-        )
+        kordoc = HttpSidecarParser("kordoc", kordoc_url, env.get("KORDOC_ENDPOINT", "/parse"), timeout, version="http")
+        kordoc_version = kordoc.version
     elif kordoc_cmd or shutil.which("kordoc"):
         command = tuple((kordoc_cmd or "kordoc").split())
-        parser = CliParser("kordoc", command + ("{input}", "--format", "json"), mode="stdout_json", timeout_s=timeout)
+        kordoc = CliParser("kordoc", command + ("{input}", "--format", "json"), mode="stdout_json", timeout_s=timeout)
+        kordoc_version = "cli"
+    if kordoc is not None:
         registered.append(
-            ParserSpec(
-                "kordoc",
-                KORDOC_EXTENSIONS,
-                KORDOC_MIMES,
-                parser.parse,
-                version="cli",
-                priority=10,
-                available=parser.available,
-            )
+            ParserSpec("kordoc", KORDOC_EXTENSIONS, KORDOC_MIMES, kordoc.parse,
+                       version=kordoc_version, priority=10, available=kordoc.available)
         )
+        if env.get("KORDOC_OFFICE", "true").strip().lower() not in {"0", "false", "no", "off"}:
+            registered.append(
+                ParserSpec("kordoc-office", KORDOC_OFFICE_EXTENSIONS, KORDOC_OFFICE_MIMES, kordoc.parse,
+                           version=kordoc_version, priority=30, available=kordoc.available)
+            )
 
     docling_url = env.get("DOCLING_URL", "").strip()
     docling_cmd = env.get("DOCLING_CMD", "").strip()

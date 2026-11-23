@@ -27,6 +27,11 @@ def hwpx_bytes() -> bytes:
     return buffer.getvalue()
 
 
+def unregister_kordoc() -> None:
+    REGISTRY.unregister("kordoc")
+    REGISTRY.unregister("kordoc-office")
+
+
 def docx_bytes() -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
@@ -130,7 +135,7 @@ def test_http_sidecar_parses_korean_document() -> None:
         assert document.blocks[2].table.rows[1] == ["인건비", "110"]
         assert document.metadata == {"page_count": 2}
     finally:
-        REGISTRY.unregister("kordoc")
+        unregister_kordoc()
         server.shutdown()
 
 
@@ -164,7 +169,7 @@ def test_kordoc_table_cell_shape_is_normalized() -> None:
         assert table.header_rows == 1
         assert document.blocks[0].page == 3
     finally:
-        REGISTRY.unregister("kordoc")
+        unregister_kordoc()
         server.shutdown()
 
 
@@ -177,7 +182,7 @@ def test_kordoc_markdown_fallback_when_blocks_do_not_map() -> None:
         assert document.blocks[0].kind == "heading"
         assert "본문입니다" in document.render_markdown()
     finally:
-        REGISTRY.unregister("kordoc")
+        unregister_kordoc()
         server.shutdown()
 
 
@@ -237,7 +242,7 @@ def test_cli_parser_stdout_json(tmp_path) -> None:
         assert document.parser == "kordoc"
         assert "cli parsed" in document.render_markdown()
     finally:
-        REGISTRY.unregister("kordoc")
+        unregister_kordoc()
 
 
 def test_cli_parser_output_dir(tmp_path) -> None:
@@ -261,6 +266,27 @@ def test_cli_parser_output_dir(tmp_path) -> None:
         assert "결정 사항" in document.render_markdown()
     finally:
         REGISTRY.unregister("docling")
+
+
+def test_kordoc_reads_office_files_after_docling() -> None:
+    server, url = start_server(lambda method, path: (200, "application/json", json.dumps(BLOCK_RESPONSE).encode()))
+    try:
+        register_default_adapters(env={"KORDOC_URL": url, "PARSER_TIMEOUT_SECONDS": "5"})
+        document = REGISTRY.parse(docx_bytes(), "감리보고서.docx", ACL, "mem://report.docx")
+        assert document.parser == "kordoc"
+        assert [spec.name for spec in REGISTRY.candidates("a.pdf", "application/pdf")] == ["kordoc-office"]
+
+        register_default_adapters(env={"KORDOC_URL": url, "DOCLING_URL": url, "PARSER_TIMEOUT_SECONDS": "5"})
+        assert [spec.name for spec in REGISTRY.candidates("a.pdf", "application/pdf")] == ["docling", "kordoc-office"]
+        REGISTRY.unregister("docling")
+
+        unregister_kordoc()
+        register_default_adapters(env={"KORDOC_URL": url, "KORDOC_OFFICE": "false", "PARSER_TIMEOUT_SECONDS": "5"})
+        assert REGISTRY.candidates("a.docx", "") == []
+    finally:
+        unregister_kordoc()
+        REGISTRY.unregister("docling")
+        server.shutdown()
 
 
 def test_unconfigured_adapters_are_skipped() -> None:
