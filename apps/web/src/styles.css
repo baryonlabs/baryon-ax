@@ -624,3 +624,23 @@ details.trace[open] summary::before { transform: rotate(90deg); }
 .pack .slots .slot-rel::before { content: "—"; }
 .pack .slots .slot-rel::after { content: "→"; }
 .pack .slots .slot-value { font-weight: 600; color: #e0b464; }
+
+/* Web crawl card (WebCrawl.tsx) */
+.web-crawl { margin: 0 0 16px; padding: 16px 18px; border: 1px solid #2a3f63; border-radius: 12px; background: rgba(14, 24, 42, .5); }
+.web-crawl-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.web-crawl-form input, .web-crawl-pages select { flex: 1; min-width: 180px; background: #0b1422; border: 1px solid #2c4266; border-radius: 7px; color: #dbe7fa; padding: 8px 10px; font-size: 12px; }
+.web-crawl-form input { flex: 1 1 220px; min-width: 0; }
+.web-crawl-form button { flex: 0 0 auto; white-space: nowrap; }
+.web-crawl-pages { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #9fb3d1; }
+.web-crawl-jobs { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.web-crawl-job { padding: 8px 10px; border-radius: 8px; background: rgba(255, 255, 255, .03); }
+.web-crawl-job-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.web-crawl-url { flex: 1 1 200px; overflow-wrap: anywhere; }
+.web-crawl-state { color: #9fb3d1; font-size: 12px; }
+.web-crawl-job.done .web-crawl-state { color: #64d9a5; }
+.web-crawl-job.failed .web-crawl-state { color: #ff9a9a; }
+.web-crawl-job progress { width: 100%; height: 6px; margin-top: 6px; }
+.web-crawl-pages select { flex: none; min-width: 0; }
+/* The global chat "form" style (border, 34px icon button) must not apply to the crawl form. */
+form.web-crawl-form { border: 0; border-radius: 0; overflow: visible; background: none; align-items: center; }
+form.web-crawl-form button { width: auto; height: auto; margin: 0; padding: 9px 16px; border-radius: 8px; display: inline-flex; align-self: auto; font-weight: 600; }

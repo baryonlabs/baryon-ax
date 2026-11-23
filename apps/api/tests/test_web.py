@@ -25,7 +25,11 @@ HTML = """<!doctype html><html><head><title>공공 AI | 홈</title>
 <footer>저작권</footer></body></html>"""
 
 
+RUN = __import__("uuid").uuid4().hex[:6]  # the document store outlives a test run: keep each run's organizations apart
+
+
 def headers(user: str = "web-user", organization: str = "org-web", roles: str = "member") -> dict[str, str]:
+    organization = f"{organization}-{RUN}"
     return {"X-User-Id": user, "X-Organization-Id": organization, "X-Roles": roles}
 
 
@@ -146,3 +150,122 @@ def test_add_a_site_through_the_api(monkeypatch) -> None:
     assert [item["url"] for item in stored] == ["https://www.gonggong.ai/", "https://www.gonggong.ai/about"]
     monkeypatch.setenv("WEB_FETCH_ENABLED", "false")
     assert client.post("/v1/documents/url", headers=headers(), json={"url": "https://www.gonggong.ai/"}).status_code == 403
+
+
+# --- crawling a whole site -----------------------------------------------------------------------
+
+def page_html(title: str, links: list[str], body: str = "본문입니다.") -> str:
+    anchors = "".join(f'<a href="{link}">{link}</a>' for link in links)
+    return f"<html><head><title>{title}</title></head><body><main><p>{title} {body}</p>{anchors}</main></body></html>"
+
+
+def test_urls_are_normalized_and_crawl_intent_is_recognized() -> None:
+    assert web.normalize_url("HTTPS://Example.COM/docs/?utm_source=x&a=1#top") == "https://example.com/docs?a=1"
+    assert web.normalize_url("https://example.com") == "https://example.com/"
+    assert web.wants_crawl("https://a.example/ 이 사이트 크롤링해 줘")
+    assert web.wants_crawl("https://a.example/ 전체 페이지 다 읽어")
+    assert not web.wants_crawl("https://a.example/crawl 이 페이지 요약해 줘")  # the word in the link does not count
+
+
+def test_crawl_reads_a_site_breadth_first_within_its_limits() -> None:
+    base = PUBLIC
+    routes = {
+        f"{base}/": httpx.Response(200, html=page_html("홈", ["/docs/a", "/blog/1", "/files/x.pdf", "https://other.example/"])),
+        f"{base}/robots.txt": httpx.Response(200, text=f"User-agent: *\nDisallow: /private\nSitemap: {base}/map.xml",
+                                             headers={"content-type": "text/plain"}),
+        f"{base}/map.xml": httpx.Response(200, text=f"<urlset><url><loc>{base}/docs/b</loc></url>"
+                                                    f"<url><loc>{base}/private/x</loc></url></urlset>",
+                                          headers={"content-type": "application/xml"}),
+        f"{base}/docs/a": httpx.Response(200, html=page_html("문서 A", ["/docs/c", "/docs/a?utm_source=loop"])),
+        f"{base}/docs/b": httpx.Response(200, html=page_html("문서 B", [])),
+        f"{base}/docs/c": httpx.Response(200, html=page_html("문서 C", [])),
+        f"{base}/blog/1": httpx.Response(200, html=page_html("블로그", ["/index.html"])),
+        f"{base}/index.html": httpx.Response(200, html=page_html("홈", ["/docs/a", "/blog/1", "/files/x.pdf", "https://other.example/"])),
+    }
+    seen: list[str] = []
+
+    async def run(**kwargs) -> list[web.Page]:
+        async def note(page: web.Page) -> None:
+            seen.append(page.title)
+        return await web.crawl(f"{base}/", client=mock_client(routes), on_page=note, delay=0, **kwargs)
+
+    everything = asyncio.run(run(max_pages=10))
+    titles = [page.title for page in everything]
+    assert titles[0] == "홈" and set(titles) == {"홈", "문서 A", "문서 B", "문서 C", "블로그"}
+    assert titles.count("홈") == 1  # /index.html has the same content as /: not stored twice
+    assert titles.index("문서 B") < titles.index("문서 C")  # the sitemap is read before links found later
+    assert seen == titles  # each page reported as it is read
+    docs_only = asyncio.run(run(max_pages=10, path_prefix="/docs"))
+    assert {page.title for page in docs_only} == {"홈", "문서 A", "문서 B", "문서 C"}
+    assert len(asyncio.run(run(max_pages=2))) == 2
+    stop_now = asyncio.run(run(max_pages=10, should_stop=lambda: True))
+    assert [page.title for page in stop_now] == ["홈"]
+
+
+def test_crawl_jobs_through_the_api(monkeypatch) -> None:
+    async def fake_crawl(url, max_pages=30, path_prefix="", client=None, on_page=None, should_stop=None, delay=None):
+        pages = [web.Page(url=f"{url}p{n}", title=f"쪽 {n}", markdown=f"{n}번째 쪽의 내용입니다.") for n in range(3)]
+        for page in pages[:max_pages]:
+            await on_page(page)
+        return pages[:max_pages]
+
+    monkeypatch.setattr(web, "crawl", fake_crawl)
+    with TestClient(app) as running:  # one event loop for the whole test, so the background crawl runs
+        crawl_jobs(running)
+
+
+def crawl_jobs(client: TestClient) -> None:
+    owner = headers(user="crawler", organization="org-crawl")
+    started = client.post("/v1/crawls", headers=owner, json={"url": "https://www.gonggong.ai/", "max_pages": 3, "path_prefix": "docs"})
+    assert started.status_code == 202 and started.json()["path_prefix"] == "/docs"
+    crawl_id = started.json()["id"]
+    job = client.get(f"/v1/crawls/{crawl_id}", headers=owner).json()
+    for _ in range(100):
+        if job["state"] == "done":
+            break
+        __import__("time").sleep(0.02)
+        job = client.get(f"/v1/crawls/{crawl_id}", headers=owner).json()
+    assert job["state"] == "done" and job["pages_done"] == 3
+    assert [crawl["id"] for crawl in client.get("/v1/crawls", headers=owner).json()["data"]] == [crawl_id]
+    other = headers(user="someone-else", organization="org-crawl")
+    assert client.get(f"/v1/crawls/{crawl_id}", headers=other).status_code == 404  # not their crawl
+    assert client.post("/v1/crawls", headers=owner, json={"url": "http://10.0.0.5/"}).status_code == 422
+    titles = [item["title"] for item in client.get("/v1/documents", headers=owner).json()["data"]]
+    assert sum(title.startswith("웹 · 쪽") for title in titles) == 3
+
+
+def test_asking_to_crawl_in_chat_starts_a_crawl(monkeypatch) -> None:
+    async def fake_fetch(url: str, client=None) -> web.Page:
+        return web.html_to_markdown(HTML, url)
+
+    started: list = []
+
+    async def fake_crawl(url, max_pages=30, path_prefix="", client=None, on_page=None, should_stop=None, delay=None):
+        started.append((url, max_pages))
+        return []
+
+    monkeypatch.setattr(web, "fetch", fake_fetch)
+    monkeypatch.setattr(web, "crawl", fake_crawl)
+    body = client.post("/v1/chat/completions", headers=headers(organization="org-crawl-chat"),
+                       json={"messages": [{"role": "user", "content": "https://www.gonggong.ai/ 이 사이트 전체 크롤링해줘"}],
+                             "stream": False}).json()
+    step = next(step for step in body["trace"]["steps"] if step["step"] == "web_crawl")
+    assert step["status"] == "ok" and "최대 50쪽" in step["detail"]
+    assert started == [("https://www.gonggong.ai/", 50)]
+
+
+def test_another_persons_copy_of_a_page_does_not_stop_a_crawl(monkeypatch) -> None:
+    async def fake_fetch(url: str, client=None) -> web.Page:
+        return web.html_to_markdown(HTML, url)
+
+    monkeypatch.setattr(web, "fetch", fake_fetch)
+    monkeypatch.setenv("WEB_REFRESH_HOURS", "0")
+    admin = headers(user="admin-a", organization="org-web-shared", roles="admin")
+    member = headers(user="member-b", organization="org-web-shared", roles="member")
+    question = {"messages": [{"role": "user", "content": "https://www.gonggong.ai/ 요금제는?"}], "stream": False}
+    assert client.post("/v1/chat/completions", headers=admin, json=question).status_code == 200
+    import baryon.main as main_module
+    monkeypatch.setattr(main_module, "WEB_REFRESH_SECONDS", 0.0)  # stale: the member reads it again
+    response = client.post("/v1/chat/completions", headers=member, json=question).json()
+    assert response["citations"][0]["title"].startswith("웹 · 공공 AI")  # the admin's copy stays; the member's is used
+

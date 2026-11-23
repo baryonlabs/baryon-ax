@@ -9,7 +9,7 @@
 이 문서는 웹 채팅, 슬랙 봇, 음성 비서가 기능 안내의 근거로 씁니다. 자세한 내용은 아래 각 절에 있습니다.
 
 MCP 연결 요약("MCP는 뭐가 연결돼 있어?"에 대한 답):
-- 밖으로 제공: Baryon AX MCP 서버(`POST /mcp`) 도구 search_documents, ask, list_knowledge_gaps, suggest_questions, record_answer, publish_answer.
+- 밖으로 제공: Baryon AX MCP 서버(`POST /mcp`) 도구 search_documents, ask, list_knowledge_gaps, suggest_questions, record_answer, publish_answer, crawl_site(웹사이트 크롤링).
 - 음성 비서가 쓰는 MCP 연결: baryon-ax(사내 지식), goals(목표 에이전트), memory(기억), phone(알림·알람), screen(화면 카드), slack(슬랙), DureClaw(다른 머신·카카오톡), 사내 할 일, gog(메일·일정).
 - 켜고 끄기: 앱 설정 > 비서에게 알려 주기 > 연결(MCP). 실제 연결 목록은 설치마다 다름.
 - 별도로 SaaS 커넥터 레이어(`/v1/connectors`, Slack·SAP 등)는 1단계(목록·도구 검색)만 구현되어 있음.
@@ -66,7 +66,11 @@ Baryon AX는 회사 문서로 근거를 들어 답하는 사내 AI입니다. 답
 
 - 질문에 링크를 넣으면("https://www.example.com/ 이 사이트 이해해 줘") 그 페이지를 읽어 지식으로 저장하고, 그 내용을 근거로 답합니다.
 - 같은 주소는 24시간 동안 저장한 것을 다시 쓰고, 그 뒤에 물으면 새로 읽습니다.
-- 사이트 여러 쪽을 한 번에 올리려면 `POST /v1/documents/url`(`url`, `pages` 최대 20)을 씁니다. 같은 사이트 안의 링크만, robots.txt를 지켜 따라갑니다.
+- **사이트 전체 크롤링**: 웹 지식 화면의 '웹사이트 크롤링'에 주소를 넣거나, 채팅·슬랙에서 "https://… 이 사이트 크롤링해 줘"라고 말합니다.
+  사이트맵과 링크를 따라 같은 사이트의 페이지를 최대 200쪽까지 백그라운드로 읽어 문서로 저장하고, 진행 상황(읽은 쪽 수)이 화면에 보입니다.
+  경로 제한(예: `/docs`)으로 일부만 읽을 수 있고, 내용이 같은 페이지(`/`와 `/index.html`)는 한 번만 저장합니다. 도중에 멈춰도 읽은 쪽은 남습니다.
+- API: `POST /v1/crawls`(`url`, `max_pages`, `path_prefix`), `GET /v1/crawls/{id}`로 진행 확인, `DELETE`로 멈추기. MCP 도구 `crawl_site`도 같습니다.
+  한 쪽만 바로 올릴 때는 `POST /v1/documents/url`을 씁니다.
 - 사내망·내부 주소는 읽지 않습니다. 자바스크립트로만 그리는 페이지는 글이 거의 없을 수 있고, 그때는 답에서 그렇게 알려 줍니다.
 
 ### 7. 코드 저장소 지식
@@ -107,6 +111,7 @@ MCP(Model Context Protocol)는 AI가 외부 도구를 쓰는 표준입니다. Ba
 | `suggest_questions` | 동료에게 물어볼 만한 질문 (공백 우선, 그다음 암묵지 질문 틀) |
 | `record_answer` | 사람이 준 답을 초안으로 저장 |
 | `publish_answer` | 초안을 게시해 검색에 넣고 공백을 닫음 (작성자나 관리자) |
+| `crawl_site` | 웹사이트를 백그라운드로 크롤링해 문서로 저장, `crawl_id`로 진행 확인 |
 
 ### 음성 비서가 쓰는 MCP 연결 (비서가 일을 하는 도구)
 
