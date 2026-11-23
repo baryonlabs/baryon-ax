@@ -123,7 +123,7 @@
 | **"AI가 지어낸 답을 믿을 수 없다."** | 답변마다 출처 문서·청크·인용 구절을 보여 주고, 근거가 없으면 지어내지 않고 경고합니다. 검색은 **모델에 넣기 전에** 조직·역할 권한으로 거릅니다. |
 | **"정작 중요한 판단 기준은 문서에 없다."** | 답하지 못한 질문을 지식 공백으로 모아 **전문가에게 먼저 묻고**, 답변을 게시하면 다음 대화의 근거가 됩니다. |
 | **"보안 심사를 통과해야 한다."** | 조직·역할 ACL, 모든 요청의 감사 로그, OIDC 인증, PR마다 자동 보안 점검(P0/P1이면 병합 차단)을 갖췄습니다. |
-| **"HWP 문서가 대부분이다."** | 파일 내용(MIME)으로 판별해 HWP·HWPX는 kordoc, PDF·Office·이미지는 docling, 그 밖은 Tika로 보냅니다. |
+| **"HWP 문서가 대부분이다."** | 파일 내용(MIME)으로 판별해 HWP·HWPX는 kordoc, PDF·Office·이미지는 docling, 그 밖은 Tika로 보냅니다. docling(이미지 10 GB+)을 띄우지 않아도 kordoc만으로 DOCX·PDF·XLSX까지 읽습니다. |
 | **"PoC에 GPU 견적부터 필요하다."** | 맥미니와 Docker만 있으면 **한 줄**로 시작합니다. GPU는 필요할 때 연결합니다. |
 
 <a id="features"></a>
@@ -626,6 +626,7 @@ flowchart LR
   UP["문서 업로드"] --> MIME{"MIME 판별"}
   MIME -->|HWP · HWPX| KO["kordoc"]
   MIME -->|PDF · Office · 이미지| DO["docling"]
+  MIME -.->|docling 없을 때 DOCX · PDF · XLSX| KO
   MIME -->|기타 형식| TI["Tika"]
   MIME -->|텍스트 · Markdown| TX["내장 파서"]
   OS["Apache Ossie 모델"] --> TX
@@ -770,6 +771,7 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 | `LANGFUSE_ENABLED` / `LANGFUSE_HOST` | `false` / 로컬 | Langfuse 트레이스 |
 | `MEM0_ENABLED` / `OLLAMA_BASE_URL` | `false` / 로컬 | Mem0 메모리 |
 | `KORDOC_URL` · `DOCLING_URL` · `TIKA_URL` | 비어 있음 | 파서 사이드카 주소 |
+| `KORDOC_OFFICE` | `true` | kordoc이 DOCX·PDF·XLSX도 받음(docling이 있으면 docling 우선) |
 | `PARSER_TIMEOUT_SECONDS` | `180` | 문서당 파서 제한 시간 |
 | `MAX_DOCUMENT_BYTES` | `20000000` | 업로드 크기 제한 |
 | `MCP_SERVER_ENABLED` | `true` | `POST /mcp` MCP 서버 |
@@ -930,7 +932,7 @@ API_BASE=http://127.0.0.1:8000 REQUIRE_FULL=1 python3 scripts/smoke_full_stack.p
 **Baryon AX** is an on-premises, model-agnostic, source-available platform for enterprise AI agents that answer from your documents with citations and **ask experts first** for the tacit knowledge that was never written down. It ships with **바리온 비서**, an Android app you call like a person ("네, 비서입니다. 말씀하세요."): hear summaries and hand off work by voice while driving, with speech processed only on your own servers.
 
 - **Grounded answers**: streaming chat with source, chunk, and quote citations; a warning instead of a guess when evidence is missing; organization and role ACLs applied before retrieval reaches the model.
-- **Korean-document ready**: MIME-based routing to kordoc (HWP/HWPX), docling (PDF/Office/images), and Tika; structure-aware chunking; hybrid retrieval (Qdrant vectors + lexical, the default), which finds the source for reworded questions 91% of the time vs 39% for word matching ([benchmark](docs/retrieval.md#bench)).
+- **Korean-document ready**: MIME-based routing to kordoc (HWP/HWPX, plus DOCX/PDF/XLSX when docling is not deployed), docling (PDF/Office/images), and Tika; structure-aware chunking; hybrid retrieval (Qdrant vectors + lexical, the default), which finds the source for reworded questions 91% of the time vs 39% for word matching ([benchmark](docs/retrieval.md#bench)).
 - **Ask-first loop**: unanswered questions become knowledge gaps, experts answer from a question queue, and published answers are indexed through the same pipeline.
 - **Integrations**: OpenAI-compatible `/v1/chat/completions`, an MCP server at `POST /mcp`, an MCP tool picker, Slack and Discord bots, and Apache Ossie import/export.
 - **Voice secretary**: dictation, interruptible live conversation, and a resident secretary you can phone, by SIP or from the **바리온 비서** Android app. It shows up as a normal call, so car Bluetooth works. The secretary summarizes mail, calendar, to-dos and PRs, and acts only after a spoken "yes". It hands long work to **goal agents** that run in parallel on their own sandboxed git branches and report back by voice. Speech-to-text and text-to-speech stay on-premises.
