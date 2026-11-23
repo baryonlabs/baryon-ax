@@ -147,6 +147,7 @@
 - HWP · HWPX · PDF · Office · 이미지 · 텍스트 업로드(MIME 라우팅)
 - 구조 인식 청킹(제목 경로 · 표 머리글)
 - Qdrant 벡터 검색, 하이브리드 검색(벡터 + 어휘 RRF, 기본값). 어휘가 다른 질문에서 근거 검색 성공률 39% → 91% ([벤치](docs/retrieval.md#bench))
+- 대화 맥락 검색: "다시 해봐"처럼 주제어 없는 후속 질문도 앞 대화의 주제로 근거를 찾음. 실제 업무 스레드에서 근거가 들어온 턴 6/11 → 11/11 ([설명](docs/retrieval.md#conversation))
 - FastEmbed 또는 OpenAI 호환 임베딩
 - Apache Ossie 의미 모델 가져오기 · 내보내기
 
@@ -213,6 +214,7 @@
 
 **다음 릴리스 (main에 반영됨) — 말로 일하는 비서**
 
+- **후속 질문 검색 개선**: 채팅이 마지막 메시지만이 아니라 대화의 첫 질문과 최근 질문까지 함께 검색합니다. "다시 해봐", "그거 어디에 명시돼 있어?"처럼 주제어 없는 질문도 근거를 찾습니다. 실제 업무 스레드 재생에서 근거가 들어온 턴 6/11 → 11/11 ([retrieval.md](docs/retrieval.md#conversation)).
 - **Slack 봇이 스레드를 더 잘 이해함**: 1:1 DM에 답하고, 스레드에 올라온 파일(.zip·엑셀·한글 포함)을 "문서로 추가"하거나 "분석하라"는 말만으로 읽어 원문으로 답합니다. 같은 워크스페이스의 Slack 링크는 내용까지 읽고, 긴 답은 잘리지 않습니다([개선 내역](examples/slack-bot/README.md#개선-내역)).
 - **코드 저장소를 지식으로(repo-sync)**: 설계 문서만으로는 "현재 코드 기준으로 무엇을 더 할 수 있나"에 답할 수 없었습니다. git 저장소의 문서, 모듈별 코드 지도, 머지 이력을 주기적으로 올려 봇이 현재 구현 상태를 근거로 답합니다([examples/repo-sync](examples/repo-sync)).
 
@@ -764,6 +766,7 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 | `RETRIEVAL_MODE` | `hybrid` | `hybrid` 벡터 + 어휘 가중 RRF · `vector` · `lexical`. [docs/retrieval.md](docs/retrieval.md) |
 | `QDRANT_REINDEX_ON_START` | `auto` | 컬렉션이 비어 있으면 기존 문서를 백그라운드로 색인 (`true` 매번 · `false` 안 함) |
 | `RETRIEVAL_MIN_SCORE` | `0.3` | 인용으로 인정할 최소 유사도 |
+| `RETRIEVAL_HISTORY_TURNS` | `2` | 후속 질문 검색에 함께 쓸 최근 사용자 질문 수(첫 질문은 항상 포함). `0`이면 마지막 메시지만. [대화 맥락 검색](docs/retrieval.md#conversation) |
 | `EMBEDDING_PROVIDER` | `fastembed` | `openai`면 OpenAI 호환 `/v1/embeddings` |
 | `EMBEDDING_MODEL` / `EMBEDDING_DIMENSION` | multilingual MiniLM / `384` | 임베딩 모델과 차원 |
 | `DATABASE_URL` | 비어 있음 | PostgreSQL 감사 저장소 (비우면 JSONL만) |

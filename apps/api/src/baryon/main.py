@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import logging
 import os
@@ -443,7 +444,7 @@ class DocumentService:
         tag: str | None = None,
     ) -> list[dict]:
         visibility = []
-        for document in self.documents.values():
+        for document in list(self.documents.values()):  # snapshot: uploads add documents from other threads
             if not self.can_view(principal, document):
                 continue
             if category and document.category != normalize_text(category):
@@ -573,6 +574,30 @@ class DocumentService:
                 return self._fuse(visible, self._lexical_search(principal, query, candidates), limit)
         return self._lexical_search(principal, query, limit)
 
+    def search_conversation(self, principal: Principal, messages: list, limit: int = 4) -> list[dict]:
+        """Retrieval for a chat turn: hits for the last message alone, interleaved with hits for the last message
+        plus earlier user turns.
+
+        Follow-ups such as "try again" or "where is that in the RFP?" carry no topic words, so searching the last
+        message alone finds nothing relevant. Rank fusion would not fix it: a chunk that loosely matches the
+        follow-up's own words appears in both lists and wins. Interleaving gives both lists the top slots, so the
+        topic carried from earlier turns and a new topic in this turn both reach the model.
+        RETRIEVAL_HISTORY_TURNS=0 searches the last message only."""
+        queries = retrieval_queries(messages)
+        if len(queries) == 1:
+            return self.search(principal, queries[0], limit)
+        last_only = self.search(principal, queries[0], limit)
+        with_history = self.search(principal, queries[1], limit)
+        merged: list[dict] = []
+        seen: set[tuple] = set()
+        for pair in itertools.zip_longest(last_only, with_history):
+            for item in pair:
+                key = (item["document_id"], item.get("chunk")) if item else None
+                if item and key not in seen:
+                    seen.add(key)
+                    merged.append(item)
+        return merged[:limit]
+
     @staticmethod
     def _fuse(
         vector_hits: list[dict], lexical_hits: list[dict], limit: int, k: int | None = None,
@@ -599,7 +624,9 @@ class DocumentService:
         terms = search_terms(query)
         normalized_query = normalize_text(query).lower().strip()
         matches = []
-        for document in self.documents.values():
+        # Snapshot: an upload adding a document while this loop runs (e.g. gap auto-resolve after the previous
+        # upload) raised "dictionary changed size during iteration" and failed that upload with 500.
+        for document in list(self.documents.values()):
             if not self.can_view(principal, document):
                 continue
             title = normalize_text(document.title).lower()
@@ -674,6 +701,22 @@ def retrieval_candidates(limit: int) -> int:
     """How many hits each retriever contributes before fusion (RETRIEVAL_CANDIDATES, default 2x limit)."""
     configured = os.getenv("RETRIEVAL_CANDIDATES", "").strip()
     return int(configured) if configured.isdigit() and int(configured) > 0 else limit * 2
+
+
+def retrieval_queries(messages: list) -> list[str]:
+    """Search queries for a chat turn: [last message] or [last message, earlier user turns + last message].
+
+    The second query is the conversation's first user turn (it usually names the topic, like a thread's opening
+    post) plus the RETRIEVAL_HISTORY_TURNS (default 2) most recent earlier user turns, each clipped to
+    RETRIEVAL_HISTORY_CHARS (default 300) so a pasted document does not swamp the question."""
+    last = messages[-1].content if messages else ""
+    turns = int(os.getenv("RETRIEVAL_HISTORY_TURNS", "2") or 0)
+    clip = int(os.getenv("RETRIEVAL_HISTORY_CHARS", "300") or 300)
+    earlier = [m.content.strip()[:clip] for m in messages[:-1] if m.role == "user" and m.content.strip()]
+    if turns <= 0 or not earlier:
+        return [last]
+    picked = earlier[:1] + [text for text in earlier[1:][-turns:] if text != earlier[0]]
+    return [last, " ".join(picked + [last])]
 
 
 class VectorIndex:
@@ -1065,7 +1108,7 @@ class ChatPipeline:
                 if not request.use_retrieval:
                     return {"citations": [], "retrieval_ms": 0.0}
                 started = time.perf_counter()
-                citations = await asyncio.to_thread(documents.search, state["principal"], request.messages[-1].content)
+                citations = await asyncio.to_thread(documents.search_conversation, state["principal"], request.messages)
                 return {"citations": citations, "retrieval_ms": round((time.perf_counter() - started) * 1000, 2)}
 
             graph = StateGraph(ChatState)
@@ -1105,7 +1148,7 @@ class ChatPipeline:
             citations: list[dict] = []
             if request.use_retrieval:
                 started = time.perf_counter()
-                citations = await asyncio.to_thread(documents.search, principal, request.messages[-1].content)
+                citations = await asyncio.to_thread(documents.search_conversation, principal, request.messages)
                 steps.append(_step("document_search", round((time.perf_counter() - started) * 1000, 2), "ok", f"{len(citations)}건"))
             else:
                 steps.append(_step("document_search", 0.0, "skipped", "비활성"))
@@ -3671,7 +3714,7 @@ async def admin_settings(
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
     if "admin" not in principal.roles:
         raise HTTPException(403, "Administrator role required")
-    organization_documents = [document for document in documents.documents.values() if document.organization_id == principal.organization_id]
+    organization_documents = [document for document in list(documents.documents.values()) if document.organization_id == principal.organization_id]
     organization_events = audit.recent_for(principal, limit=5000)
     return {
         "version": __version__,
