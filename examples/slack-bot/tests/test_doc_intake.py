@@ -217,6 +217,10 @@ def test_read_request_reads_the_threads_files_once() -> None:
     for text in ("분석하라", "엑셀파일은 읽어보아라 위의 쓰레드를", "이거 살펴봐줘", "please read this"):
         assert wants_file_reading(text), text
     assert not wants_file_reading("연차는 며칠이야?")
+    # about code in a folder/repository: search (repo-sync indexed it), not the files attached here
+    assert not wants_file_reading("~/dev/ai-apps 폴더의 코드 파일을 보고 직접 분석한걸 답하라")
+    assert not wants_file_reading("현재 저장소 코드에서 공유 기능을 분석해줘")
+    assert wants_file_reading("위에 올린 엑셀과 코드 정의서를 분석해줘")  # names the attachment
 
     api = FakeApi()
     files = {"plan.xlsx": b"PK-xlsx", "shot.png": b"\x89PNG"}

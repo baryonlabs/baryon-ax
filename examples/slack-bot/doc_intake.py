@@ -104,8 +104,20 @@ def wants_analysis(text: str) -> bool:
     return bool(ANALYZE_RE.search(INTAKE_RE.sub(" ", text or "")))
 
 
+# The question is about code or a folder/repository (indexed by repo-sync), not about what was attached here.
+ELSEWHERE_RE = re.compile(r"코드|소스|폴더|디렉터리|디렉토리|저장소|레포|리포지|깃랩|깃허브|커밋|머지|브랜치|~/|[A-Za-z]:\\|/dev/"
+                          r"|\b(?:code|source|repo|repository|codebase|folder|directory|commit|branch)\b", re.IGNORECASE)
+ATTACHED_RE = re.compile(r"첨부|올린|올려준|공유한|공유해 준|위의|위에|이 파일|이파일|엑셀|pdf|docx|hwp|xlsx|zip|\b(?:attached|this file)\b",
+                         re.IGNORECASE)
+
+
 def wants_file_reading(text: str) -> bool:
-    return bool(READ_RE.search(text or ""))
+    """Read the thread's files: asked to read/analyze, and not about code or a folder elsewhere
+    ("~/dev/app 폴더의 코드를 보고 분석해" goes to search, which has the synced code)."""
+    text = text or ""
+    if not READ_RE.search(text):
+        return False
+    return not (ELSEWHERE_RE.search(text) and not ATTACHED_RE.search(text))
 
 
 class IntakeLedger:
@@ -266,8 +278,10 @@ class DocumentIntake:
                 name = item.get("name") or item.get("title") or item.get("id", "file")
                 earlier = self.ledger.get(item.get("id", ""))
                 if earlier:  # registered from this Slack file before: read that document again, do not upload twice
-                    result.added.extend(earlier)
-                    result.reused += len(earlier)
+                    known = {added.document_id for added in result.added}
+                    fresh = [added for added in earlier if added.document_id not in known]
+                    result.added.extend(fresh)
+                    result.reused += len(fresh)
                     continue
                 if len(result.added) + len(result.skipped) >= self.config.max_files:
                     result.skipped.append(Skipped(name, f"한 번에 {self.config.max_files}개까지만 등록합니다"))
