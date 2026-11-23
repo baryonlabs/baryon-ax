@@ -119,6 +119,8 @@
 | PDF/Word/HTML 파싱 | ✅ | docling sidecar/CLI 구성 시. 미구성 시 415 |
 | HWP/HWPX/HWPML 파싱 | ✅ | kordoc sidecar/CLI 구성 시. 표 구조·RAG 청크 지원 |
 | 스캔 이미지 OCR | 🔶 | kordoc 내장 OCR(설정 시), 그 외 OCR 어댑터는 미구현 |
+| 웹사이트 크롤링 | ✅ | `POST /v1/crawls`·웹 지식 화면·채팅("크롤링해 줘")·MCP `crawl_site`. 사이트맵·robots.txt(Crawl-delay)·같은 호스트·경로 제한·같은 내용 한 번, 최대 `WEB_CRAWL_MAX_PAGES`(200), 조직당 동시 2개. 작업은 메모리에 보관 |
+| 웹 페이지 → 지식 | ✅ | 질문 속 링크를 읽어 문서로 저장하고 근거로 답함(24시간 재사용), `POST /v1/documents/url`로 사이트 여러 쪽. 내부 주소 차단(`WEB_FETCH_ALLOW_PRIVATE`), robots.txt, `WEB_FETCH_ENABLED` |
 | 데이터베이스 → 지식 | 🔶 | `baryon.ingest.db` + `scripts/ingest_db.py` (SQLite/SQLAlchemy), API 소스 엔드포인트는 미구현 |
 | 문서 본문 수정 | ⛔ | ACL만 수정 가능 |
 | 문서/감사 페이지네이션 | ⛔ | 감사는 `limit`만 지원, 문서 목록은 전체 반환 |
