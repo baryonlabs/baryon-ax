@@ -269,3 +269,28 @@ def test_another_persons_copy_of_a_page_does_not_stop_a_crawl(monkeypatch) -> No
     response = client.post("/v1/chat/completions", headers=member, json=question).json()
     assert response["citations"][0]["title"].startswith("웹 · 공공 AI")  # the admin's copy stays; the member's is used
 
+
+
+def test_a_proposal_about_a_linked_site_knows_who_we_are(monkeypatch) -> None:
+    calls: list[str] = []
+
+    async def fake_fetch(url: str, client=None) -> web.Page:
+        calls.append(url)
+        return web.html_to_markdown(HTML, url)
+
+    monkeypatch.setattr(web, "fetch", fake_fetch)
+    ours = headers(user="planner", organization="org-proposal", roles="member")
+    profile = client.post("/v1/documents", headers=ours, data={"tags": "회사소개", "allowed_roles": "member,admin"},
+                          files={"file": ("바리온랩스 회사 소개.md", "바리온랩스는 온프레미스 AI 플랫폼 Baryon AX를 만듭니다.".encode())})
+    assert profile.status_code == 200
+    ask = lambda text: client.post("/v1/chat/completions", headers=ours,
+                                   json={"messages": [{"role": "user", "content": text}], "stream": False}).json()
+    body = ask("https://www.gonggong.ai/#aroom 를 보고 우리 회사에게 도움될 제안을 고민해보자. 협력을 위한")
+    titles = [item["title"] for item in body["citations"]]
+    assert titles[0].startswith("웹 · 공공 AI") and "바리온랩스 회사 소개.md" in titles  # their page and who we are
+    again = ask("https://www.gonggong.ai/ 요금제는?")
+    assert calls == ["https://www.gonggong.ai/"]  # "#aroom" is the same page: read once
+    assert again["citations"][0]["title"].startswith("웹 · 공공 AI")
+    from baryon.main import OWN_COMPANY
+    assert OWN_COMPANY.search("저희와 제휴할 방법은?") and OWN_COMPANY.search("what could our company offer them?")
+    assert not OWN_COMPANY.search("https://www.gonggong.ai/ 요금제는?")  # not about us: no profile added

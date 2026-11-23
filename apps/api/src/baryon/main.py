@@ -2558,6 +2558,7 @@ async def read_links(principal: Principal, text: str, trace_id: str) -> tuple[li
     found: list[Document] = []
     notes: list[str] = []
     for url in web_pages.extract_urls(text):
+        url = web_pages.normalize_url(url)  # "…/#aroom" is the same page as "…/"
         existing = find_web_document(principal, url)
         if existing:
             fetched = existing.metadata.get("fetched_at") or existing.created_at
@@ -2580,6 +2581,30 @@ async def read_links(principal: Principal, text: str, trace_id: str) -> tuple[li
         except HTTPException as error:
             notes.append(f"{url}: {error.detail}")
     return found, notes
+
+
+# "우리 회사에 도움될 제안", "저희와 협력할 방법": the answer needs to know who "we" are.
+OWN_COMPANY = re.compile(r"우리\s*(?:회사|팀|조직|제품|서비스|쪽)|저희|당사|자사|우리\s*에게|우리와|협력|제휴|파트너십|"
+                         r"\bour\s+(?:company|team|product)", re.I)
+PROFILE_TAGS = {"회사소개", "company-profile"}
+
+
+def with_company_profile(principal: Principal, citations: list[dict], chunks: int = 3) -> list[dict]:
+    """Add the organization's own profile (documents tagged 회사소개 or company-profile) to the evidence."""
+    profiles = [document for document in documents.documents.values()
+                if document.organization_id == principal.organization_id and PROFILE_TAGS & set(document.tags)
+                and documents.can_view(principal, document)]
+    if not profiles:
+        return citations
+    known = {(item.get("document_id"), item.get("chunk")) for item in citations}
+    added: list[dict] = []
+    for document in sorted(profiles, key=lambda document: document.created_at, reverse=True)[:2]:
+        texts = [normalize_text(str(item.get("text") or "")) for item in document.chunks] or chunk_text(document.content)
+        for index, text in enumerate(texts[:chunks]):
+            if (document.id, index + 1) not in known:
+                added.append({"document_id": document.id, "title": document.title, "chunk": index + 1,
+                              "content": text, "score": 9.0})
+    return citations + added
 
 
 def web_citations(pages: list[Document], question: str, others: list[dict], limit: int = 6) -> list[dict]:
@@ -3244,6 +3269,8 @@ async def chat(
     citations, memories, pipeline_steps = await pipeline.prepare(request, principal)
     if web_documents:
         citations = web_citations(web_documents, request.messages[-1].content, citations)
+    if request.use_retrieval and request.messages and OWN_COMPANY.search(request.messages[-1].content):
+        citations = with_company_profile(principal, citations)
     steps.extend(pipeline_steps)
     trace_payload = {
         "trace_id": trace_id, "steps": steps, "total_ms": None,
