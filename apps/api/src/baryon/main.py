@@ -2019,7 +2019,10 @@ async def ingest_upload(
     # questions immediately so the gap loop closes without an admin action.
     if document.metadata.get("source_type", "file") in {"file", "database"}:
         await asyncio.to_thread(auto_verify_packs, principal, document, trace_id)
-        await asyncio.to_thread(auto_resolve_gaps, principal, trace_id)
+        if os.getenv("GAP_RECHECK_MODE", "background").strip().lower() == "inline":
+            await asyncio.to_thread(auto_resolve_gaps, principal, trace_id)
+        else:
+            gap_rechecks.request(principal, trace_id)
     return document
 
 
@@ -2159,6 +2162,57 @@ def auto_resolve_gaps(principal: Principal, trace_id: str, limit: int = 10) -> i
         )
         resolved += 1
     return resolved
+
+
+class GapRechecker:
+    """Re-check open gaps after uploads without making each upload wait for it.
+
+    Each re-check searches every open gap (up to 10), which takes seconds on a large index.
+    Inline, a bulk upload (a code repository sync: thousands of files) paid that on every file.
+    An upload now only marks its organization; one worker thread per organization re-checks, and
+    runs once more if uploads arrived meanwhile — a burst of N uploads costs about two re-checks.
+    ``GAP_RECHECK_MODE=inline`` restores the old per-upload behaviour.
+    """
+
+    def __init__(self, check=None) -> None:
+        self.check = check or auto_resolve_gaps
+        self._lock = threading.Lock()
+        self._pending: dict[str, tuple[Principal, str]] = {}  # organization → latest (principal, trace_id)
+        self._running: set[str] = set()
+
+    def request(self, principal: Principal, trace_id: str) -> None:
+        org = principal.organization_id
+        with self._lock:
+            self._pending[org] = (principal, trace_id)
+            if org in self._running:
+                return
+            self._running.add(org)
+        threading.Thread(target=self._run, args=(org,), name=f"gap-recheck-{org}", daemon=True).start()
+
+    def _run(self, org: str) -> None:
+        while True:
+            with self._lock:
+                item = self._pending.pop(org, None)
+                if item is None:
+                    self._running.discard(org)
+                    return
+            try:
+                self.check(*item)
+            except Exception:
+                logger.exception("gap re-check failed for %s", org)
+
+    def wait_idle(self, timeout: float = 30.0) -> bool:
+        """For tests and shutdown: wait until no re-check is pending or running."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            with self._lock:
+                if not self._running and not self._pending:
+                    return True
+            time.sleep(0.02)
+        return False
+
+
+gap_rechecks = GapRechecker()
 
 
 def auto_verify_packs(principal: Principal, document: Document, trace_id: str) -> int:
