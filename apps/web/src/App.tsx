@@ -2,6 +2,7 @@ import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } fr
 import GatewayCard, { type GatewayInfo } from "./GatewayCard";
 import LiveVoice from "./LiveVoice";
 import VoiceInput, { type VoiceCommand } from "./VoiceInput";
+import WebCrawl from "./WebCrawl";
 import { AlertTriangle, BookOpen, Bot, Boxes, Brain, ChevronRight, Copy, Cpu, Download, ExternalLink, FileCode, FileImage, FileSpreadsheet, FileText, FileType, FileUp, Globe2, HardDrive, LogOut, Menu, MessagesSquare, Network, Paperclip, Plus, RefreshCw, RotateCcw, Save, Search, Send, Server, Settings, ShieldCheck, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, UploadCloud, Wrench, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -1612,6 +1613,7 @@ export default function App({ session = null }: { session?: AuthSession | null }
           <small className="format-hint">{t.formatHint}</small>
         </div>
         {uploadNote && <p className={`upload-note ${uploadNote.ok ? "ok" : "error"}`}>{uploadNote.text}</p>}
+        <WebCrawl api={API} headers={identity(role)} locale={locale} category={uploadCategory} tags={uploadTags} onPages={() => void loadKnowledge()}/>
         <div className="filter-bar">
           <select value={filterCategory} onChange={event => setFilterCategory(event.target.value)} aria-label={t.category}>
             <option value="">{t.allCategories}</option>

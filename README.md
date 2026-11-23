@@ -123,7 +123,7 @@
 | **"AI가 지어낸 답을 믿을 수 없다."** | 답변마다 출처 문서·청크·인용 구절을 보여 주고, 근거가 없으면 지어내지 않고 경고합니다. 검색은 **모델에 넣기 전에** 조직·역할 권한으로 거릅니다. |
 | **"정작 중요한 판단 기준은 문서에 없다."** | 답하지 못한 질문을 지식 공백으로 모아 **전문가에게 먼저 묻고**, 답변을 게시하면 다음 대화의 근거가 됩니다. |
 | **"보안 심사를 통과해야 한다."** | 조직·역할 ACL, 모든 요청의 감사 로그, OIDC 인증, PR마다 자동 보안 점검(P0/P1이면 병합 차단)을 갖췄습니다. |
-| **"HWP 문서가 대부분이다."** | 파일 내용(MIME)으로 판별해 HWP·HWPX는 kordoc, PDF·Office·이미지는 docling, 그 밖은 Tika로 보냅니다. |
+| **"HWP 문서가 대부분이다."** | 파일 내용(MIME)으로 판별해 HWP·HWPX는 kordoc, PDF·Office·이미지는 docling, 그 밖은 Tika로 보냅니다. docling(이미지 10 GB+)을 띄우지 않아도 kordoc만으로 DOCX·PDF·XLSX까지 읽습니다. |
 | **"PoC에 GPU 견적부터 필요하다."** | 맥미니와 Docker만 있으면 **한 줄**로 시작합니다. GPU는 필요할 때 연결합니다. |
 
 <a id="features"></a>
@@ -214,6 +214,7 @@
 **다음 릴리스 (main에 반영됨) — 말로 일하는 비서**
 
 - **Slack 봇이 스레드를 더 잘 이해함**: 1:1 DM에 답하고, 스레드에 올라온 파일(.zip·엑셀·한글 포함)을 "문서로 추가"하거나 "분석하라"는 말만으로 읽어 원문으로 답합니다. 같은 워크스페이스의 Slack 링크는 내용까지 읽고, 긴 답은 잘리지 않습니다([개선 내역](examples/slack-bot/README.md#개선-내역)).
+- **코드 저장소를 지식으로(repo-sync)**: 설계 문서만으로는 "현재 코드 기준으로 무엇을 더 할 수 있나"에 답할 수 없었습니다. git 저장소의 문서, 모듈별 코드 지도, 머지 이력을 주기적으로 올려 봇이 현재 구현 상태를 근거로 답합니다([examples/repo-sync](examples/repo-sync)).
 
 - **음성**: 받아쓰기와 음성 명령, 말하면 멈추는 라이브 대화. sherpa-onnx STT와 Supertonic TTS가 사내에서만 돕니다 ([voice.md](docs/voice.md)).
 - **음성 비서**: 메일 · 일정 · 할 일 · PR/CI를 요약하고 DureClaw 플릿에 일을 맡깁니다. 바뀌는 일은 음성 확인을 거쳐야 실행됩니다 ([voice-secretary.md](docs/voice-secretary.md)).
@@ -625,6 +626,7 @@ flowchart LR
   UP["문서 업로드"] --> MIME{"MIME 판별"}
   MIME -->|HWP · HWPX| KO["kordoc"]
   MIME -->|PDF · Office · 이미지| DO["docling"]
+  MIME -.->|docling 없을 때 DOCX · PDF · XLSX| KO
   MIME -->|기타 형식| TI["Tika"]
   MIME -->|텍스트 · Markdown| TX["내장 파서"]
   OS["Apache Ossie 모델"] --> TX
@@ -717,6 +719,7 @@ curl -s http://localhost:8000/v1/documents \
 | --- | --- |
 | [`examples/slack-bot`](examples/slack-bot) | Slack `@멘션`(Socket Mode)에 **답변 + 출처**(문서 · 청크 · 인용 구절)로 답하고, 같은 스레드에서는 멘션 없이 이어 답합니다. **proactive 모드**는 답하지 못한 질문을 데스크 채널에 올리고, 스레드 답글을 초안으로 받아 작성자 승인 후 게시하고, 원래 스레드에 결과를 돌려줍니다. 1:1 **DM**에는 멘션 없이 답하고, 스레드에서 `@baryon 문서로 추가해줘`라고 하면 **첨부파일(.zip은 풀어서)이나 스레드 글을 문서로 등록**하며, "분석해줘"까지 붙이면 방금 등록한 문서 원문만 근거로 분석합니다. 파일이 올라온 스레드에서 "분석하라", "엑셀 읽어봐"라고 해도 그 파일을 읽고, 같은 워크스페이스의 Slack 링크는 그 스레드 내용까지 함께 읽습니다. 긴 답은 여러 칸으로 나눠 잘리지 않습니다([개선 내역](examples/slack-bot/README.md#개선-내역)). |
 | [`examples/discord-bot`](examples/discord-bot) | 같은 기능의 Discord 봇(Gateway, 공개 URL 불필요). 멘션하면 스레드를 열어 답과 출처 embed를 보여 주고, 승인 버튼으로 답변을 게시합니다. |
+| [`examples/repo-sync`](examples/repo-sync) | git 저장소의 **문서 · 모듈별 코드 지도(클래스 · 함수 · HTTP 엔드포인트) · 최근 머지 이력**을 문서로 올려, 봇이 "지금 무엇이 구현돼 있나", "그 API는 어디 있나"에 답하게 합니다. 다시 실행하면 바뀐 파일만 갱신하고 지운 파일은 문서도 지웁니다. |
 
 봇은 OIDC 서비스 계정 하나로 인증하고 사람마다 `X-On-Behalf-Of: slack:<ID>`로 요청합니다. 역할은 서비스 계정 권한을 넘지 못하고, 감사 로그에는 사용자와 `acting_service`가 함께 남습니다.
 
@@ -768,6 +771,7 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 | `LANGFUSE_ENABLED` / `LANGFUSE_HOST` | `false` / 로컬 | Langfuse 트레이스 |
 | `MEM0_ENABLED` / `OLLAMA_BASE_URL` | `false` / 로컬 | Mem0 메모리 |
 | `KORDOC_URL` · `DOCLING_URL` · `TIKA_URL` | 비어 있음 | 파서 사이드카 주소 |
+| `KORDOC_OFFICE` | `true` | kordoc이 DOCX·PDF·XLSX도 받음(docling이 있으면 docling 우선) |
 | `PARSER_TIMEOUT_SECONDS` | `180` | 문서당 파서 제한 시간 |
 | `MAX_DOCUMENT_BYTES` | `20000000` | 업로드 크기 제한 |
 | `MCP_SERVER_ENABLED` | `true` | `POST /mcp` MCP 서버 |
@@ -884,7 +888,7 @@ apps/api/       FastAPI 게이트웨이와 API (Python, uv)
 apps/web/       React + Vite 채팅 워크스페이스 (받아쓰기 · 라이브 대화 포함)
 apps/secretary/ 상주 음성 비서와 목표 에이전트 (Claude Agent SDK)
 apps/voice_app/ 바리온 비서 안드로이드 앱 (Flutter + Kotlin 통화 엔진)
-examples/       공개 API로 만든 확장 예제 (Slack · Discord 봇)
+examples/       공개 API로 만든 확장 예제 (Slack · Discord 봇, 코드 저장소 동기화)
 deploy/         Compose · Kubernetes · 파서 · STT/TTS(stt) · 전화 게이트웨이(phone)
 docs/           아키텍처 · 운영 · 보안 · 연동 · 연구 문서
 site/           홈페이지 (GitHub Pages)
@@ -928,7 +932,7 @@ API_BASE=http://127.0.0.1:8000 REQUIRE_FULL=1 python3 scripts/smoke_full_stack.p
 **Baryon AX** is an on-premises, model-agnostic, source-available platform for enterprise AI agents that answer from your documents with citations and **ask experts first** for the tacit knowledge that was never written down. It ships with **바리온 비서**, an Android app you call like a person ("네, 비서입니다. 말씀하세요."): hear summaries and hand off work by voice while driving, with speech processed only on your own servers.
 
 - **Grounded answers**: streaming chat with source, chunk, and quote citations; a warning instead of a guess when evidence is missing; organization and role ACLs applied before retrieval reaches the model.
-- **Korean-document ready**: MIME-based routing to kordoc (HWP/HWPX), docling (PDF/Office/images), and Tika; structure-aware chunking; hybrid retrieval (Qdrant vectors + lexical, the default), which finds the source for reworded questions 91% of the time vs 39% for word matching ([benchmark](docs/retrieval.md#bench)).
+- **Korean-document ready**: MIME-based routing to kordoc (HWP/HWPX, plus DOCX/PDF/XLSX when docling is not deployed), docling (PDF/Office/images), and Tika; structure-aware chunking; hybrid retrieval (Qdrant vectors + lexical, the default), which finds the source for reworded questions 91% of the time vs 39% for word matching ([benchmark](docs/retrieval.md#bench)).
 - **Ask-first loop**: unanswered questions become knowledge gaps, experts answer from a question queue, and published answers are indexed through the same pipeline.
 - **Integrations**: OpenAI-compatible `/v1/chat/completions`, an MCP server at `POST /mcp`, an MCP tool picker, Slack and Discord bots (the Slack bot also answers DMs and adds files shared in a thread as documents), and Apache Ossie import/export.
 - **Voice secretary**: dictation, interruptible live conversation, and a resident secretary you can phone, by SIP or from the **바리온 비서** Android app. It shows up as a normal call, so car Bluetooth works. The secretary summarizes mail, calendar, to-dos and PRs, and acts only after a spoken "yes". It hands long work to **goal agents** that run in parallel on their own sandboxed git branches and report back by voice. Speech-to-text and text-to-speech stay on-premises.

@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'alerts_settings.dart';
+import 'board.dart';
 import 'cards.dart';
 import 'face.dart';
 import 'secretary_page.dart';
@@ -152,7 +153,10 @@ class ViewPrefs {
 }
 
 class BaryonVoiceApp extends StatefulWidget {
-  const BaryonVoiceApp({super.key});
+  const BaryonVoiceApp({super.key, this.startInChat = false});
+
+  /// Open on the conversation instead of the task board (tests; the "앱을 열면 바로 전화" setting does it too).
+  final bool startInChat;
 
   @override
   State<BaryonVoiceApp> createState() => _BaryonVoiceAppState();
@@ -195,7 +199,99 @@ class _BaryonVoiceAppState extends State<BaryonVoiceApp> {
         ).copyWith(textScaler: TextScaler.linear(prefs.scale)),
         child: child!,
       ),
-      home: CallScreen(prefs: prefs, onPrefs: change),
+      home: HomeShell(
+        prefs: prefs,
+        onPrefs: change,
+        startInChat: widget.startInChat,
+      ),
+    );
+  }
+}
+
+/// Two tabs: 할 일 (the numbered task board the app opens on) and 대화 (talking or typing to the secretary).
+/// Both stay alive while you switch, so a call keeps going when you look at the board.
+class HomeShell extends StatefulWidget {
+  const HomeShell({
+    super.key,
+    required this.prefs,
+    this.onPrefs,
+    this.startInChat = false,
+  });
+
+  final ViewPrefs prefs;
+  final ValueChanged<ViewPrefs>? onPrefs;
+  final bool startInChat;
+
+  @override
+  State<HomeShell> createState() => _HomeShellState();
+}
+
+class _HomeShellState extends State<HomeShell> {
+  late int tab = widget.startInChat ? 1 : 0;
+  late final visited = <int>{tab};
+  final outbox = ValueNotifier<String?>(null);
+  bool autoCallApplied = false;
+
+  @override
+  void didUpdateWidget(HomeShell old) {
+    super.didUpdateWidget(old);
+    // Settings load after the first frame: "앱을 열면 바로 전화" opens on the conversation once.
+    if (!autoCallApplied && widget.prefs.autoCall && !old.prefs.autoCall) {
+      autoCallApplied = true;
+      show(1);
+    }
+  }
+
+  @override
+  void dispose() {
+    outbox.dispose();
+    super.dispose();
+  }
+
+  void show(int index) => setState(() {
+    tab = index;
+    visited.add(index);
+  });
+
+  /// From the board: open the conversation and send this request.
+  void ask(String text) {
+    show(1);
+    outbox.value = text;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: IndexedStack(
+        index: tab,
+        children: [
+          visited.contains(0) ? TaskBoard(onAsk: ask) : const SizedBox.shrink(),
+          CallScreen(
+            prefs: widget.prefs,
+            onPrefs: widget.onPrefs,
+            outbox: outbox,
+          ),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        key: const Key('tabs'),
+        height: 60,
+        selectedIndex: tab,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        onDestinationSelected: show,
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.checklist_outlined),
+            selectedIcon: Icon(Icons.checklist),
+            label: '할 일',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.forum_outlined),
+            selectedIcon: Icon(Icons.forum),
+            label: '대화',
+          ),
+        ],
+      ),
     );
   }
 }
@@ -298,10 +394,18 @@ class History {
 // Screen
 
 class CallScreen extends StatefulWidget {
-  const CallScreen({super.key, this.prefs = const ViewPrefs(), this.onPrefs});
+  const CallScreen({
+    super.key,
+    this.prefs = const ViewPrefs(),
+    this.onPrefs,
+    this.outbox,
+  });
 
   final ViewPrefs prefs;
   final ValueChanged<ViewPrefs>? onPrefs;
+
+  /// A request from the task board ("3번 작업 어떻게 됐어?"), sent as if typed.
+  final ValueNotifier<String?>? outbox;
 
   @override
   State<CallScreen> createState() => _CallScreenState();
@@ -404,6 +508,15 @@ class _CallScreenState extends State<CallScreen> {
     });
     loadConfig();
     checkRecording();
+    widget.outbox?.addListener(takeOutbox);
+  }
+
+  void takeOutbox() {
+    final text = widget.outbox?.value;
+    if (text == null || text.isEmpty) return;
+    widget.outbox!.value = null;
+    input.text = text;
+    send();
   }
 
   /// A recording stopped from its notification while the app was away is sent now.
@@ -436,6 +549,7 @@ class _CallScreenState extends State<CallScreen> {
 
   @override
   void dispose() {
+    widget.outbox?.removeListener(takeOutbox);
     subscription?.cancel();
     saveTimer?.cancel();
     input.dispose();

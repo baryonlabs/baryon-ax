@@ -653,6 +653,11 @@ SETTINGS_OPS = {  # app request -> secretary HTTP call (apps/secretary/secretary
     "memory.add": ("POST", "/v1/memories"),
     "memory.delete": ("DELETE", "/v1/memories/{id}"),
     "notify.add": ("POST", "/v1/notifications"),  # the app's "알림 테스트": a real notification, end to end
+    "notify.cancel": ("DELETE", "/v1/notifications/{id}"),
+    "board.get": ("GET", "/v1/board"),  # the app's home: numbered goals, reminders, questions waiting
+    "goal.get": ("GET", "/v1/goals/{id}"),
+    "goal.answer": ("POST", "/v1/goals/{id}/answer"),
+    "goal.cancel": ("DELETE", "/v1/goals/{id}"),
 }
 
 
@@ -669,9 +674,10 @@ async def settings_request(client: httpx.AsyncClient, base_url: str, message: st
     if not op:
         return {"id": request_id, "ok": False, "error": "unknown op"}
     method, path = op
-    memory_id = re.sub(r"[^0-9a-f]", "", str(request.get("memory", "")))[:32]
+    # The one id a path may carry (a memory, a goal, a notification): hex letters and digits only.
+    memory_id = re.sub(r"[^0-9a-f]", "", str(request.get("target") or request.get("memory", "")))[:32]
     if "{id}" in path and not memory_id:
-        return {"id": request_id, "ok": False, "error": "memory id required"}
+        return {"id": request_id, "ok": False, "error": "id required"}
     body = {key: request[key] for key in ("about", "usage", "mcp", "text", "brain", "goal_brain", "title", "when", "alarm")
             if key in request}
     try:

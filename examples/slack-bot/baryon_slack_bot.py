@@ -532,18 +532,33 @@ def create_app(config: Config | None = None):
     responder = Responder(config, baryon, bot_user_id, intake=intake)
     responder.team_domain = slack_domain(auth.get("url", ""))
     desk = _create_desk(responder)
+    bridge = _create_bridge()
 
     @app.event("app_mention")
     def on_mention(event, client):
-        responder.answer(event, client)
+        # The owner asking for work (draft, send, contact, plan …) goes to the voice secretary (secretary_bridge.py).
+        if bridge and bridge.wants(event, strip_mentions(event.get("text"))):
+            bridge.handle(event, client)
+        else:
+            responder.answer(event, client)
 
     @app.event("message")
     def on_message(event, client):
         gap_id = desk.answer_gap_id(event) if desk else None
         if gap_id:
             desk.on_answer(event, gap_id, client)
+        elif bridge and bridge.follows(event) and f"<@{bot_user_id}" not in (event.get("text") or ""):
+            bridge.handle(event, client)
+        elif bridge and responder.is_direct_message(event) and bridge.wants(event, strip_mentions(event.get("text"))):
+            bridge.handle(event, client)  # the owner asking for work in a DM
         elif responder.is_direct_message(event) or responder.should_follow_up(event):
             responder.answer(event, client)
+
+    if bridge:
+        from secretary_bridge import ACTION_NO, ACTION_YES
+
+        app.action(ACTION_YES)(action_listener(lambda body, client: bridge.answer_confirmation(body, client, True)))
+        app.action(ACTION_NO)(action_listener(lambda body, client: bridge.answer_confirmation(body, client, False)))
 
     if desk:
         from proactive import ACTION_DISCARD, ACTION_DISMISS, ACTION_PUBLISH
@@ -562,6 +577,17 @@ def action_listener(handler):
         handler(body, client)
 
     return on_action
+
+
+def _create_bridge():
+    """The voice secretary in Slack (secretary_bridge.py) is on when SECRETARY_URL, _API_KEY and _SLACK_USERS are set."""
+    from secretary_bridge import BridgeConfig, SecretaryBridge
+
+    config = BridgeConfig.from_env()
+    if not config.enabled:
+        return None
+    logger.info("secretary bridge on for %d Slack user(s) → %s", len(config.users), config.url)
+    return SecretaryBridge(config)
 
 
 def _create_desk(responder: Responder):

@@ -20,7 +20,7 @@ BOT = "UBOT"
 
 class Cp949Info(zipfile.ZipInfo):
     def _encodeFilenameFlags(self):  # noqa: N802 - zipfile's name
-        return self.filename.encode("cp949"), self.flag_bits  # no UTF-8 flag
+        return self.filename.encode("cp949"), self.flag_bits & ~0x800  # no UTF-8 flag (Python 3.14 sets it for non-ASCII)
 
 
 def korean_zip() -> bytes:

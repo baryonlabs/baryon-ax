@@ -11,7 +11,7 @@ os.environ.setdefault("AUDIT_LOG", str(Path(tempfile.mkdtemp(prefix="baryon-ax-g
 
 from fastapi.testclient import TestClient
 
-from baryon.main import app
+from baryon.main import app, gap_rechecks
 
 client = TestClient(app)
 
@@ -150,6 +150,7 @@ def test_open_gap_resolves_when_source_arrives() -> None:
         headers=headers(organization=org),
     )
     assert upload.status_code == 200
+    assert gap_rechecks.wait_idle()  # gaps are re-checked in the background after an upload
 
     resolved = client.get("/v1/admin/gaps?status=all", headers=headers(organization=org)).json()["data"]
     assert next(item for item in resolved if item["id"] == gap["id"])["status"] == "resolved"
@@ -171,6 +172,7 @@ def test_title_only_match_does_not_resolve_a_gap() -> None:
         headers=headers(organization=org),
     )
     assert upload.status_code == 200
+    assert gap_rechecks.wait_idle()  # gaps are re-checked in the background after an upload
 
     still_open = client.get("/v1/admin/gaps?status=all", headers=headers(organization=org)).json()["data"]
     assert next(item for item in still_open if item["id"] == gap["id"])["status"] == "open"
@@ -217,3 +219,42 @@ def test_chat_response_says_whether_documents_answered() -> None:
     body = response.json()
     assert body["grounding"]["answered"] is False and "no_citations" in body["grounding"]["reasons"]
     assert body["knowledge_gap"] and body["knowledge_gap"]["question"] == "2031년 우주 출장 규정은?"
+
+
+def test_a_greeting_is_answered_without_sources_or_a_gap() -> None:
+    org = "org-small-talk"
+    upload = client.post("/v1/documents", headers=headers(organization=org),
+                         files={"file": ("smoke-note.md", "Baryon AX는 Qdrant와 LangGraph를 사용합니다. 안녕 gg 고마워".encode())})
+    assert upload.status_code == 200
+    for greeting in ("gg", "안녕하세요!", "고마워요 ㅎㅎ"):
+        body = client.post("/v1/chat/completions", headers=headers(organization=org),
+                           json={"messages": [{"role": "user", "content": greeting}], "stream": False}).json()
+        assert body["citations"] == [], greeting  # nothing unrelated attached as a source
+        assert body["grounding"]["answered"] is True and body["knowledge_gap"] is None
+    real = client.post("/v1/chat/completions", headers=headers(organization=org),
+                       json={"messages": [{"role": "user", "content": "Baryon AX는 무엇을 사용해?"}], "stream": False}).json()
+    assert real["citations"]  # a real question still searches
+
+
+def test_gap_rechecks_coalesce_a_burst_of_uploads() -> None:
+    import threading
+    import time
+
+    from baryon.main import GapRechecker, Principal
+
+    calls: list[str] = []
+    gate = threading.Event()
+
+    def slow_check(principal, trace_id):
+        calls.append(trace_id)
+        gate.wait(2)
+
+    rechecker = GapRechecker(slow_check)
+    user = Principal(user_id="u", organization_id="org-burst", roles={"admin"})
+    started = time.monotonic()
+    for n in range(50):
+        rechecker.request(user, f"t{n}")
+    assert time.monotonic() - started < 1  # uploads do not wait for the re-check
+    gate.set()
+    assert rechecker.wait_idle(5)
+    assert calls[0] == "t0" and calls[-1] == "t49" and len(calls) <= 2  # 50 uploads, at most 2 re-checks

@@ -98,7 +98,7 @@
 | 파서 폴백 체인 | ✅ | kordoc → docling → Tika → 415, 실패는 `document.parse_failed` 감사 |
 | 비동기 인제스트 잡 | ✅ | `POST /v1/documents?async=true` → `GET /v1/jobs/{id}` |
 | 버튼 E2E | ✅ | `npm run test:buttons` — 33개 내비게이션·업로드·암묵지·공백·설정 버튼 시나리오 |
-| 파서 sidecar | ✅ | `KORDOC_URL`/`DOCLING_URL`(HTTP) 또는 `KORDOC_CMD`/`DOCLING_CMD`(CLI), `TIKA_URL` |
+| 파서 sidecar | ✅ | `KORDOC_URL`/`DOCLING_URL`(HTTP) 또는 `KORDOC_CMD`/`DOCLING_CMD`(CLI), `TIKA_URL`. kordoc만 있어도 DOCX·PDF·XLSX를 읽음(`KORDOC_OFFICE`, docling이 있으면 docling 우선) |
 | 파이프라인 배압/재시도/DLQ | ✅ | `INGEST_*` 환경변수, 영구 오류는 재시도 없이 DLQ |
 | 문서 영속화 | ✅ | 문서별 JSON 파일, 재시작 후 복원 |
 | 조직 격리 | ✅ | 다른 조직 문서는 목록·검색·삭제·수정 불가 |
@@ -119,6 +119,8 @@
 | PDF/Word/HTML 파싱 | ✅ | docling sidecar/CLI 구성 시. 미구성 시 415 |
 | HWP/HWPX/HWPML 파싱 | ✅ | kordoc sidecar/CLI 구성 시. 표 구조·RAG 청크 지원 |
 | 스캔 이미지 OCR | 🔶 | kordoc 내장 OCR(설정 시), 그 외 OCR 어댑터는 미구현 |
+| 웹사이트 크롤링 | ✅ | `POST /v1/crawls`·웹 지식 화면·채팅("크롤링해 줘")·MCP `crawl_site`. 사이트맵·robots.txt(Crawl-delay)·같은 호스트·경로 제한·같은 내용 한 번, 최대 `WEB_CRAWL_MAX_PAGES`(200), 조직당 동시 2개. 작업은 메모리에 보관 |
+| 웹 페이지 → 지식 | ✅ | 질문 속 링크를 읽어 문서로 저장하고 근거로 답함(24시간 재사용), `POST /v1/documents/url`로 사이트 여러 쪽. 내부 주소 차단(`WEB_FETCH_ALLOW_PRIVATE`), robots.txt, `WEB_FETCH_ENABLED` |
 | 데이터베이스 → 지식 | 🔶 | `baryon.ingest.db` + `scripts/ingest_db.py` (SQLite/SQLAlchemy), API 소스 엔드포인트는 미구현 |
 | 문서 본문 수정 | ⛔ | ACL만 수정 가능 |
 | 문서/감사 페이지네이션 | ⛔ | 감사는 `limit`만 지원, 문서 목록은 전체 반환 |
