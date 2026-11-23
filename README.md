@@ -222,7 +222,7 @@
 
 **v0.7.0 — 사내 메신저 안에서 먼저 묻는 AI** · [릴리스 노트](https://github.com/baryonlabs/baryon-ax/releases/tag/v0.7.0)
 
-- **Slack · Discord 봇**: 멘션하면 출처와 함께 답하고, 지식 공백은 담당자에게 먼저 묻습니다.
+- **Slack · Discord 봇**: 멘션하면 출처와 함께 답하고, 지식 공백은 담당자에게 먼저 묻습니다. Slack에서는 DM으로도 묻고, 스레드에 올린 파일을 "문서로 추가"로 바로 등록합니다.
 - **MCP 서버** `POST /mcp`: 검색 · 근거 답변 · 지식 공백 도구를 Claude, IDE, 에이전트 채팅 앱에 엽니다.
 - **서비스 계정 위임 인증**: 봇과 MCP 게이트웨이가 사람마다 대신 요청해도 권한과 감사 기록은 사람 단위로 남습니다. 웹 OIDC 로그인(PKCE)도 추가했습니다.
 - **하이브리드 검색 · OpenAI 호환 임베딩**, **Apache Ossie 지식 교환**, **MCP 도구 선택**
@@ -713,7 +713,7 @@ curl -s http://localhost:8000/v1/documents \
 
 | 예제 | 하는 일 |
 | --- | --- |
-| [`examples/slack-bot`](examples/slack-bot) | Slack `@멘션`(Socket Mode)에 **답변 + 출처**(문서 · 청크 · 인용 구절)로 답하고, 같은 스레드에서는 멘션 없이 이어 답합니다. **proactive 모드**는 답하지 못한 질문을 데스크 채널에 올리고, 스레드 답글을 초안으로 받아 작성자 승인 후 게시하고, 원래 스레드에 결과를 돌려줍니다. |
+| [`examples/slack-bot`](examples/slack-bot) | Slack `@멘션`(Socket Mode)에 **답변 + 출처**(문서 · 청크 · 인용 구절)로 답하고, 같은 스레드에서는 멘션 없이 이어 답합니다. **proactive 모드**는 답하지 못한 질문을 데스크 채널에 올리고, 스레드 답글을 초안으로 받아 작성자 승인 후 게시하고, 원래 스레드에 결과를 돌려줍니다. 1:1 **DM**에는 멘션 없이 답하고, 스레드에서 `@baryon 문서로 추가해줘`라고 하면 **첨부파일(.zip은 풀어서)이나 스레드 글을 문서로 등록**하며, "분석해줘"까지 붙이면 방금 등록한 문서 원문만 근거로 분석합니다. |
 | [`examples/discord-bot`](examples/discord-bot) | 같은 기능의 Discord 봇(Gateway, 공개 URL 불필요). 멘션하면 스레드를 열어 답과 출처 embed를 보여 주고, 승인 버튼으로 답변을 게시합니다. |
 
 봇은 OIDC 서비스 계정 하나로 인증하고 사람마다 `X-On-Behalf-Of: slack:<ID>`로 요청합니다. 역할은 서비스 계정 권한을 넘지 못하고, 감사 로그에는 사용자와 `acting_service`가 함께 남습니다.
@@ -928,7 +928,7 @@ API_BASE=http://127.0.0.1:8000 REQUIRE_FULL=1 python3 scripts/smoke_full_stack.p
 - **Grounded answers**: streaming chat with source, chunk, and quote citations; a warning instead of a guess when evidence is missing; organization and role ACLs applied before retrieval reaches the model.
 - **Korean-document ready**: MIME-based routing to kordoc (HWP/HWPX), docling (PDF/Office/images), and Tika; structure-aware chunking; hybrid retrieval (Qdrant vectors + lexical, the default), which finds the source for reworded questions 91% of the time vs 39% for word matching ([benchmark](docs/retrieval.md#bench)).
 - **Ask-first loop**: unanswered questions become knowledge gaps, experts answer from a question queue, and published answers are indexed through the same pipeline.
-- **Integrations**: OpenAI-compatible `/v1/chat/completions`, an MCP server at `POST /mcp`, an MCP tool picker, Slack and Discord bots, and Apache Ossie import/export.
+- **Integrations**: OpenAI-compatible `/v1/chat/completions`, an MCP server at `POST /mcp`, an MCP tool picker, Slack and Discord bots (the Slack bot also answers DMs and adds files shared in a thread as documents), and Apache Ossie import/export.
 - **Voice secretary**: dictation, interruptible live conversation, and a resident secretary you can phone, by SIP or from the **바리온 비서** Android app. It shows up as a normal call, so car Bluetooth works. The secretary summarizes mail, calendar, to-dos and PRs, and acts only after a spoken "yes". It hands long work to **goal agents** that run in parallel on their own sandboxed git branches and report back by voice. Speech-to-text and text-to-speech stay on-premises.
 - **Governance**: OIDC with delegated identity for bots and MCP gateways, audit events in PostgreSQL/JSONL, Langfuse traces, and a security sweep that blocks P0/P1 findings on every PR.
 
