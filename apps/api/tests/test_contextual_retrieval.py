@@ -61,6 +61,41 @@ def test_follow_up_without_topic_words_finds_the_topic() -> None:
     assert "rfp.md" in titles(history + [{"role": "user", "content": "다시 확인해봐"}])[:2]
 
 
+def test_search_while_documents_are_added() -> None:
+    """Uploads and searches run on different threads; iterating the live dict raised RuntimeError."""
+    import threading
+
+    from baryon.main import Principal, documents
+
+    principal = Principal(user_id="ctxq-user", organization_id=ORG, roles={"admin"})
+    template = next(iter(documents.documents.values()))
+    errors: list[BaseException] = []
+    stop = threading.Event()
+
+    def add() -> None:
+        for n in range(400):
+            clone = template.__class__(**{**template.__dict__, "id": f"race-{n}"})
+            documents.documents[clone.id] = clone
+        stop.set()
+
+    def search() -> None:
+        try:
+            while not stop.is_set():
+                documents._lexical_search(principal, "Text-to-SQL")
+                documents.list_for(principal)
+        except BaseException as error:  # noqa: BLE001 - the regression is any exception here
+            errors.append(error)
+
+    threads = [threading.Thread(target=search), threading.Thread(target=add)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    for n in range(400):
+        documents.documents.pop(f"race-{n}", None)
+    assert errors == []
+
+
 def test_new_topic_in_the_last_turn_still_wins() -> None:
     history = [{"role": "user", "content": "Text-to-SQL 엔진 요구사항이 뭐야?"},
                {"role": "assistant", "content": "REQ-007입니다."}]

@@ -442,7 +442,7 @@ class DocumentService:
         tag: str | None = None,
     ) -> list[dict]:
         visibility = []
-        for document in self.documents.values():
+        for document in list(self.documents.values()):  # snapshot: uploads add documents from other threads
             if not self.can_view(principal, document):
                 continue
             if category and document.category != normalize_text(category):
@@ -622,7 +622,9 @@ class DocumentService:
         terms = search_terms(query)
         normalized_query = normalize_text(query).lower().strip()
         matches = []
-        for document in self.documents.values():
+        # Snapshot: an upload adding a document while this loop runs (e.g. gap auto-resolve after the previous
+        # upload) raised "dictionary changed size during iteration" and failed that upload with 500.
+        for document in list(self.documents.values()):
             if not self.can_view(principal, document):
                 continue
             title = normalize_text(document.title).lower()
@@ -3371,7 +3373,7 @@ async def admin_settings(
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
     if "admin" not in principal.roles:
         raise HTTPException(403, "Administrator role required")
-    organization_documents = [document for document in documents.documents.values() if document.organization_id == principal.organization_id]
+    organization_documents = [document for document in list(documents.documents.values()) if document.organization_id == principal.organization_id]
     organization_events = audit.recent_for(principal, limit=5000)
     return {
         "version": __version__,
