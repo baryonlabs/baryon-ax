@@ -123,6 +123,46 @@ def test_sync_uploads_changes_only_and_removes_deleted(tmp_path: Path) -> None:
     assert len(up.deleted) == 3    # old 설계.md, old history, README.md
 
 
+def test_code_mode_indexes_source_files_with_path_and_lines(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    write(repo, "server/src/test/OrderControllerTest.java", "class OrderControllerTest {}\n")
+    write(repo, "web/src/Cart.tsx", "\n".join(f"export const line{i} = {i};" for i in range(1, 171)) + "\n")
+    commit(repo, "code")
+    up = FakeUploader()
+    report = rs.sync(args_for(repo, tmp_path, "--code", "--no-docs", "--no-code-map", "--history", "0"), up)
+    assert report["failed"] == []
+    titles = up.titles()
+    assert "shop · server › src › OrderController.java.md" in titles
+    assert "shop · web › src › Cart.tsx.md" in titles
+    assert not any("Test.java" in t for t in titles)  # tests are skipped by default
+    java = next(p.decode() for t, p, tags in up.docs.values() if "OrderController.java" in t)
+    assert "> 엔드포인트: `GET /api/orders/{id}`" in java and "## server/src/OrderController.java L1-12" in java
+    assert "```java" in java and "@RequestMapping(\"/api/orders\")" in java
+    cart = next(p.decode() for t, p, _ in up.docs.values() if "Cart.tsx" in t)
+    assert [line for line in cart.splitlines() if line.startswith("## ")] == [
+        "## web/src/Cart.tsx L1-80", "## web/src/Cart.tsx L81-160", "## web/src/Cart.tsx L161-171"]
+    assert all("kind:code" in tags for _, _, tags in up.docs.values())
+    assert rs.sync(args_for(repo, tmp_path, "--code", "--no-docs", "--no-code-map", "--history", "0"), up)["uploaded"] == 0
+
+
+def test_plain_folder_is_read_from_disk(tmp_path: Path) -> None:
+    folder = tmp_path / "scripts"
+    write(folder, "etl/load.py", "def load():\n    return 1\n")
+    write(folder, "node_modules/lib/index.js", "export const x = 1;\n")
+    write(folder, "notes.md", "# 메모\n적재는 매일 새벽 2시\n")
+    up = FakeUploader()
+    args = rs.parse_args(["--repo", str(folder), "--name", "scripts", "--code", "--state", str(tmp_path / "s.json")])
+    report = rs.sync(args, up)
+    assert report["failed"] == []
+    assert up.titles() == ["scripts · etl › load.py.md", "scripts · notes.md", "scripts · 코드지도 etl.md"]
+    assert any("ref:작업 폴더" in tags for _, _, tags in up.docs.values())
+    write(folder, "etl/load.py", "def load():\n    return 2\n")
+    again = rs.sync(args, up)
+    # only the edited file: its names and line count did not change, so the code map stays as it was
+    assert again["uploaded"] == 1 and again["unchanged"] == 2
+    assert any("return 2" in p.decode() for t, p, _ in up.docs.values() if "load.py" in t)
+
+
 def test_failed_upload_keeps_the_old_document(tmp_path: Path) -> None:
     repo = make_repo(tmp_path)
     up = FakeUploader()

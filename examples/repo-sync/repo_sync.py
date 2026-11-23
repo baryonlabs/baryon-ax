@@ -43,6 +43,18 @@ CODE_EXT = {".java": "java", ".kt": "kotlin", ".ts": "ts", ".tsx": "ts", ".js": 
 MAX_DOC_BYTES = 1_500_000
 MAX_MAP_CHARS = 120_000   # one code-map document; larger modules are split by sub-folder
 
+# --code: the source files themselves, one document each, cut into blocks headed by path and line range
+DEFAULT_CODE_INCLUDE = ["**/*.java", "**/*.kt", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.py",
+                        "**/*.go", "**/*.rs", "**/*.cs", "**/*.sql", "**/*.sh"]
+DEFAULT_CODE_EXCLUDE = ["**/test/**", "**/tests/**", "**/__tests__/**", "**/e2e/**", "**/*.test.*", "**/*.spec.*",
+                        "**/*Test.java", "**/*Tests.java", "**/*IT.java", "**/test_*.py", "**/*_test.py", "**/*_test.go",
+                        "**/generated/**", "**/*.min.js", "**/*.d.ts", "**/migrations/**"]
+SKIP_DIRS = {"node_modules", "dist", "build", "target", "vendor", "__pycache__", "venv", "out", "coverage"}
+CODE_BLOCK_LINES = 80
+MAX_CODE_BYTES = 400_000  # a source file larger than this is usually generated
+FENCE = {".java": "java", ".kt": "kotlin", ".ts": "typescript", ".tsx": "tsx", ".js": "javascript", ".jsx": "jsx",
+         ".mjs": "javascript", ".py": "python", ".go": "go", ".rs": "rust", ".cs": "csharp", ".sql": "sql", ".sh": "bash"}
+
 SYMBOL_RES = {
     "java": [re.compile(r"^\s*(?:public|protected|private|abstract|final|static|sealed|\s)*\s*(class|interface|enum|record)\s+(\w+)", re.M)],
     "kotlin": [re.compile(r"^\s*(?:data |sealed |abstract |open |private |internal )*(class|interface|object)\s+(\w+)", re.M)],
@@ -83,7 +95,52 @@ def list_files(repo: Path, ref: str) -> dict[str, str]:
 
 
 def read_blob(repo: Path, sha: str) -> bytes:
+    if sha.startswith("file:"):  # --worktree: the "sha" is the file's path on disk
+        return (repo / sha[5:]).read_bytes()
     return git(repo, "cat-file", "blob", sha)
+
+
+def is_git_repo(repo: Path) -> bool:
+    return subprocess.run(["git", "-C", str(repo), "rev-parse", "--git-dir"], capture_output=True).returncode == 0
+
+
+def list_worktree(repo: Path, exclude: list[str]) -> dict[str, str]:
+    """path → "file:<path>" for files on disk (a folder that is not a git repo, or uncommitted work).
+
+    In a git checkout, `git ls-files` (tracked + untracked, minus .gitignore) keeps build output out."""
+    if is_git_repo(repo):
+        out = git(repo, "-c", "core.quotepath=false", "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+        paths = [p for p in out.decode("utf-8", "replace").split("\0") if p]
+    else:
+        paths = []
+        for root, dirs, names in os.walk(repo):
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in SKIP_DIRS]
+            rel = Path(root).relative_to(repo).as_posix()
+            paths += [n if rel == "." else f"{rel}/{n}" for n in names]
+    return {p: f"file:{p}" for p in paths if not matches(p, exclude) and (repo / p).is_file()}
+
+
+def code_markdown(repo_name: str, ref: str, path: str, text: str, block_lines: int = CODE_BLOCK_LINES) -> str:
+    """A source file as Markdown: a header (path, size, symbols, endpoints), then blocks of ``block_lines`` lines.
+
+    Each block's heading repeats the path and line range, so a retrieved chunk says where the code is."""
+    suffix = PurePosixPath(path).suffix.lower()
+    language = CODE_EXT.get(suffix)
+    lines = text.replace("\r\n", "\n").split("\n")
+    found = symbols(language, text) if language else []
+    routes = endpoints(text) if language else []
+    head = [f"# {repo_name} · {path}", "",
+            f"> 소스 코드 파일 `{path}` ({ref} 기준, {len(lines)}줄). 자동 생성."]
+    if found:
+        head.append(f"> 정의: {', '.join(found[:25])}")
+    if routes:
+        head.append(f"> 엔드포인트: {', '.join(f'`{r}`' for r in routes[:20])}")
+    blocks = []
+    for start in range(0, len(lines), block_lines):
+        chunk = lines[start:start + block_lines]
+        end = start + len(chunk)
+        blocks.append(f"## {path} L{start + 1}-{end}\n\n```{FENCE.get(suffix, '')}\n" + "\n".join(chunk).rstrip() + "\n```\n")
+    return "\n".join(head) + "\n\n" + "\n".join(blocks)
 
 
 def matches(path: str, patterns: list[str]) -> bool:
@@ -226,9 +283,13 @@ def title_for(repo_name: str, path: str, suffix: str = "") -> str:
 def sync(args: argparse.Namespace, uploader: Uploader | None = None) -> dict:
     repo = Path(args.repo).resolve()
     name = args.name or repo.name
-    if args.fetch:
+    worktree = args.worktree or not is_git_repo(repo)
+    if args.fetch and not worktree:
         subprocess.run(["git", "-C", str(repo), "fetch", "--quiet"], check=False)
-    files = list_files(repo, args.ref)
+    files = list_worktree(repo, args.exclude) if worktree else list_files(repo, args.ref)
+    ref_label = "작업 폴더" if worktree else args.ref
+    if worktree:
+        args.history = 0 if not is_git_repo(repo) else args.history
     state_path = Path(args.state)
     state: dict[str, dict] = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
     uploader = uploader or Uploader(args.api, args.organization, args.user, args.roles, args.allowed_roles,
@@ -238,10 +299,17 @@ def sync(args: argparse.Namespace, uploader: Uploader | None = None) -> dict:
     if not args.no_docs:
         for path, sha in files.items():
             if matches(path, args.include) and not matches(path, args.exclude):
-                wanted[f"doc:{path}"] = (sha, None, title_for(name, path), "doc")
+                version = sha if not worktree else hashlib.sha256(read_blob(repo, sha)).hexdigest()
+                wanted[f"doc:{path}"] = (version, None, title_for(name, path), "doc")
+    if args.code:
+        for path, sha in files.items():
+            if not matches(path, args.code_include) or matches(path, args.exclude) or matches(path, args.code_exclude):
+                continue
+            version = sha if not worktree else hashlib.sha256(read_blob(repo, sha)).hexdigest()
+            wanted[f"code:{path}"] = (version, None, title_for(name, path, ".md"), "code")
     if not args.no_code_map:
         for module in build_code_map(repo, files, args.module_depth, args.exclude).values():
-            for key, markdown in module.render(name, args.ref):
+            for key, markdown in module.render(name, ref_label):
                 body = markdown.encode("utf-8")
                 wanted[f"map:{key}"] = (hashlib.sha256(body).hexdigest(), body,
                                         title_for(name, f"코드지도 {key.replace('#', ' ')}", ".md"), "code-map")
@@ -256,11 +324,16 @@ def sync(args: argparse.Namespace, uploader: Uploader | None = None) -> dict:
             report["unchanged"] += 1
             continue
         if payload is None:
-            payload = read_blob(repo, version)
+            path = key.split(":", 1)[1]
+            payload = read_blob(repo, files[path])
+            if kind == "code":
+                if len(payload) > MAX_CODE_BYTES or b"\0" in payload[:4096]:
+                    continue
+                payload = code_markdown(name, ref_label, path, payload.decode("utf-8", "replace")).encode("utf-8")
         if len(payload) > MAX_DOC_BYTES or not payload.strip():
             continue
         try:
-            document_id = uploader.upload(title, payload, [f"repo:{name}", f"kind:{kind}", f"ref:{args.ref}"])
+            document_id = uploader.upload(title, payload, [f"repo:{name}", f"kind:{kind}", f"ref:{ref_label}"])
         except Exception as error:  # parse failure, API down: keep the old document, retry next run
             report["failed"].append(f"{key}: {error}")
             logger.warning("upload failed %s: %s", key, error)
@@ -292,6 +365,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--history", type=int, default=300, help="commits in the history document (0 = none)")
     parser.add_argument("--no-docs", action="store_true")
     parser.add_argument("--no-code-map", action="store_true")
+    parser.add_argument("--code", action="store_true",
+                        help="also index the source files themselves (one document each, blocks headed by path and lines)")
+    parser.add_argument("--code-include", nargs="*", default=DEFAULT_CODE_INCLUDE)
+    parser.add_argument("--code-exclude", nargs="*", default=DEFAULT_CODE_EXCLUDE, help="tests and generated code by default")
+    parser.add_argument("--worktree", action="store_true",
+                        help="read files on disk instead of --ref (automatic for a folder that is not a git repo)")
     parser.add_argument("--api", default=os.getenv("BARYON_API_URL", "http://127.0.0.1:8000"))
     parser.add_argument("--organization", default=os.getenv("BARYON_ORGANIZATION_ID", "local-org"))
     parser.add_argument("--user", default="repo-sync", help="owner of the uploaded documents (dev auth)")
