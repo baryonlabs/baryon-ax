@@ -24,6 +24,23 @@ def gap(gap_id: str, question: str, reasons: list[str] | None = None) -> Knowled
     )
 
 
+def test_small_talk_is_only_greetings_and_acknowledgements() -> None:
+    from baryon.gaps import is_small_talk
+
+    for text in ("gg", "안녕하세요!", "안녕", "고마워요 ㅎㅎ", "감사합니다 🙏", "ok", "넵", "ㅋㅋㅋ", "hi there"[:2]):
+        assert is_small_talk(text), text
+    for text in ("", "안녕하세요 연차 신청은 어떻게 해?", "기능을 모두 설명해봐", "네 그럼 출장비 한도는?", "gg 회의록 찾아줘"):
+        assert not is_small_talk(text), text
+
+
+def test_refusal_words_deep_in_an_answer_are_not_a_refusal() -> None:
+    answer = ("Baryon AX의 주요 기능은 총 다섯 가지입니다.\n\n1. **근거 있는 답변**: 사내 문서를 기반으로 답변을 생성하며 "
+              "출처(문서·청크)를 함께 표시합니다. 문서에 없는 정보는 지어내지 않습니다.\n"
+              "2. 먼저 묻기: 답변할 수 없는 질문을 지식 공백으로 모아 전문가에게 먼저 묻습니다.")
+    assert "refusal" not in detect_reasons("기능 설명해 줘", answer, 3, True)
+    assert "refusal" in detect_reasons("x", "제공된 문서에서 해당 정보를 찾지 못했습니다. 다만 일반적으로는 …" + "가" * 300, 3, True)
+
+
 def test_detect_reasons_covers_refusal_and_missing_grounding() -> None:
     assert detect_reasons("예산은?", "제공된 문서에서 찾을 수 없습니다.", 0, True) == ["no_citations", "refusal"]
     assert detect_reasons("예산은?", "아마 110 정도일 것 같습니다.", 2, True) == ["vague"]

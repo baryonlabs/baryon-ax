@@ -597,6 +597,12 @@ def test_settings_requests_are_relayed_to_the_secretary_and_nothing_else() -> No
         assert (await relay('{"id": 4, "op": "memory.delete", "memory": "../../v1/sessions"}'))["ok"] is False
         assert seen[-1][1] == "/v1/memories/1e"  # "../../v1/sessions" reduced to its hex letters: no path tricks
         assert (await relay('{"id": 5, "op": "sessions.delete"}')) == {"id": 5, "ok": False, "error": "unknown op"}
+        await relay('{"id": 6, "op": "goal.answer", "target": "3", "text": "30분"}')
+        assert seen[-1] == ("POST", "/v1/goals/3/answer", '{"text":"30분"}')
+        await relay('{"id": 7, "op": "goal.cancel", "target": "../a1b2"}')
+        assert seen[-1][:2] == ("DELETE", "/v1/goals/a1b2")
+        await relay('{"id": 8, "op": "board.get"}')
+        assert seen[-1][:2] == ("GET", "/v1/board")
         assert (await relay("not json"))["ok"] is False
     asyncio.run(run())
 
