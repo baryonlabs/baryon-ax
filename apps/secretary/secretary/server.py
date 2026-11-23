@@ -80,9 +80,9 @@ profile: Profile | None = None
 notifier: Notifier | None = None
 
 GOAL_SPOKEN = {
-    "done": "목표 '{title}' 작업이 끝났어요. 보고: {summary}",
-    "failed": "목표 '{title}' 작업이 실패했어요. {summary}",
-    "needs_input": "목표 '{title}' 에이전트가 물어봐요(id {id}): {question}",
+    "done": "{number}번 '{title}' 작업이 끝났어요. 보고: {summary}",
+    "failed": "{number}번 '{title}' 작업이 실패했어요. {summary}",
+    "needs_input": "{number}번 '{title}' 에이전트가 물어봐요: {question}",
 }
 
 
@@ -91,7 +91,8 @@ def on_goal(goal: Goal, event: str) -> None:
     for session in list(sessions.values()):
         if session.closed:
             continue
-        session.emit({"type": "task", "id": goal.id, "tool": "goal", "to": "목표 에이전트", "summary": goal.title,
+        session.emit({"type": "task", "id": goal.id, "number": goal.number, "tool": "goal", "to": "목표 에이전트",
+                      "summary": goal.title,
                       "status": goal.status, "step": goal.steps[-1] if goal.steps else "", "question": goal.question})
         if event in GOAL_SPOKEN:
             session.notify(GOAL_SPOKEN[event].format(**goal.brief()))
@@ -184,6 +185,45 @@ async def health() -> dict:
     active = goal_manager.list(active_only=True) if goal_manager else []
     return {"ok": True, "sessions": len(sessions), "model": MODEL, "mcp": MCP_NAMES, "configured": bool(API_KEY),
             "goals_running": len(active)}
+
+
+@app.get("/v1/board")
+async def board(authorization: str | None = Header(None)) -> dict:
+    """The app's home: numbered goals (in progress first), reminders waiting to ring, and what needs the owner."""
+    require_key(authorization)
+    goals = sorted(goal_manager.goals.values(), key=lambda goal: goal.created, reverse=True) if goal_manager else []
+    active = ("queued", "running", "needs_input")
+    return {
+        "in_progress": [goal.brief() for goal in goals if goal.status in active],
+        "closed": [goal.brief() for goal in goals if goal.status not in active][:30],
+        "reminders": [dict(public(item), status=item["status"]) for item in notifier.pending()] if notifier else [],
+        "waiting": [goal.brief() for goal in goals if goal.status == "needs_input"],
+    }
+
+
+@app.get("/v1/goals/{goal_id}")
+async def goal_detail(goal_id: str, authorization: str | None = Header(None)) -> dict:
+    require_key(authorization)
+    goal = goal_manager.find(goal_id) if goal_manager else None
+    if not goal:
+        raise HTTPException(404, "no such goal")
+    return goal.detail()
+
+
+class AnswerBody(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+@app.post("/v1/goals/{goal_id}/answer")
+async def goal_answer(goal_id: str, body: AnswerBody, authorization: str | None = Header(None)) -> dict:
+    require_key(authorization)
+    return {"ok": bool(goal_manager and goal_manager.answer(goal_id, body.text))}
+
+
+@app.delete("/v1/goals/{goal_id}")
+async def goal_cancel(goal_id: str, authorization: str | None = Header(None)) -> dict:
+    require_key(authorization)
+    return {"ok": bool(goal_manager and goal_manager.cancel(goal_id))}
 
 
 @app.get("/v1/goals")
