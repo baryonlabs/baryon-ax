@@ -642,3 +642,65 @@ def test_board_for_the_apps_home(api, monkeypatch, tmp_path) -> None:
     assert api.get("/v1/goals/9", headers=AUTH).status_code == 404
     assert api.post("/v1/goals/2/answer", headers=AUTH, json={"text": "x"}).json() == {"ok": False}  # not asking
     assert api.delete("/v1/goals/1", headers=AUTH).json() == {"ok": False}  # already done
+
+
+# --- mail drafts through gog --------------------------------------------------------------
+
+class FakeGog:
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+        self.draft = {"to": "", "subject": ""}
+
+    def __call__(self, args: list[str]) -> dict:
+        self.calls.append(args)
+        if args[:2] == ["drafts", "create"] or args[:2] == ["drafts", "update"]:
+            option = lambda name: args[args.index(name) + 1] if name in args else ""
+            self.draft = {"to": option("--to") or self.draft["to"], "subject": option("--subject"), "body": option("--body")}
+            return {"draft": {"id": "r-1", "message": {"id": "m-1"}}}
+        if args[:2] == ["drafts", "get"]:
+            import base64
+            data = base64.urlsafe_b64encode(self.draft.get("body", "").encode()).decode().rstrip("=")
+            return {"draft": {"id": args[2], "message": {"payload": {"headers": [
+                {"name": "To", "value": self.draft["to"]}, {"name": "Subject", "value": self.draft["subject"]}],
+                "parts": [{"mimeType": "multipart/alternative", "parts": [{"mimeType": "text/plain", "body": {"data": data}}]}]}}}}
+        if args[:2] == ["drafts", "list"]:
+            return {"drafts": [{"id": "r-1", "messageId": "m-1"}]}
+        if args[:2] == ["drafts", "send"]:
+            return {"id": "sent-1"}
+        raise AssertionError(args)
+
+
+def test_a_draft_is_saved_as_given_and_sent_only_as_read_back(monkeypatch) -> None:
+    from secretary.mail_tools import Mail
+
+    gog = FakeGog()
+    mail = Mail(gog)
+    body = "안녕하세요, 바리온랩스입니다.\n\n협력을 제안드립니다. \"폐쇄형 AROOM\" & 파일럿"
+    saved = mail.save_draft("", "[협력 제안] AROOM", body)
+    assert "초안 id r-1" in saved and "받는 사람은 아직 비어 있음" in saved
+    assert gog.calls[0] == ["drafts", "create", "--subject", "[협력 제안] AROOM", "--body", body]  # no shell: text as is
+    assert "받는 사람이 없어요" in mail.send_draft("r-1", "a@b.com", "[협력 제안] AROOM")
+    mail.save_draft("partner@gonggong.ai", "", "", draft_id="r-1")  # only the recipient: subject and body stay
+    assert gog.calls[-1] == ["drafts", "update", "r-1", "--subject", "[협력 제안] AROOM", "--body", body,
+                             "--to", "partner@gonggong.ai"]
+    assert "달라서 보내지 않았어요" in mail.send_draft("r-1", "someone@else.com", "[협력 제안] AROOM")
+    assert "달라서 보내지 않았어요" in mail.send_draft("r-1", "partner@gonggong.ai", "다른 제목")
+    assert not any(call[:2] == ["drafts", "send"] for call in gog.calls)
+    assert mail.send_draft("r-1", "Partner <partner@gonggong.ai>", "[협력 제안] AROOM").startswith("보냈어요")
+    assert gog.calls[-1] == ["drafts", "send", "r-1"]
+    monkeypatch.setenv("SECRETARY_MAIL_SEND", "off")
+    assert "꺼져 있어요" in mail.send_draft("r-1", "partner@gonggong.ai", "[협력 제안] AROOM")
+    assert "r-1: 받는 사람 partner@gonggong.ai" in mail.list_drafts()
+
+
+def test_drafts_need_no_yes_but_sending_mail_does() -> None:
+    assert policy.decide("mcp__mail__save_draft", {"subject": "x", "body": "y"}).action == "auto"
+    assert policy.decide("mcp__mail__list_drafts", {}).action == "auto"
+    assert policy.decide("mcp__mail__send_draft", {"draft_id": "r-1"}).action == "confirm"
+    assert policy.confirmation_prompt("mcp__mail__send_draft", {"draft_id": "r-1", "to": "partner@gonggong.ai",
+                                                                 "subject": "협력 제안"}) == \
+        "메일을 보낼까요? 받는 사람 partner@gonggong.ai, 제목 협력 제안"
+    reply = {"command": "gog gmail reply 18c --body '네 3시 괜찮습니다'"}
+    assert policy.decide("Bash", reply).action == "confirm"
+    assert policy.confirmation_prompt("Bash", reply).startswith("메일을 보낼까요?")
+    assert policy.decide("Bash", {"command": "gog gmail drafts list --max 5 -j"}).action == "auto"

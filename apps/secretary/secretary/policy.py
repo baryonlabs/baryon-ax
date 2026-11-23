@@ -22,6 +22,7 @@ AUTO_TOOLS = {
 AUTO_BASH_PREFIXES = (
     # Google mail and calendar through gogcli (`gog`), read-only commands only
     "gog gmail search ", "gog gmail get ", "gog gmail thread get ", "gog gmail url ", "gog gmail labels list",
+    "gog gmail drafts list", "gog gmail drafts get ",
     "gog calendar events", "gog calendar event ", "gog calendar calendars",
     "gog calendar freebusy", "gog calendar conflicts", "gog calendar search ", "gog calendar time",
     "gh pr list", "gh pr view", "gh pr checks", "gh pr status", "gh pr diff", "gh run list", "gh run view",
@@ -42,6 +43,7 @@ AUTO_MCP_SUFFIXES = (
     "__slack__search_messages", "__slack__read_channel", "__slack__list_conversations",  # reading Slack
     "__memory__remember", "__memory__list_memories", "__memory__forget",  # the secretary's own notes about its owner (profile.py)
     "__screen__show",  # a card on the owner's own screen
+    "__mail__save_draft", "__mail__list_drafts",  # a draft in the owner's own Gmail; nothing is sent (mail_tools.py)
     "__phone__notify_phone", "__phone__list_reminders", "__phone__cancel_reminder",  # ringing only the owner's own phone (notify.py)
     # Baryon AX's own MCP server (POST /mcp): reading company knowledge. Saving or publishing an answer
     # (record_answer, publish_answer) changes the knowledge base, so it still needs a spoken yes.
@@ -195,6 +197,8 @@ def confirmation_prompt(tool: str, tool_input: dict) -> str:
         return f"이 답을 지식 초안으로 저장할까요? {_short(tool_input.get('question'), 40)}"
     if name == "publish_answer":
         return "이 답을 사내 지식으로 게시할까요? 게시하면 다른 사람 질문의 근거가 돼요."
+    if name == "send_draft":
+        return f"메일을 보낼까요? 받는 사람 {_short(tool_input.get('to'), 50)}, 제목 {_short(tool_input.get('subject'), 40)}"
     if name in {"create_draft", "update_draft"}:
         return "메일 초안을 저장할까요?"
     if name in {"create_event", "update_event"}:
@@ -204,7 +208,8 @@ def confirmation_prompt(tool: str, tool_input: dict) -> str:
     if tool == "Bash" and re.search(r"\bgog\s+calendar\s+(create|add|new|update|edit|set|propose-time|respond|rsvp|reply)\b",
                                     str(tool_input.get("command", ""))):
         return _gog_calendar_prompt(str(tool_input.get("command", "")))
-    if tool == "Bash" and re.search(r"\bgog\s+gmail\s+send\b", str(tool_input.get("command", ""))):
+    if tool == "Bash" and re.search(r"\bgog\s+gmail\s+(?:send|reply|reply-all|replyall|forward|fwd|drafts\s+send)\b",
+                                    str(tool_input.get("command", ""))):
         return _gog_send_prompt(str(tool_input.get("command", "")))
     if tool == "Bash":
         command = re.sub(r"^\s*cd\s+\S+\s*(?:&&|;)\s*", "", str(tool_input.get("command", "")))
