@@ -272,7 +272,7 @@ def test_kordoc_reads_office_files_after_docling() -> None:
     server, url = start_server(lambda method, path: (200, "application/json", json.dumps(BLOCK_RESPONSE).encode()))
     try:
         register_default_adapters(env={"KORDOC_URL": url, "PARSER_TIMEOUT_SECONDS": "5"})
-        document = REGISTRY.parse(docx_bytes(), "감리보고서.docx", ACL, "mem://report.docx")
+        document = REGISTRY.parse(docx_bytes(), "점검보고서.docx", ACL, "mem://report.docx")
         assert document.parser == "kordoc"
         assert [spec.name for spec in REGISTRY.candidates("a.pdf", "application/pdf")] == ["kordoc-office"]
 
