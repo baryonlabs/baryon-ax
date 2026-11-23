@@ -1,0 +1,31 @@
+name: baryon-ax-bots
+
+# Chat bots as always-on containers. They restart on failure and come back with Docker.
+#   cp examples/slack-bot/.env.example examples/slack-bot/.env   # tokens, organization, roles
+#   docker compose -f docker-compose.bots.yml up -d --build
+#
+# The bot reaches the API at SLACK_BOT_API_URL. The default is the API on the Docker host
+# (uvicorn on port 8000). When the API runs in docker-compose.yml, attach this file to that
+# project instead (`docker compose -f docker-compose.yml -f docker-compose.bots.yml up -d`)
+# and set SLACK_BOT_API_URL=http://api:8000.
+services:
+  slack-bot:
+    build: examples/slack-bot
+    env_file:
+      - ${SLACK_BOT_ENV_FILE:-examples/slack-bot/.env}
+    environment:
+      BARYON_API_URL: ${SLACK_BOT_API_URL:-http://host.docker.internal:8000}
+      PROACTIVE_STATE_PATH: /data/proactive_state.json
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - slack-bot-data:/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  slack-bot-data:

@@ -96,6 +96,23 @@ python baryon_slack_bot.py
 검색 품질은 API 쪽 설정을 그대로 따릅니다. 한국어 문서라면 `RETRIEVAL_MODE=hybrid`,
 `EMBEDDING_MODEL=intfloat/multilingual-e5-large`(`EMBEDDING_DIMENSION=1024`)를 권장합니다.
 
+### 상시 실행 (Docker)
+
+봇을 컨테이너로 띄우면 죽어도 다시 뜨고, Docker가 켜질 때 함께 올라옵니다(`restart: unless-stopped`).
+Socket Mode라 열어 둘 포트는 없습니다.
+
+```bash
+cp examples/slack-bot/.env.example examples/slack-bot/.env   # 저장소 루트에서, 토큰 입력
+docker compose -f docker-compose.bots.yml up -d --build
+docker compose -f docker-compose.bots.yml logs -f slack-bot
+```
+
+- API 주소는 `SLACK_BOT_API_URL`(기본 `http://host.docker.internal:8000`, 같은 PC에서 띄운 API)이 `.env`의
+  `BARYON_API_URL`보다 우선합니다. API도 `docker-compose.yml`로 띄웠다면 두 파일을 함께 쓰고
+  `SLACK_BOT_API_URL=http://api:8000`으로 둡니다.
+- 먼저 묻기 모드의 상태 파일은 `slack-bot-data` 볼륨(`/data`)에 남아 컨테이너를 다시 만들어도 이어집니다.
+- 다른 `.env`를 쓰려면 `SLACK_BOT_ENV_FILE=경로`. 같은 토큰으로 봇을 두 개 띄우지 마세요(먼저 묻기 글이 두 번 올라갑니다).
+
 ## 3. 설정
 
 | 변수 | 기본값 | 설명 |
