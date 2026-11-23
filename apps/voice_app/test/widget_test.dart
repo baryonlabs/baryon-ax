@@ -24,6 +24,70 @@ void main() {
           if (call.method == 'secretary') {
             final request =
                 jsonDecode(call.arguments['request'] as String) as Map;
+            final goal = {
+              'id': 'a1b2c3',
+              'number': 26,
+              'title': '추가 실험: 외부 참여자 파일럿',
+              'status': 'needs_input',
+              'step': '설문 초안 작성',
+              'question': '참여자는 몇 명으로 할까요?',
+              'updated': 0,
+            };
+            if (request['op'] == 'board.get') {
+              return jsonEncode({
+                'id': 1,
+                'ok': true,
+                'data': {
+                  'in_progress': [
+                    goal,
+                    {
+                      'id': 'b',
+                      'number': 15,
+                      'title': '논문 점수 상한 돌파',
+                      'status': 'running',
+                      'step': '명령: 테스트 실행',
+                    },
+                  ],
+                  'closed': [
+                    for (var n = 20; n < 28; n++)
+                      {
+                        'id': 'c$n',
+                        'number': n + 10,
+                        'title': '끝난 일 $n',
+                        'status': n == 21 ? 'failed' : 'done',
+                      },
+                  ],
+                  'reminders': [
+                    {
+                      'id': 'r1',
+                      'title': '회의 알림',
+                      'alarm': false,
+                      'at': 4102444800,
+                    },
+                  ],
+                  'waiting': [goal],
+                },
+              });
+            }
+            if (request['op'] == 'goal.get') {
+              return jsonEncode({
+                'id': 1,
+                'ok': true,
+                'data': {
+                  ...goal,
+                  'goal': '외부 참여자로 파일럿을 돌린다',
+                  'done_when': '결과 표',
+                  'steps': ['계획', '설문 초안 작성'],
+                },
+              });
+            }
+            if (request['op'] == 'goal.answer') {
+              return jsonEncode({
+                'id': 1,
+                'ok': true,
+                'data': {'ok': true},
+              });
+            }
             final data = switch (request['op']) {
               'memory.add' => {
                 'id': 'b1',
@@ -98,7 +162,7 @@ void main() {
   Iterable<String> methods() => calls.map((call) => call.method);
 
   Future<void> open(WidgetTester tester) async {
-    await tester.pumpWidget(const BaryonVoiceApp());
+    await tester.pumpWidget(const BaryonVoiceApp(startInChat: true));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
   }
@@ -501,5 +565,54 @@ void main() {
     await tester.tap(find.byKey(const Key('transcript')));
     await tester.pumpAndSettle();
     expect(find.text('[00:00] 다음 주 화요일에 출시합니다'), findsOneWidget);
+  });
+
+  testWidgets('the app opens on numbered tasks, like a task list', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const BaryonVoiceApp());
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('board')), findsOneWidget);
+    expect(find.text('#26 답을 기다려요'), findsOneWidget); // the headline
+    expect(find.byKey(const Key('goal-26')), findsOneWidget);
+    expect(find.byKey(const Key('goal-15')), findsOneWidget);
+    expect(find.text('명령: 테스트 실행'), findsOneWidget); // what #15 is doing now
+    expect(find.text('3개 더 보기'), findsOneWidget); // 8 closed, 5 shown
+    await tester.tap(find.byKey(const Key('section-closed'))); // collapse
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('goal-30')), findsNothing);
+
+    // A goal's page: its question, answered from the phone.
+    await tester.tap(find.byKey(const Key('goal-26')));
+    await tester.pumpAndSettle();
+    expect(find.text('참여자는 몇 명으로 할까요?'), findsOneWidget);
+    expect(find.text('설문 초안 작성'), findsWidgets);
+    await tester.enterText(find.byKey(const Key('goal-answer')), '12명');
+    await tester.tap(find.byKey(const Key('send-answer')));
+    await tester.pumpAndSettle();
+    final requests = [
+      for (final call in calls.where((call) => call.method == 'secretary'))
+        jsonDecode(call.arguments['request'] as String),
+    ];
+    expect(
+      requests,
+      anyElement(
+        equals({'op': 'goal.answer', 'target': 'a1b2c3', 'text': '12명'}),
+      ),
+    );
+    expect(find.textContaining('전달했어요'), findsOneWidget);
+
+    // Ask the secretary about it: the conversation tab opens and the request goes out.
+    await tester.ensureVisible(find.byKey(const Key('ask-about-goal')));
+    await tester.tap(find.byKey(const Key('ask-about-goal')));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(
+        const Duration(milliseconds: 100),
+      ); // the reply spinner never settles
+    }
+    expect(calls.lastWhere((call) => call.method == 'text').arguments, {
+      'text': '26번 작업 어떻게 됐어?',
+    });
+    expect(find.text('26번 작업 어떻게 됐어?'), findsOneWidget);
   });
 }
