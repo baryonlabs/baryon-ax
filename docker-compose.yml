@@ -2,7 +2,12 @@ name: baryon-ax
 
 services:
   api:
-    build: ./apps/api
+    build:
+      context: ./apps/api
+      args:
+        # Bake the multilingual embedding model into the image so search works without internet.
+        PRELOAD_EMBEDDINGS: ${PRELOAD_EMBEDDINGS:-true}
+        EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
     env_file: .env
     environment:
       DOCUMENT_STORE: /data/documents
@@ -10,12 +15,19 @@ services:
       MODEL_NAME: ${MODEL_NAME:-qwen2.5:7b}
       MODEL_BASE_URL: ${MODEL_BASE_URL_DOCKER:-http://host.docker.internal:11435/v1}
       MODEL_API_KEY: ${MODEL_API_KEY:-ollama}
-      QDRANT_URL: ""
+      # Retrieval: Qdrant vectors + lexical, fused (docs/retrieval.md). RETRIEVAL_MODE=lexical rolls back
+      # without a rebuild; QDRANT_URL_DOCKER="" turns the vector index off entirely.
+      QDRANT_URL: ${QDRANT_URL_DOCKER-http://qdrant:6333}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-baryon_documents}
+      RETRIEVAL_MODE: ${RETRIEVAL_MODE:-hybrid}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-384}
       DATABASE_URL: ""
       REDIS_URL: ""
       MEM0_ENABLED: "false"
       LANGFUSE_ENABLED: "false"
-      QDRANT_REINDEX_ON_START: "false"
+      # auto: on the first start against an empty collection, index the stored documents in the background.
+      QDRANT_REINDEX_ON_START: ${QDRANT_REINDEX_ON_START:-auto}
       SYSTEM_METRICS_ENABLED: ${SYSTEM_METRICS_ENABLED:-true}
       DOCKER_PROJECT: ${DOCKER_PROJECT:-baryon-ax}
       HOST_PROC: /host/proc
@@ -62,7 +74,7 @@ services:
       api:
         condition: service_healthy
 
-  # Optional integration placeholders. The Basic Core does not use these yet.
+  # Optional integration services (PostgreSQL audit, Redis rate limits) used by docker-compose.full.yml.
   # Start them with: docker compose --profile deps up -d
   postgres:
     profiles: ["deps"]
@@ -87,16 +99,20 @@ services:
     ports:
       - "${BIND_HOST:-0.0.0.0}:${REDIS_PORT:-6379}:6379"
 
+  # Vector index for document retrieval. Part of the default stack; it holds derived data only
+  # (rebuild it any time with `docker compose exec api python -m baryon.reindex --recreate`).
   qdrant:
-    profiles: ["deps"]
     image: qdrant/qdrant:v1.12.5
+    restart: unless-stopped
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
     ports:
-      - "${BIND_HOST:-0.0.0.0}:${QDRANT_HTTP_PORT:-6333}:6333"
-      - "${BIND_HOST:-0.0.0.0}:${QDRANT_GRPC_PORT:-6334}:6334"
+      # Loopback only by default: Qdrant has no authentication, and the API reaches it on the compose network.
+      - "${QDRANT_BIND_HOST:-127.0.0.1}:${QDRANT_HTTP_PORT:-6333}:6333"
     volumes:
       - qdrant:/qdrant/storage
 

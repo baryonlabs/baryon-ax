@@ -13,7 +13,7 @@
 | L3 실행 | LangGraph | API 내 정책·검색 오케스트레이션 | — |
 | L3 실행 | Guardrails | API 내 `PolicyEngine` (NeMo/Guardrails AI는 선택) | — |
 | L3 관측 | Langfuse | 기존 Langfuse v2 인스턴스 + SDK | `3000` |
-| L2 지식 | Qdrant | 벡터 검색 (FastEmbed 다국어 임베딩) | `6333`, `6334` |
+| L2 지식 | Qdrant | 벡터 + 어휘 하이브리드 검색 (FastEmbed 다국어 임베딩, [retrieval.md](retrieval.md)). 기본 Compose에 포함 | `6333` (루프백) |
 | L2 지식 | LlamaIndex | 문장 기반 청킹 | — |
 | L2 세션 | Redis | 분당 요청 제한 (fixed window) | `6379` |
 | L2 세션 | Mem0 | 사용자 메모리 (Qdrant + FastEmbed + Ollama) | — |
@@ -137,7 +137,7 @@ OLLAMA_HOST_URL=http://host.docker.internal:11435 \
 - Langfuse: `http://localhost:3000`
 - Postgres: `localhost:5433`
 - Redis: `localhost:6379`
-- Qdrant: `localhost:6333` (대시보드 `:6333/dashboard`)
+- Qdrant: `localhost:6333` (대시보드 `:6333/dashboard`). 인증이 없어 기본은 `127.0.0.1`에만 엽니다. 다른 주소로 열려면 `QDRANT_BIND_HOST`를 바꿉니다. gRPC 포트(6334)는 API가 쓰지 않아 열지 않습니다
 
 종료:
 

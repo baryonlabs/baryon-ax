@@ -35,12 +35,49 @@ def _store(tmp_path):
     return store, vector, principal, lexical_doc, semantic_doc
 
 
-def test_default_mode_returns_vector_hits_only(tmp_path, monkeypatch) -> None:
-    monkeypatch.delenv("RETRIEVAL_MODE", raising=False)
+def test_vector_mode_returns_vector_hits_only(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("RETRIEVAL_MODE", "vector")
     store, vector, principal, _, semantic_doc = _store(tmp_path)
     results = store.search(principal, "연차휴가", limit=4)
     assert [item["document_id"] for item in results] == [semantic_doc.id]
     assert vector.requested_limit == 4
+
+
+def test_default_mode_is_hybrid(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("RETRIEVAL_MODE", raising=False)
+    store, vector, principal, lexical_doc, semantic_doc = _store(tmp_path)
+    ids = {item["document_id"] for item in store.search(principal, "연차휴가", limit=4)}
+    assert ids == {lexical_doc.id, semantic_doc.id}
+
+
+def test_lexical_mode_never_calls_the_vector_index(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("RETRIEVAL_MODE", "lexical")
+    store, vector, principal, lexical_doc, _ = _store(tmp_path)
+    results = store.search(principal, "연차휴가", limit=4)
+    assert [item["document_id"] for item in results] == [lexical_doc.id]
+    assert vector.requested_limit == 0
+
+
+def test_explicit_mode_overrides_environment(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("RETRIEVAL_MODE", "lexical")
+    store, _, principal, _, semantic_doc = _store(tmp_path)
+    results = store.search(principal, "연차휴가", limit=4, mode="vector")
+    assert [item["document_id"] for item in results] == [semantic_doc.id]
+
+
+def test_unknown_mode_falls_back_to_hybrid(monkeypatch) -> None:
+    from baryon.main import retrieval_mode
+
+    monkeypatch.setenv("RETRIEVAL_MODE", "semantic-ish")
+    assert retrieval_mode() == "hybrid"
+
+
+def test_candidates_setting_widens_each_retriever(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("RETRIEVAL_MODE", "hybrid")
+    monkeypatch.setenv("RETRIEVAL_CANDIDATES", "12")
+    store, vector, principal, _, _ = _store(tmp_path)
+    store.search(principal, "연차휴가", limit=4)
+    assert vector.requested_limit == 12
 
 
 def test_hybrid_mode_adds_lexical_hits(tmp_path, monkeypatch) -> None:
@@ -59,6 +96,13 @@ def test_fuse_ranks_shared_hits_first_and_dedupes() -> None:
     fused = DocumentService._fuse([a, b], [c, b], limit=2)
     assert [item["document_id"] for item in fused] == ["b", "a"]
     assert len(DocumentService._fuse([a, b], [b, c], limit=10)) == 3
+
+
+def test_fuse_weights_favour_one_retriever() -> None:
+    a = {"document_id": "a", "chunk": 1, "title": "a"}
+    b = {"document_id": "b", "chunk": 1, "title": "b"}
+    assert DocumentService._fuse([a], [b], limit=2, weights=(1.0, 2.0))[0]["document_id"] == "b"
+    assert DocumentService._fuse([a], [b], limit=2, weights=(2.0, 1.0))[0]["document_id"] == "a"
 
 
 def test_vector_index_rejects_dimension_mismatch(monkeypatch) -> None:
