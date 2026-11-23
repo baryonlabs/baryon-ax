@@ -103,6 +103,8 @@ def test_sync_uploads_changes_only_and_removes_deleted(tmp_path: Path) -> None:
     assert not any("node_modules" in t for t in titles)
     code_map = next(payload.decode() for title, payload, _ in up.docs.values() if "코드지도 server" in title)
     assert "GET /api/orders/{id}" in code_map and "OrderController" in code_map
+    file_line = next(line for line in code_map.splitlines() if "`OrderController.java`" in line)
+    assert "`GET /api/orders/{id}`" in file_line  # the endpoint also sits next to its file
     history = next(payload.decode() for title, payload, _ in up.docs.values() if "최근 변경 이력" in title)
     assert "first" in history
     assert all("repo:shop" in tags for _, _, tags in up.docs.values())

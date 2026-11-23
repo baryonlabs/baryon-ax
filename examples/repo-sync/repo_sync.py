@@ -145,7 +145,9 @@ class ModuleMap:
             for path in paths:
                 info = self.files[path]
                 detail = ", ".join(info["symbols"][:15]) or "-"
-                lines.append(f"- `{PurePosixPath(path).name}` ({info['lines']}줄): {detail}")
+                # Endpoints also sit next to their file: a retrieved chunk of this folder then answers "which API?"
+                routes = f" — 엔드포인트: {', '.join(f'`{e}`' for e in info['endpoints'][:12])}" if info["endpoints"] else ""
+                lines.append(f"- `{PurePosixPath(path).name}` ({info['lines']}줄): {detail}{routes}")
             sections.append("\n".join(lines) + "\n")
         docs: list[tuple[str, str]] = []
         current = "\n".join(header)
