@@ -20,6 +20,7 @@ oauth_config:
       - groups:history      # 같은 기능, 비공개 채널
       - im:history          # 봇과의 1:1 DM 질문 (멘션 없이)
       - files:read          # "문서로 추가": 스레드에 첨부된 파일 내려받기
+      - files:write         # "문서로 추가": 추가한 문서 목록 엑셀을 스레드에 첨부
 settings:
   event_subscriptions:
     bot_events:

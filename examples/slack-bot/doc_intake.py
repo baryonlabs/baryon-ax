@@ -79,6 +79,7 @@ class Added:
     title: str
     chunks: int = 0
     parser: str = ""
+    reused: bool = False  # registered earlier from the same Slack file, not uploaded again
 
 
 @dataclass
@@ -129,12 +130,12 @@ class IntakeLedger:
         return cls(path)
 
     def get(self, file_id: str) -> list[Added]:
-        return [Added(**item) for item in self.items.get(file_id, [])]
+        return [Added(**{**item, "reused": True}) for item in self.items.get(file_id, [])]
 
     def put(self, file_id: str, added: list[Added]) -> None:
         if not file_id or not added:
             return
-        self.items[file_id] = [vars(item) for item in added]
+        self.items[file_id] = [{k: v for k, v in vars(item).items() if k != "reused"} for item in added]
         if self.path:
             try:
                 os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)

@@ -37,6 +37,7 @@ class FakeApi:
     def __init__(self) -> None:
         self.uploads: list[dict] = []
         self.chats: list[dict] = []
+        self.summaries: list[dict] = []  # one-line summary calls for the attached sheet
 
     def client(self) -> httpx.Client:
         def handler(request: httpx.Request) -> httpx.Response:
@@ -51,7 +52,12 @@ class FakeApi:
             if path.startswith("/v1/documents/doc"):
                 return httpx.Response(200, json={"content": "감리 지적사항: 요구사항 추적표 누락 " * 50})
             if path == "/v1/chat/completions":
-                self.chats.append(json.loads(request.content))
+                body = json.loads(request.content)
+                if body["messages"][0]["content"].startswith("아래 문서가 무엇에 관한"):
+                    self.summaries.append(body)
+                    title = body["messages"][0]["content"].split("문서 이름: ", 1)[1].split("\n", 1)[0]
+                    return httpx.Response(200, json={"id": "s", "choices": [{"message": {"content": f"- {title} 요약 한 줄"}}]})
+                self.chats.append(body)
                 return httpx.Response(200, json={"id": "trace-9", "choices": [{"message": {"content": "**지적사항 1건**: 추적표 누락"}}]})
             return httpx.Response(404)
         return httpx.Client(base_url="http://api.test", transport=httpx.MockTransport(handler))
@@ -68,10 +74,17 @@ def slack_files(files: dict[str, bytes]) -> httpx.Client:
 
 
 class FakeWeb:
-    def __init__(self, replies: list[dict] | None = None, history: list[dict] | None = None) -> None:
+    def __init__(self, replies: list[dict] | None = None, history: list[dict] | None = None, upload_error: str = "") -> None:
         self.calls: list[tuple[str, dict]] = []
         self.replies = replies or []
         self.history = history or []
+        self.upload_error = upload_error
+
+    def files_upload_v2(self, **kwargs):
+        self.calls.append(("file", kwargs))
+        if self.upload_error:
+            raise RuntimeError(f"The request to the Slack API failed. (error: {self.upload_error})")
+        return {"ok": True}
 
     def chat_postMessage(self, **kwargs):
         self.calls.append(("post", kwargs))
@@ -236,6 +249,68 @@ def test_thread_without_files_answers_normally() -> None:
     web = FakeWeb(replies=[{"user": "U1", "ts": "100.0", "text": "주간 보고 초안"}, ask])
     bot(api).answer(ask, web)
     assert not api.uploads and api.chats and api.chats[0].get("use_retrieval", True) is True
+
+
+def read_sheet(content: bytes) -> dict[str, list[tuple]]:
+    from openpyxl import load_workbook
+
+    book = load_workbook(io.BytesIO(content))
+    return {name: [tuple(row) for row in book[name].iter_rows(values_only=True)] for name in book.sheetnames}
+
+
+def test_added_documents_are_attached_as_a_sheet() -> None:
+    api = FakeApi()
+    files = {"report.docx": b"PK-docx", "all.zip": korean_zip(), "tool.exe": b"MZ"}
+    parent = {"user": "U1", "ts": "100.0", "files": [
+        {"id": "F1", "name": "report.docx", "size": 7, "url_private_download": "https://files.slack.test/report.docx"},
+        {"id": "F2", "name": "all.zip", "size": 900, "url_private_download": "https://files.slack.test/all.zip"},
+        {"id": "F3", "name": "tool.exe", "size": 2, "url_private_download": "https://files.slack.test/tool.exe"},
+    ]}
+    request = {"channel": "C1", "user": "U9", "ts": "101.0", "thread_ts": "100.0", "text": "<@UBOT> 문서로 추가해줘"}
+    web = FakeWeb(replies=[parent, request])
+    bot(api, files).answer(request, web)
+
+    upload = web.named("file")[0]
+    assert upload["channel"] == "C1" and upload["thread_ts"] == "100.0"
+    assert upload["filename"].startswith("추가된_문서_") and upload["filename"].endswith(".xlsx")
+    assert "엑셀로 첨부" in upload["initial_comment"]
+    sheet = read_sheet(upload["content"])
+    rows = sheet["추가된 문서"]
+    assert rows[0] == ("번호", "파일", "문서 제목", "한 줄 내용", "조각 수", "파서", "상태", "문서 ID")
+    assert [(r[1], r[3], r[6]) for r in rows[1:]] == [
+        ("report.docx", "report.docx 요약 한 줄", "새로 등록"),
+        ("all.zip/산출물/설계서.md", "설계서.md 요약 한 줄", "새로 등록"),
+    ]
+    assert sheet["건너뛴 파일"][1:] == [(1, "all.zip/안쪽.zip", "압축 안의 압축 파일은 건너뜁니다"),
+                                     (2, "tool.exe", "지원하지 않는 형식입니다")]
+    assert all(s["use_retrieval"] is False for s in api.summaries) and len(api.summaries) == 2
+    assert not api.chats  # no analysis was asked for
+
+    # Asking again: nothing is uploaded twice, and the sheet marks the rows as registered earlier
+    again = FakeWeb(replies=[parent, {**request, "ts": "102.0"}])
+    responder = bot(api, files)
+    responder.intake.ledger.items = {"F1": [{"name": "report.docx", "document_id": "doc1", "title": "report.docx"}]}
+    responder.answer({**request, "ts": "102.0"}, again)
+    first = read_sheet(again.named("file")[0]["content"])["추가된 문서"][1]
+    assert first[6] == "이전에 등록됨"
+
+
+def test_sheet_without_files_write_says_what_to_add() -> None:
+    api = FakeApi()
+    replies = [{"user": "U1", "ts": "100.0", "text": "관리자 메뉴 초안\n1. 사용자 관리"},
+               {"user": "U1", "ts": "101.0", "text": "<@UBOT> 문서로 추가"}]
+    web = FakeWeb(replies=replies, upload_error="missing_scope")
+    bot(api).answer({**replies[-1], "channel": "C1", "thread_ts": "100.0"}, web)
+    assert any("files:write" in p["text"] for p in web.named("post"))
+    assert web.named("react+")[-1]["name"] == "white_check_mark"  # the documents were still added
+
+
+def test_one_line_falls_back_to_the_documents_first_line() -> None:
+    from intake_sheet import _clean, first_line
+
+    # short headings, "작성자:" metadata and table rules are skipped
+    assert first_line("# 제목\n\n> 작성자: 홍길동\n|---|---|\n감리 지적사항 3건과 조치 계획을 정리한 보고서") == "감리 지적사항 3건과 조치 계획을 정리한 보고서"
+    assert _clean("<think>음</think>\n한 줄 요약: **설계 단계** 감리 결과 보고서") == "설계 단계 감리 결과 보고서"
 
 
 def test_result_text_without_documents() -> None:

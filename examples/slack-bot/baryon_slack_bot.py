@@ -472,6 +472,8 @@ class Responder:
             summary += "\n\n" + FOREIGN_LINK_NOTE
         web.chat_update(channel=channel, ts=pending["ts"], text=summary,
                         blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": summary}}])
+        if result.added:
+            self._attach_sheet(web, event, result, user, thread_ts)
         if result.added and (analyze if analyze is not None else wants_analysis(question)):
             working = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=ANALYSIS_PENDING)
             try:
@@ -486,6 +488,22 @@ class Responder:
                 web.chat_update(channel=channel, ts=working["ts"], text=f"{ERROR_PREFIX} ({detail}). 문서는 등록되었으니 질문으로 다시 물어봐 주세요.")
         self._react(web, channel, event["ts"], "white_check_mark" if result.added else "x", add=True)
         self._react(web, channel, event["ts"], "eyes", add=False)
+
+    def _attach_sheet(self, web, event: dict, result, user: str, thread_ts: str) -> None:
+        """The added documents as an .xlsx in the thread: one row each, with a one-line summary."""
+        import intake_sheet
+
+        if not intake_sheet.sheet_enabled():
+            return
+        channel = event["channel"]
+        try:
+            summaries = intake_sheet.one_line_summaries(self.intake, result.added, user, f"slack:{channel}:{thread_ts}:sheet")
+            content = intake_sheet.build_sheet(result, summaries, requested_by=f"slack:{user}",
+                                               source=f"Slack {channel} 스레드 {thread_ts}")
+        except Exception:
+            logger.exception("could not build the added-documents sheet")
+            return
+        intake_sheet.post_sheet(web, channel, thread_ts, content, intake_sheet.sheet_filename(event.get("ts", "")))
 
     @staticmethod
     def _react(web, channel: str, ts: str, name: str, add: bool) -> None:
