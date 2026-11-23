@@ -7,6 +7,9 @@ features:
   bot_user:
     display_name: baryon
     always_online: true
+  app_home:
+    messages_tab_enabled: true              # DM 창에서 봇에게 메시지 보내기
+    messages_tab_read_only_enabled: false
 oauth_config:
   scopes:
     bot:
@@ -15,12 +18,16 @@ oauth_config:
       - reactions:write     # 👀 / ✅ 반응 (선택)
       - channels:history    # 스레드 맥락 · 구독 스레드 후속 질문 (공개 채널)
       - groups:history      # 같은 기능, 비공개 채널
+      - im:history          # 봇과의 1:1 DM 질문 (멘션 없이)
+      - files:read          # "문서로 추가": 스레드에 첨부된 파일 내려받기
+      - files:write         # "문서로 추가": 추가한 문서 목록 엑셀을 스레드에 첨부
 settings:
   event_subscriptions:
     bot_events:
       - app_mention
       - message.channels
       - message.groups
+      - message.im
   interactivity:
     is_enabled: true    # 버튼(문서로 등록·해당 없음). Socket Mode라 Request URL 불필요
   org_deploy_enabled: false
