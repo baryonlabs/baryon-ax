@@ -1,0 +1,311 @@
+"""Keep a git repository's knowledge in baryon-ax: its docs, a code map and the merge history.
+
+    python repo_sync.py --repo ../my-service --ref origin/main --name my-service \
+        --api http://127.0.0.1:8000 --state .data/my-service.json
+
+Questions like "what is already built?" or "where is the export API?" need the code's current state, not only
+the design documents. Indexing every source file adds noise, so this indexes:
+
+* **docs**: Markdown/text files matching ``--include`` (default: ``**/*.md``, ``**/*.txt``), as they are;
+* **code map**: one document per module (top-level folder, or ``--module-depth``) listing its folders and files
+  with the classes, functions and HTTP endpoints found in them (Java/Kotlin, TypeScript/JavaScript, Python);
+* **history**: the most recent first-parent commits of ``--ref`` (merge requests and their titles).
+
+Files are read from the git ref with ``git show`` (no checkout, so it can run beside your working tree). A state
+file remembers what was uploaded: only changed files are uploaded again, and documents for deleted files are
+removed. The uploads are owned by the sync's own identity (``--user``) and readable by ``--allowed-roles``.
+"""
+
+from __future__ import annotations
+
+import argparse
+import fnmatch
+import hashlib
+import json
+import logging
+import os
+import re
+import subprocess
+import sys
+from collections import defaultdict
+from dataclasses import dataclass, field
+from pathlib import Path, PurePosixPath
+
+import httpx
+
+logger = logging.getLogger("repo_sync")
+
+DEFAULT_INCLUDE = ["**/*.md", "**/*.txt"]
+DEFAULT_EXCLUDE = ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**", "**/target/**", "**/vendor/**",
+                   "**/CHANGELOG*.md", "**/LICENSE*", "**/.scratch/**", "**/third_party/**"]
+CODE_EXT = {".java": "java", ".kt": "kotlin", ".ts": "ts", ".tsx": "ts", ".js": "js", ".jsx": "js", ".mjs": "js",
+            ".py": "python"}
+MAX_DOC_BYTES = 1_500_000
+MAX_MAP_CHARS = 120_000   # one code-map document; larger modules are split by sub-folder
+
+SYMBOL_RES = {
+    "java": [re.compile(r"^\s*(?:public|protected|private|abstract|final|static|sealed|\s)*\s*(class|interface|enum|record)\s+(\w+)", re.M)],
+    "kotlin": [re.compile(r"^\s*(?:data |sealed |abstract |open |private |internal )*(class|interface|object)\s+(\w+)", re.M)],
+    "ts": [re.compile(r"^\s*export\s+(?:default\s+)?(?:async\s+)?(function|class|interface|type|const|enum)\s+(\w+)", re.M)],
+    "js": [re.compile(r"^\s*export\s+(?:default\s+)?(?:async\s+)?(function|class|const)\s+(\w+)", re.M)],
+    "python": [re.compile(r"^(class|def|async def)\s+(\w+)", re.M)],
+}
+ENDPOINT_RES = [
+    # Spring: @GetMapping("/x"), @RequestMapping(value = "/x", method = ...)
+    re.compile(r"@(Get|Post|Put|Patch|Delete|Request)Mapping\s*\(\s*(?:value\s*=\s*|path\s*=\s*)?\{?\s*\"([^\"]*)\""),
+    # FastAPI / Flask: @app.get("/x"), @router.post("/x")
+    re.compile(r"@\w+\.(get|post|put|patch|delete|route)\(\s*[\"']([^\"']+)"),
+    # Express / Next-style: router.get('/x', ...)
+    re.compile(r"\b(?:app|router)\.(get|post|put|patch|delete)\(\s*[\"'`]([^\"'`]+)"),
+]
+CLASS_MAPPING_RE = re.compile(r"@RequestMapping\s*\(\s*(?:value\s*=\s*|path\s*=\s*)?\{?\s*\"([^\"]*)\"[^)]*\)\s*(?:@\w+(?:\([^)]*\))?\s*)*(?:public\s+)?(?:class|interface)", re.S)
+
+
+# --------------------------------------------------------------------------- git
+
+
+def git(repo: Path, *args: str) -> bytes:
+    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True).stdout
+
+
+def list_files(repo: Path, ref: str) -> dict[str, str]:
+    """path → blob sha at ``ref``."""
+    out = git(repo, "-c", "core.quotepath=false", "ls-tree", "-r", "-z", ref).decode("utf-8", "replace")
+    files: dict[str, str] = {}
+    for entry in out.split("\0"):
+        if not entry:
+            continue
+        meta, path = entry.split("\t", 1)
+        mode, kind, sha = meta.split()
+        if kind == "blob":
+            files[path] = sha
+    return files
+
+
+def read_blob(repo: Path, sha: str) -> bytes:
+    return git(repo, "cat-file", "blob", sha)
+
+
+def matches(path: str, patterns: list[str]) -> bool:
+    candidates = (path, "/" + path)
+    return any(fnmatch.fnmatch(c, p) or fnmatch.fnmatch(c, p.removeprefix("**/")) for p in patterns for c in candidates)
+
+
+# --------------------------------------------------------------------------- code map
+
+
+def symbols(language: str, text: str) -> list[str]:
+    found: list[str] = []
+    for pattern in SYMBOL_RES.get(language, []):
+        for kind, name in pattern.findall(text):
+            if not name.startswith("_"):
+                found.append(name if kind in ("class", "interface", "enum", "record", "object", "type") else f"{name}()")
+    return list(dict.fromkeys(found))[:40]
+
+
+def endpoints(text: str) -> list[str]:
+    prefix = ""
+    class_mapping = CLASS_MAPPING_RE.search(text)
+    if class_mapping:
+        prefix = class_mapping.group(1).rstrip("/")
+    found: list[str] = []
+    for pattern in ENDPOINT_RES:
+        for method, path in pattern.findall(text):
+            verb = method.upper().replace("REQUEST", "ANY").replace("ROUTE", "ANY")
+            full = path if path.startswith(prefix) else prefix + ("" if path.startswith("/") or not path else "/") + path
+            if class_mapping and method == "Request" and path == class_mapping.group(1):
+                continue  # the class-level mapping itself
+            found.append(f"{verb} {full or prefix or '/'}")
+    return list(dict.fromkeys(found))[:40]
+
+
+def module_of(path: str, depth: int) -> str:
+    parts = PurePosixPath(path).parts
+    return "/".join(parts[:depth]) if len(parts) > depth else "(root)"
+
+
+@dataclass
+class ModuleMap:
+    name: str
+    files: dict[str, dict] = field(default_factory=dict)  # path → {"symbols": [...], "endpoints": [...], "lines": n}
+
+    def render(self, repo_name: str, ref: str) -> list[tuple[str, str]]:
+        """[(key, markdown)]; split by sub-folder when the module is large."""
+        by_dir: dict[str, list[str]] = defaultdict(list)
+        for path in sorted(self.files):
+            by_dir[str(PurePosixPath(path).parent)].append(path)
+        endpoint_lines = [f"- `{e}` — {PurePosixPath(p).name}" for p, info in sorted(self.files.items()) for e in info["endpoints"]]
+        header = [f"# 코드 지도: {repo_name} / {self.name}", "",
+                  f"> 저장소 `{repo_name}` 의 `{ref}` 기준 자동 생성. 파일 {len(self.files)}개, 폴더 {len(by_dir)}개.", ""]
+        if endpoint_lines:
+            header += ["## HTTP 엔드포인트", "", *endpoint_lines[:300], ""]
+        sections: list[str] = []
+        for folder, paths in by_dir.items():
+            lines = [f"## {folder}", ""]
+            for path in paths:
+                info = self.files[path]
+                detail = ", ".join(info["symbols"][:15]) or "-"
+                lines.append(f"- `{PurePosixPath(path).name}` ({info['lines']}줄): {detail}")
+            sections.append("\n".join(lines) + "\n")
+        docs: list[tuple[str, str]] = []
+        current = "\n".join(header)
+        part = 1
+        for section in sections:
+            if len(current) + len(section) > MAX_MAP_CHARS and len(current) > len("\n".join(header)):
+                docs.append((f"{self.name}#{part}", current))
+                part += 1
+                current = "\n".join(header[:3]) + f"\n(계속 {part})\n\n"
+            current += section
+        docs.append((f"{self.name}#{part}" if part > 1 else self.name, current))
+        return docs
+
+
+def build_code_map(repo: Path, files: dict[str, str], depth: int, exclude: list[str],
+                   reader=read_blob) -> dict[str, ModuleMap]:
+    modules: dict[str, ModuleMap] = {}
+    for path, sha in files.items():
+        language = CODE_EXT.get(PurePosixPath(path).suffix.lower())
+        if not language or matches(path, exclude):
+            continue
+        text = reader(repo, sha).decode("utf-8", "replace")
+        module = modules.setdefault(module_of(path, depth), ModuleMap(module_of(path, depth)))
+        module.files[path] = {"symbols": symbols(language, text), "endpoints": endpoints(text), "lines": text.count("\n") + 1}
+    return modules
+
+
+def build_history(repo: Path, ref: str, limit: int) -> str:
+    """Recent first-parent history. GitLab merge commits carry the MR title in the body."""
+    raw = git(repo, "log", ref, "--first-parent", f"-n{limit}", "--date=short", "--format=%h%x1f%ad%x1f%s%x1f%b%x1e")
+    lines = []
+    for record in raw.decode("utf-8", "replace").split("\x1e"):
+        if not record.strip():
+            continue
+        short, date, subject, body = (record.strip("\n").split("\x1f") + ["", "", "", ""])[:4]
+        title = subject
+        mr = re.search(r"merge request \S*?!(\d+)", body)
+        if subject.startswith("Merge branch"):
+            body_lines = [line.strip() for line in body.splitlines() if line.strip() and not line.startswith("See merge request")]
+            title = body_lines[0] if body_lines else subject
+        lines.append(f"- {date} `{short}`{f' !{mr.group(1)}' if mr else ''} {title}")
+    return "\n".join([f"# 최근 변경 이력 ({ref})", "", "> 첫 번째 부모 기준 최근 커밋·머지 리퀘스트. 자동 생성.", "", *lines, ""])
+
+
+# --------------------------------------------------------------------------- baryon-ax
+
+
+class Uploader:
+    def __init__(self, api: str, organization: str, user: str, roles: str, allowed_roles: str, token: str = "",
+                 category: str = "code", http: httpx.Client | None = None) -> None:
+        self.http = http or httpx.Client(base_url=api.rstrip("/"), timeout=600)
+        self.headers = {"Authorization": f"Bearer {token}"} if token else {
+            "X-User-Id": user, "X-Organization-Id": organization, "X-Roles": roles}
+        self.allowed_roles = allowed_roles
+        self.category = category
+
+    def upload(self, title: str, payload: bytes, tags: list[str]) -> str:
+        response = self.http.post("/v1/documents", headers=self.headers, files={"file": (title, payload)},
+                                  data={"allowed_roles": self.allowed_roles, "category": self.category, "tags": ",".join(tags)})
+        if response.status_code >= 400:
+            raise RuntimeError(f"{response.status_code} {response.text[:200]}")
+        return response.json()["id"]
+
+    def delete(self, document_id: str) -> None:
+        response = self.http.delete(f"/v1/documents/{document_id}", headers=self.headers)
+        if response.status_code not in (200, 204, 404):
+            raise RuntimeError(f"delete {document_id}: {response.status_code} {response.text[:200]}")
+
+
+def title_for(repo_name: str, path: str, suffix: str = "") -> str:
+    """Upload filename (= document title). Slashes would be read as folders, so they become " › "."""
+    name = f"{repo_name} · {path.replace('/', ' › ')}"
+    return name if not suffix or name.endswith(suffix) else name + suffix
+
+
+def sync(args: argparse.Namespace, uploader: Uploader | None = None) -> dict:
+    repo = Path(args.repo).resolve()
+    name = args.name or repo.name
+    if args.fetch:
+        subprocess.run(["git", "-C", str(repo), "fetch", "--quiet"], check=False)
+    files = list_files(repo, args.ref)
+    state_path = Path(args.state)
+    state: dict[str, dict] = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+    uploader = uploader or Uploader(args.api, args.organization, args.user, args.roles, args.allowed_roles,
+                                    os.getenv("BARYON_API_TOKEN", ""), args.category)
+    wanted: dict[str, tuple[str, bytes | None, str, str]] = {}  # key → (version, payload | None, title, kind)
+
+    if not args.no_docs:
+        for path, sha in files.items():
+            if matches(path, args.include) and not matches(path, args.exclude):
+                wanted[f"doc:{path}"] = (sha, None, title_for(name, path), "doc")
+    if not args.no_code_map:
+        for module in build_code_map(repo, files, args.module_depth, args.exclude).values():
+            for key, markdown in module.render(name, args.ref):
+                body = markdown.encode("utf-8")
+                wanted[f"map:{key}"] = (hashlib.sha256(body).hexdigest(), body,
+                                        title_for(name, f"코드지도 {key.replace('#', ' ')}", ".md"), "code-map")
+    if args.history:
+        body = build_history(repo, args.ref, args.history).encode("utf-8")
+        wanted["history"] = (hashlib.sha256(body).hexdigest(), body, title_for(name, "최근 변경 이력", ".md"), "history")
+
+    report = {"uploaded": 0, "unchanged": 0, "deleted": 0, "failed": []}
+    for key, (version, payload, title, kind) in sorted(wanted.items()):
+        known = state.get(key)
+        if known and known.get("version") == version:
+            report["unchanged"] += 1
+            continue
+        if payload is None:
+            payload = read_blob(repo, version)
+        if len(payload) > MAX_DOC_BYTES or not payload.strip():
+            continue
+        try:
+            document_id = uploader.upload(title, payload, [f"repo:{name}", f"kind:{kind}", f"ref:{args.ref}"])
+        except Exception as error:  # parse failure, API down: keep the old document, retry next run
+            report["failed"].append(f"{key}: {error}")
+            logger.warning("upload failed %s: %s", key, error)
+            continue
+        if known:
+            uploader.delete(known["id"])
+        state[key] = {"version": version, "id": document_id, "title": title}
+        report["uploaded"] += 1
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")  # resumable
+
+    for key in [k for k in state if k not in wanted]:
+        uploader.delete(state.pop(key)["id"])
+        report["deleted"] += 1
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
+    return report
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--repo", required=True, help="path to a git checkout (any branch; files come from --ref)")
+    parser.add_argument("--ref", default="origin/main")
+    parser.add_argument("--name", default="", help="name shown in titles and tags (default: folder name)")
+    parser.add_argument("--fetch", action="store_true", help="git fetch before reading --ref")
+    parser.add_argument("--include", nargs="*", default=DEFAULT_INCLUDE)
+    parser.add_argument("--exclude", nargs="*", default=DEFAULT_EXCLUDE)
+    parser.add_argument("--module-depth", type=int, default=1, help="folder depth that makes one code-map module")
+    parser.add_argument("--history", type=int, default=300, help="commits in the history document (0 = none)")
+    parser.add_argument("--no-docs", action="store_true")
+    parser.add_argument("--no-code-map", action="store_true")
+    parser.add_argument("--api", default=os.getenv("BARYON_API_URL", "http://127.0.0.1:8000"))
+    parser.add_argument("--organization", default=os.getenv("BARYON_ORGANIZATION_ID", "local-org"))
+    parser.add_argument("--user", default="repo-sync", help="owner of the uploaded documents (dev auth)")
+    parser.add_argument("--roles", default="admin", help="roles of the sync identity (dev auth)")
+    parser.add_argument("--allowed-roles", default="member,admin", help="who may read the documents")
+    parser.add_argument("--category", default="code")
+    parser.add_argument("--state", default=".data/repo-sync.json")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
+    report = sync(parse_args(argv))
+    print(json.dumps({**report, "failed": report["failed"][:20], "failed_count": len(report["failed"])}, ensure_ascii=False))
+    return 1 if report["failed"] else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
