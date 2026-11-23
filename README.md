@@ -294,6 +294,7 @@ curl -s http://localhost:8000/health             # 버전과 연결 상태 확�
 | 운영 구성 | + Qdrant, PostgreSQL, Redis, Langfuse, Mem0 | 8 vCPU · 16 GB | `-f docker-compose.full.yml --profile deps` |
 | + 인증 | Keycloak (OIDC) | — | `-f docker-compose.auth.yml` · [auth-oidc.md](docs/auth-oidc.md) |
 | + MCP 도구 | ContextForge 게이트웨이 | — | `-f docker-compose.mcp.yml` · [mcp-connectors.md](docs/mcp-connectors.md) |
+| + Slack 봇 (상시 실행) | Slack 봇 컨테이너(Socket Mode, 자동 재시작) | — | `-f docker-compose.bots.yml` · [slack-bot](examples/slack-bot#상시-실행-docker) |
 | + 음성 (받아쓰기 · 라이브 대화) | sherpa-onnx STT + Supertonic TTS (CPU) | — | `-f docker-compose.voice.yml` · [voice.md](docs/voice.md) |
 | + 음성 비서 | Claude Agent SDK (작업자 PC) + MCP · DureClaw | — | `apps/secretary` · [voice-secretary.md](docs/voice-secretary.md) |
 | + 전화 (차량 블루투스) | Asterisk + 전화 게이트웨이, 휴대폰 SIP 앱 | — | `-f docker-compose.phone.yml` · [phone.md](docs/phone.md) |
