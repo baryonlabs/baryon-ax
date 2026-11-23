@@ -37,6 +37,7 @@ def test_links_in_a_message() -> None:
     text = "https://www.gonggong.ai/ 이 사이트 이해해줘. 그리고 (https://a.example/b?c=1), https://www.gonggong.ai/"
     assert web.extract_urls(text) == ["https://www.gonggong.ai/", "https://a.example/b?c=1"]
     assert web.extract_urls("링크 없음") == []
+    assert web.extract_urls("<https://www.gonggong.ai/#aroom|gonggong.ai/#…> 이런 업체") == ["https://www.gonggong.ai/#aroom"]
 
 
 def test_html_becomes_markdown_without_scripts_or_menus() -> None:
