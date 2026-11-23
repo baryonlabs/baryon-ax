@@ -109,6 +109,26 @@ Tested: "이번 주 수요일 오후에 1시간 미팅 잡을 수 있는 시간 
 times offered (7.9 s). "수요일 오후 3시에 … 잡아줘" → "일정을 등록할까요? '…', 11월 25일 15:00부터 16:00까지"; after
 "아니" no event was created.
 
+### Mail drafts (`secretary/mail_tools.py`)
+
+"메일 초안으로 만들어 줘" puts a real draft in the owner's Gmail through gogcli, without a shell in between (a
+multi-line body or quotes in the text would otherwise break the command and force an unreadable confirmation).
+
+| Tool | What it does | Asks first? |
+| --- | --- | --- |
+| `save_draft` | create or change a draft; fields left empty keep their value, so "받는 사람만 넣어 줘" changes only that | no: nothing is sent |
+| `list_drafts` | newest drafts with recipient and subject | no |
+| `send_draft` | send a saved draft | yes: "메일을 보낼까요? 받는 사람 …, 제목 …"; the tool refuses if that recipient or subject differs from the draft |
+
+Replies and direct sends (`gog gmail reply`, `reply-all`, `forward`, `send`, `drafts send`) are read back the same way.
+Requirements: `gog` on the secretary's PATH, signed in with the gmail scope (`gog auth list`); the account is gog's
+default or `SECRETARY_GOG_ACCOUNT`. `SECRETARY_MAIL=off` removes the tools, `SECRETARY_MAIL_SEND=off` keeps drafts but
+never sends.
+
+Tested on a real account: "공공에이아이에 보낼 협력 제안 메일 초안을 만들어 줘, 받는 사람은 아직 몰라" → a draft appeared in
+Gmail Drafts without a question; "그 초안에 partner@example.com 넣고 보내 줘" → recipient added, then "메일을 보낼까요?
+받는 사람 partner@example.com, 제목 …"; after "아니" it stayed a draft.
+
 ## Confirmations
 
 Confirmations are enforced in code, not left to the model. Every tool call
