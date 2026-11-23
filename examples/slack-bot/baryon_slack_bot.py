@@ -30,6 +30,10 @@ logger = logging.getLogger("baryon.slack")
 
 MENTION_RE = re.compile(r"<@[UW][A-Z0-9]+(?:\|[^>]*)?>")
 SECTION_LIMIT = 2900  # Slack section text limit is 3000 characters
+MAX_ANSWER_SECTIONS = 12  # a message holds 50 blocks; sources and notes need a few
+TEXT_LIMIT = 3500  # fallback `text` of a message with blocks; Slack rejects long ones with msg_too_long
+ATTACHMENT_NOTE = (":paperclip: 첨부 파일은 읽지 않고 이미 등록된 문서에서 찾았습니다. 파일 내용으로 답하게 하려면 "
+                   "`문서로 추가하고 분석해줘`라고 보내 주세요.")
 SNIPPET_CHARS = 180
 # "> 작성자: …" style front matter (e.g. who answered and when) is provenance, not content worth quoting.
 METADATA_LINE_RE = re.compile(r"^\s*>\s*[^:\n]{1,20}:\s.*$", re.MULTILINE)
@@ -138,6 +142,22 @@ class BaryonClient:
             for item in response.json().get("data", [])
         }
 
+    def cited_snippets(self, query: str, citations: list[dict], slack_user: str) -> dict[tuple[str, int], str]:
+        """Quote text for exactly the cited chunks. A search on the last message misses them on follow-ups
+        ("다시 해봐"), so chunks the search did not return are read one by one."""
+        found = self.snippets(query, slack_user)
+        for item in citations:
+            key = (item.get("document_id", ""), int(item.get("chunk", 0)))
+            if not key[0] or key in found:
+                continue
+            try:
+                response = self.as_user("GET", f"/v1/documents/{key[0]}", slack_user, params={"chunk": key[1]})
+                response.raise_for_status()
+                found[key] = str((response.json().get("cited_chunk") or {}).get("content") or "")
+            except (httpx.HTTPError, ValueError):
+                logger.info("could not read cited chunk %s#%s", *key)
+        return found
+
 
 # --------------------------------------------------------------------------- formatting
 
@@ -202,8 +222,28 @@ def source_lines(citations: list[dict], snippets: dict[tuple[str, int], str], ma
     return lines
 
 
-def build_blocks(answer: Answer, snippets: dict[tuple[str, int], str], max_sources: int) -> list[dict]:
-    blocks: list[dict] = [{"type": "section", "text": {"type": "mrkdwn", "text": _clip(to_mrkdwn(answer.text), SECTION_LIMIT)}}]
+def answer_sections(mrkdwn: str, limit: int = SECTION_LIMIT, max_sections: int = MAX_ANSWER_SECTIONS) -> list[str]:
+    """Long answers become several sections (Slack caps one at 3000 characters), split at paragraph or line breaks."""
+    parts: list[str] = []
+    rest = mrkdwn.strip()
+    while rest and len(parts) < max_sections:
+        if len(rest) <= limit:
+            parts.append(rest)
+            rest = ""
+            break
+        cut = max(rest.rfind("\n\n", 0, limit), rest.rfind("\n", 0, limit))
+        cut = cut if cut > limit // 2 else limit
+        parts.append(rest[:cut].rstrip())
+        rest = rest[cut:].lstrip("\n")
+    if rest and parts:
+        parts[-1] = _clip(parts[-1] + "\n" + rest, limit)
+    return parts or [""]
+
+
+def build_blocks(answer: Answer, snippets: dict[tuple[str, int], str], max_sources: int, note: str = "") -> list[dict]:
+    blocks: list[dict] = [{"type": "section", "text": {"type": "mrkdwn", "text": part}} for part in answer_sections(to_mrkdwn(answer.text))]
+    if note:
+        blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": note}]})
     lines = source_lines(answer.citations, snippets, max_sources) if answer.answered else []
     blocks.append({"type": "divider"})
     if not answer.answered:
@@ -316,9 +356,11 @@ class Responder:
         pending = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=PENDING_TEXT)
         try:
             result = self.baryon.ask(messages, user, thread_id=f"slack:{channel}:{thread_ts}")
-            snippets = self.baryon.snippets(question, user) if self.config.show_snippets and result.citations and result.answered else {}
-            web.chat_update(channel=channel, ts=pending["ts"], text=result.text,
-                            blocks=build_blocks(result, snippets, self.config.max_sources))
+            snippets = (self.baryon.cited_snippets(question, result.citations[: self.config.max_sources * 2], user)
+                        if self.config.show_snippets and result.citations and result.answered else {})
+            note = ATTACHMENT_NOTE if event.get("files") else ""
+            web.chat_update(channel=channel, ts=pending["ts"], text=_clip(result.text, TEXT_LIMIT),
+                            blocks=build_blocks(result, snippets, self.config.max_sources, note=note))
             self._react(web, channel, event["ts"], "white_check_mark", add=True)
         except Exception as error:
             logger.exception("baryon-ax answer failed")

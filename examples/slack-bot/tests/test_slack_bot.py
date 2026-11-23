@@ -95,6 +95,49 @@ def test_direct_messages_are_answered_without_mention() -> None:
     assert not bot.is_direct_message(dm)
 
 
+def long_answer_api(requests: list[httpx.Request], answer: str) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/v1/chat/completions":
+            return httpx.Response(200, json={"id": "trace-2", "choices": [{"message": {"content": answer}}],
+                                             "citations": [{"document_id": "rfp", "title": "rfp.md", "chunk": 46}]})
+        if request.url.path == "/v1/documents/rfp":
+            assert request.url.params["chunk"] == "46"
+            return httpx.Response(200, json={"cited_chunk": {"number": 46, "content": "REQ-007 분석 에이전트 (Text-to-SQL 엔진)"}})
+        return httpx.Response(200, json={"data": []})  # the follow-up's own words find nothing
+    return httpx.Client(base_url="http://api.test", transport=httpx.MockTransport(handler))
+
+
+def test_long_answer_is_split_and_text_stays_under_the_limit() -> None:
+    from baryon_slack_bot import SECTION_LIMIT, TEXT_LIMIT, answer_sections
+
+    answer = "\n\n".join(f"{n}) " + "복합 질의 처리 요건 " * 40 for n in range(1, 12))  # about 9,000 characters
+    parts = answer_sections(answer)
+    assert len(parts) > 2 and all(len(p) <= SECTION_LIMIT for p in parts)
+    assert " ".join(parts).split() == answer.split()  # nothing lost, only the breaks moved
+
+    requests: list[httpx.Request] = []
+    config = Config(api_url="http://api.test", organization_id="org", roles="member")
+    bot, web = Responder(config, BaryonClient(config, http=long_answer_api(requests, answer)), BOT), FakeWeb()
+    bot.answer({"channel": "C1", "user": "U1", "ts": "100.1", "text": "<@UBOT> 다시 해봐"}, web)
+    update = web.named("update")[0]
+    assert len(update["text"]) <= TEXT_LIMIT  # msg_too_long otherwise
+    sections = [b for b in update["blocks"] if b["type"] == "section"]
+    assert len(sections) == len(parts) + 1  # answer parts + sources
+    # the cited chunk is quoted even though a search on "다시 해봐" did not return it
+    assert "> REQ-007 분석 에이전트 (Text-to-SQL 엔진)" in sections[-1]["text"]["text"]
+
+
+def test_question_with_attachment_explains_how_to_read_the_file() -> None:
+    web = FakeWeb()
+    responder([]).answer({"channel": "C1", "user": "U1", "ts": "100.1", "text": "<@UBOT> 이 문서 안에 설명되어 있는지 확인하라",
+                          "files": [{"id": "F1", "name": "rfp.hwp"}]}, web)
+    assert "문서로 추가하고 분석해줘" in str(web.named("update")[0]["blocks"])
+    plain = FakeWeb()
+    responder([]).answer({"channel": "C1", "user": "U1", "ts": "100.1", "text": "<@UBOT> 연차는?"}, plain)
+    assert "문서로 추가하고 분석해줘" not in str(plain.named("update")[0]["blocks"])
+
+
 def test_strip_mentions_and_mrkdwn() -> None:
     assert strip_mentions("<@UBOT> 연차는 며칠? <@U123|kim>") == "연차는 며칠?"
     assert to_mrkdwn("## 요약\n[RFP](https://x.test/a)") == "*요약*\n<https://x.test/a|RFP>"
