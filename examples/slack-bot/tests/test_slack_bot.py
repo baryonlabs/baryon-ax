@@ -72,6 +72,29 @@ def responder(requests, **kwargs) -> Responder:
     return Responder(config, BaryonClient(config, http=fake_api(requests, **kwargs)), BOT)
 
 
+def test_direct_messages_are_answered_without_mention() -> None:
+    requests: list[httpx.Request] = []
+    bot, web = responder(requests), FakeWeb()
+    dm = {"channel": "D1", "channel_type": "im", "user": "U1", "ts": "100.1", "text": "연차휴가는 며칠이야?"}
+    assert bot.is_direct_message(dm)
+    assert bot.is_direct_message({**dm, "subtype": "file_share"})
+    assert not bot.should_follow_up({**dm, "thread_ts": "100.1"})  # never answered twice
+    assert not bot.is_direct_message({**dm, "bot_id": "B"})
+    assert not bot.is_direct_message({**dm, "subtype": "message_changed"})
+    assert not bot.is_direct_message({**dm, "channel_type": "channel"})
+
+    bot.answer(dm, web)
+    assert json.loads(requests[0].content)["thread_id"] == "slack:D1:100.1"
+    assert web.named("post")[0]["thread_ts"] == "100.1"
+
+    empty = FakeWeb()
+    bot.answer({**dm, "text": "  "}, empty)
+    assert "@봇" not in empty.named("post")[0]["text"]
+
+    bot.config.direct_messages = False
+    assert not bot.is_direct_message(dm)
+
+
 def test_strip_mentions_and_mrkdwn() -> None:
     assert strip_mentions("<@UBOT> 연차는 며칠? <@U123|kim>") == "연차는 며칠?"
     assert to_mrkdwn("## 요약\n[RFP](https://x.test/a)") == "*요약*\n<https://x.test/a|RFP>"

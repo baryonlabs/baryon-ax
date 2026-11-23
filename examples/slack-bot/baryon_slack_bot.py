@@ -52,6 +52,7 @@ class Config:
     thread_turns: int = 10
     subscribe_threads: bool = True
     show_snippets: bool = True
+    direct_messages: bool = True     # answer 1:1 DMs without a mention
     bot_user_id: str = "slack-bot"   # the bot's own principal in dev mode (AUTH_MODE=dev)
 
     @classmethod
@@ -69,6 +70,7 @@ class Config:
             thread_turns=int(os.getenv("SLACK_THREAD_TURNS", cls.thread_turns)),
             subscribe_threads=flag("SLACK_SUBSCRIBE_THREADS", True),
             show_snippets=flag("SLACK_SHOW_SNIPPETS", True),
+            direct_messages=flag("SLACK_DIRECT_MESSAGES", True),
         )
 
 
@@ -107,8 +109,10 @@ class BaryonClient:
         """A call the bot makes as itself (no On-Behalf-Of header)."""
         return self.auth.request(self.http, method, path, **kwargs)
 
-    def ask(self, messages: list[dict], slack_user: str, thread_id: str) -> Answer:
+    def ask(self, messages: list[dict], slack_user: str, thread_id: str, use_retrieval: bool = True) -> Answer:
         body: dict[str, Any] = {"messages": messages, "stream": False, "thread_id": thread_id}
+        if not use_retrieval:
+            body["use_retrieval"] = False
         if self.config.model:
             body["model"] = self.config.model
         response = self.as_user("POST", "/v1/chat/completions", slack_user, json=body)
@@ -251,15 +255,27 @@ class ThreadSubscriptions:
 class Responder:
     """Slack-framework-free core so it can be tested with a fake WebClient."""
 
-    def __init__(self, config: Config, baryon: BaryonClient, bot_user_id: str, subscriptions: ThreadSubscriptions | None = None) -> None:
+    def __init__(self, config: Config, baryon: BaryonClient, bot_user_id: str, subscriptions: ThreadSubscriptions | None = None,
+                 intake=None) -> None:
         self.config = config
         self.baryon = baryon
         self.bot_user_id = bot_user_id
         self.subscriptions = subscriptions or ThreadSubscriptions()
+        self.intake = intake  # doc_intake.DocumentIntake: "문서로 추가" requests
+
+    def is_direct_message(self, event: dict) -> bool:
+        """A person's message in a 1:1 DM with the bot. Every DM is a question; no mention needed."""
+        if not self.config.direct_messages or event.get("channel_type") != "im":
+            return False
+        if event.get("subtype") not in (None, "file_share"):
+            return False
+        return not (event.get("bot_id") or event.get("user") == self.bot_user_id)
 
     def should_follow_up(self, event: dict) -> bool:
         """Plain thread message (no mention) in a subscribed thread."""
-        if not self.config.subscribe_threads or event.get("subtype") or event.get("bot_id"):
+        if event.get("channel_type") == "im":
+            return False  # DMs are answered by is_direct_message
+        if not self.config.subscribe_threads or event.get("subtype") not in (None, "file_share") or event.get("bot_id"):
             return False
         if event.get("user") == self.bot_user_id or f"<@{self.bot_user_id}" in (event.get("text") or ""):
             return False  # mentions are handled by the app_mention event
@@ -282,11 +298,18 @@ class Responder:
         question = strip_mentions(event.get("text"))
         thread_ts = event.get("thread_ts") or event["ts"]
         if not question:
-            web.chat_postMessage(channel=channel, thread_ts=thread_ts,
-                                 text="무엇을 찾아드릴까요? `@봇 질문` 형태로 물어봐 주세요. 예: `@baryon 연차휴가는 며칠이야?`")
+            usage = ("무엇을 찾아드릴까요? 질문을 그대로 보내 주세요. 예: `연차휴가는 며칠이야?`" if event.get("channel_type") == "im"
+                     else "무엇을 찾아드릴까요? `@봇 질문` 형태로 물어봐 주세요. 예: `@baryon 연차휴가는 며칠이야?`")
+            web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=usage)
             return
         if self.config.subscribe_threads:
             self.subscriptions.add(channel, thread_ts)
+        if self.intake and self.intake.config.enabled:
+            from doc_intake import wants_intake
+
+            if wants_intake(question):
+                self.add_documents(event, web, question)
+                return
         self._react(web, channel, event["ts"], "eyes", add=True)
         # Read the thread before posting the placeholder so it is not part of the history.
         messages = self._history(web, channel, thread_ts, question) if event.get("thread_ts") else [{"role": "user", "content": question}]
@@ -305,6 +328,63 @@ class Responder:
         finally:
             self._react(web, channel, event["ts"], "eyes", add=False)
 
+    def _intake_context(self, web, event: dict) -> list[dict]:
+        """The thread, or for a top-level request the person's message just above it."""
+        channel = event["channel"]
+        try:
+            if event.get("thread_ts"):
+                return web.conversations_replies(channel=channel, ts=event["thread_ts"], limit=200).get("messages", [])
+            if event.get("files"):
+                return []
+            history = web.conversations_history(channel=channel, latest=event["ts"], inclusive=False, limit=10).get("messages", [])
+        except Exception as error:  # missing *:history scope
+            logger.info("conversation history unavailable (%s)", error)
+            return []
+        for message in history:  # newest first
+            if not (message.get("user") == self.bot_user_id or message.get("bot_id") or message.get("subtype") not in (None, "file_share")):
+                return [message]
+        return []
+
+    def add_documents(self, event: dict, web, question: str) -> None:
+        """"문서로 추가": register the thread's files (or text), then analyze them if asked."""
+        from doc_intake import ANALYSIS_PENDING, INTAKE_PENDING, IntakeError, analysis_blocks, result_text, wants_analysis
+
+        channel, user = event["channel"], event.get("user", "unknown")
+        thread_ts = event.get("thread_ts") or event["ts"]
+        self._react(web, channel, event["ts"], "eyes", add=True)
+        messages = self._intake_context(web, event)
+        pending = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=INTAKE_PENDING)
+        try:
+            result = self.intake.collect(messages, event, self.bot_user_id, strip_mentions, user)
+        except IntakeError as error:
+            web.chat_update(channel=channel, ts=pending["ts"], text=f":warning: {error}")
+            self._react(web, channel, event["ts"], "x", add=True)
+            self._react(web, channel, event["ts"], "eyes", add=False)
+            return
+        except Exception as error:
+            logger.exception("document intake failed")
+            web.chat_update(channel=channel, ts=pending["ts"], text=f":x: 문서를 등록하지 못했습니다 ({type(error).__name__}).")
+            self._react(web, channel, event["ts"], "x", add=True)
+            self._react(web, channel, event["ts"], "eyes", add=False)
+            return
+        summary = result_text(result)
+        web.chat_update(channel=channel, ts=pending["ts"], text=summary,
+                        blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": summary}}])
+        if result.added and wants_analysis(question):
+            working = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=ANALYSIS_PENDING)
+            try:
+                prompt, truncated = self.intake.analysis_prompt(question, result.added, user)
+                answer = self.baryon.ask([{"role": "user", "content": prompt}], user,
+                                         thread_id=f"slack:{channel}:{thread_ts}", use_retrieval=False)
+                web.chat_update(channel=channel, ts=working["ts"], text=answer.text,
+                                blocks=analysis_blocks(to_mrkdwn(answer.text), result.added, truncated, answer.trace_id))
+            except Exception as error:
+                logger.exception("analysis of added documents failed")
+                detail = f"HTTP {error.response.status_code}" if isinstance(error, httpx.HTTPStatusError) else type(error).__name__
+                web.chat_update(channel=channel, ts=working["ts"], text=f"{ERROR_PREFIX} ({detail}). 문서는 등록되었으니 질문으로 다시 물어봐 주세요.")
+        self._react(web, channel, event["ts"], "white_check_mark" if result.added else "x", add=True)
+        self._react(web, channel, event["ts"], "eyes", add=False)
+
     @staticmethod
     def _react(web, channel: str, ts: str, name: str, add: bool) -> None:
         try:
@@ -322,7 +402,11 @@ def create_app(config: Config | None = None):
     config = config or Config.from_env()
     app = App(token=os.environ["SLACK_BOT_TOKEN"])
     bot_user_id = app.client.auth_test()["user_id"]
-    responder = Responder(config, BaryonClient(config), bot_user_id)
+    baryon = BaryonClient(config)
+    from doc_intake import DocumentIntake, IntakeConfig
+
+    intake = DocumentIntake(IntakeConfig.from_env(), baryon, os.environ["SLACK_BOT_TOKEN"])
+    responder = Responder(config, baryon, bot_user_id, intake=intake)
     desk = _create_desk(responder)
 
     @app.event("app_mention")
@@ -334,7 +418,7 @@ def create_app(config: Config | None = None):
         gap_id = desk.answer_gap_id(event) if desk else None
         if gap_id:
             desk.on_answer(event, gap_id, client)
-        elif responder.should_follow_up(event):
+        elif responder.is_direct_message(event) or responder.should_follow_up(event):
             responder.answer(event, client)
 
     if desk:
