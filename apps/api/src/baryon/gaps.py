@@ -144,6 +144,8 @@ SMALL_TALK = re.compile(
 
 def is_small_talk(text: str) -> bool:
     """A greeting or acknowledgement with nothing to search for ("안녕하세요!", "고마워요 ㅎㅎ", "gg")."""
+    if (text or "").strip() and not re.search(r"\w", text):
+        return True  # "?", "!!", "👍": nothing to look up or to ask an expert about
     words = re.sub(r"[\s.,!?~^♡❤️🙏😊👍]+", " ", text or "").strip().split()
     return 0 < len(words) <= 3 and len("".join(words)) <= 16 and all(SMALL_TALK.match(word) for word in words)
 

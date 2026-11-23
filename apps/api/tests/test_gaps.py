@@ -27,7 +27,7 @@ def gap(gap_id: str, question: str, reasons: list[str] | None = None) -> Knowled
 def test_small_talk_is_only_greetings_and_acknowledgements() -> None:
     from baryon.gaps import is_small_talk
 
-    for text in ("gg", "안녕하세요!", "안녕", "고마워요 ㅎㅎ", "감사합니다 🙏", "ok", "넵", "ㅋㅋㅋ", "hi there"[:2]):
+    for text in ("gg", "안녕하세요!", "안녕", "고마워요 ㅎㅎ", "감사합니다 🙏", "ok", "넵", "ㅋㅋㅋ", "hi there"[:2], "?", "!!", "👍"):
         assert is_small_talk(text), text
     for text in ("", "안녕하세요 연차 신청은 어떻게 해?", "기능을 모두 설명해봐", "네 그럼 출장비 한도는?", "gg 회의록 찾아줘"):
         assert not is_small_talk(text), text
