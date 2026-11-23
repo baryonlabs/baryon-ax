@@ -50,7 +50,7 @@ class FakeApi:
                     return httpx.Response(422, json={"detail": f"Could not parse {name}: no parser for '{name}'"})
                 return httpx.Response(200, json={"id": f"doc{len(self.uploads)}", "title": name, "chunks": 3, "parser": "kordoc"})
             if path.startswith("/v1/documents/doc"):
-                return httpx.Response(200, json={"content": "감리 지적사항: 요구사항 추적표 누락 " * 50})
+                return httpx.Response(200, json={"content": "점검 지적사항: 요구사항 추적표 누락 " * 50})
             if path == "/v1/chat/completions":
                 body = json.loads(request.content)
                 if body["messages"][0]["content"].startswith("아래 문서가 무엇에 관한"):
@@ -145,7 +145,7 @@ def test_thread_files_skip_bot_posts_and_duplicates() -> None:
 def test_thread_files_are_added_and_analyzed() -> None:
     api = FakeApi()
     files = {"report.docx": b"PK-docx", "all.zip": korean_zip(), "tool.exe": b"MZ"}
-    parent = {"user": "U1", "ts": "100.0", "text": "감리 보고서 공유드립니다", "files": [
+    parent = {"user": "U1", "ts": "100.0", "text": "점검 보고서 공유드립니다", "files": [
         {"id": "F1", "name": "report.docx", "size": 7, "url_private_download": "https://files.slack.test/report.docx"},
         {"id": "F2", "name": "all.zip", "size": 900, "url_private_download": "https://files.slack.test/all.zip"},
         {"id": "F3", "name": "tool.exe", "size": 2, "url_private_download": "https://files.slack.test/tool.exe"},
@@ -218,7 +218,7 @@ def test_read_request_reads_the_threads_files_once() -> None:
         assert wants_file_reading(text), text
     assert not wants_file_reading("연차는 며칠이야?")
     # about code in a folder/repository: search (repo-sync indexed it), not the files attached here
-    assert not wants_file_reading("~/dev/ai-apps 폴더의 코드 파일을 보고 직접 분석한걸 답하라")
+    assert not wants_file_reading("~/dev/my-app 폴더의 코드 파일을 보고 직접 분석한걸 답하라")
     assert not wants_file_reading("현재 저장소 코드에서 공유 기능을 분석해줘")
     assert wants_file_reading("위에 올린 엑셀과 코드 정의서를 분석해줘")  # names the attachment
 
@@ -313,8 +313,8 @@ def test_one_line_falls_back_to_the_documents_first_line() -> None:
     from intake_sheet import _clean, first_line
 
     # short headings, "작성자:" metadata and table rules are skipped
-    assert first_line("# 제목\n\n> 작성자: 홍길동\n|---|---|\n감리 지적사항 3건과 조치 계획을 정리한 보고서") == "감리 지적사항 3건과 조치 계획을 정리한 보고서"
-    assert _clean("<think>음</think>\n한 줄 요약: **설계 단계** 감리 결과 보고서") == "설계 단계 감리 결과 보고서"
+    assert first_line("# 제목\n\n> 작성자: 홍길동\n|---|---|\n점검 지적사항 3건과 조치 계획을 정리한 보고서") == "점검 지적사항 3건과 조치 계획을 정리한 보고서"
+    assert _clean("<think>음</think>\n한 줄 요약: **설계 단계** 점검 결과 보고서") == "설계 단계 점검 결과 보고서"
 
 
 def test_result_text_without_documents() -> None:
