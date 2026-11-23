@@ -36,7 +36,7 @@ from .ingest.mime import sniff_mime
 from .ingest.parsers import ParseError
 from .ingest.pipeline import PipelineConfig, PermanentError, run_pipeline
 from .feedback import FeedbackStore
-from .gaps import GapStore, PackStore, build_pack, cluster_gaps, detect_reasons, verify_pack
+from .gaps import GapStore, PackStore, build_pack, cluster_gaps, detect_reasons, is_small_talk, verify_pack
 from .ontology import Extraction as OntologyExtraction, model_extract_each as ontology_model_extract_each, resolve_synonyms as ontology_resolve_synonyms, rule_extract as ontology_rule_extract
 from .mcp import MCPClient, MCPGatewayError
 from .mcp_server import MCPServer, Tool, ToolError, parse_body
@@ -2983,6 +2983,8 @@ async def chat(
     admit_chat(principal, trace_id)
     steps = [_step("rate_limit", round((time.perf_counter() - rate_started) * 1000, 2), "ok" if rate_limiter.enabled else "skipped",
                    f"{rate_limiter.limit}/min" if rate_limiter.enabled else "비활성")]
+    if request.messages and is_small_talk(request.messages[-1].content):
+        request.use_retrieval = False  # a greeting: answer it, but do not attach unrelated documents as sources
     citations, memories, pipeline_steps = await pipeline.prepare(request, principal)
     steps.extend(pipeline_steps)
     trace_payload = {

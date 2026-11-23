@@ -38,6 +38,7 @@ from .ontology import Extraction, pack_structure, rule_extract
 # detection
 # --------------------------------------------------------------------------
 
+REFUSAL_WINDOW = 240  # a refusal is looked for in the first two sentences, at most this many characters
 REFUSAL_PATTERNS = (
     "찾을 수 없",
     "찾지 못",
@@ -131,6 +132,22 @@ def salient_terms(text: str) -> list[str]:
     return terms
 
 
+# Greetings, thanks and one-word acknowledgements: nothing to look up. Searching for "gg" or "안녕" only
+# finds unrelated documents, which then show up as sources under a greeting.
+SMALL_TALK = re.compile(
+    r"^(?:안녕(?:하세요|하십니까|히\s*계세요)?|하이|헬로|ㅎㅇ|hi|hello|hey|yo|gg|굿|good|nice|ok(?:ay)?|오케이|ㅇㅋ|"
+    r"넵|네|예|응|웅|ㅇㅇ|그래|좋아(?:요)?|알겠(?:어|어요|습니다)|고마워(?:요)?|감사(?:합니다|해요)?|ㄳ|ㄱㅅ|땡큐|"
+    r"thanks?(?:\s*you)?|thx|ty|수고(?:하셨습니다|했어|하세요)?|잘\s*자|bye|바이|ㅂㅂ|ㅋ+|ㅎ+|ㅠ+|ㅜ+)$",
+    re.I,
+)
+
+
+def is_small_talk(text: str) -> bool:
+    """A greeting or acknowledgement with nothing to search for ("안녕하세요!", "고마워요 ㅎㅎ", "gg")."""
+    words = re.sub(r"[\s.,!?~^♡❤️🙏😊👍]+", " ", text or "").strip().split()
+    return 0 < len(words) <= 3 and len("".join(words)) <= 16 and all(SMALL_TALK.match(word) for word in words)
+
+
 def detect_reasons(question: str, answer: str, citations: int, used_retrieval: bool) -> list[str]:
     """Return the reasons this exchange should be reviewed as a knowledge gap."""
     answer = answer or ""
@@ -141,7 +158,11 @@ def detect_reasons(question: str, answer: str, citations: int, used_retrieval: b
         reasons.append("empty_answer")
     if used_retrieval and citations == 0:
         reasons.append("no_citations")
-    if any(pattern in lowered for pattern in REFUSAL_PATTERNS):
+    # A refusal says so up front. Further into a long answer the same words describe things ("답변할 수 없는
+    # 질문은 지식 공백으로 모읍니다") rather than refuse, so only the opening is checked.
+    sentences = [part for part in re.split(r"(?<=[.!?。])\s+|\n+", lowered.strip()) if part.strip()]
+    opening = " ".join(sentences[:2])[:REFUSAL_WINDOW]
+    if any(pattern in opening for pattern in REFUSAL_PATTERNS):
         reasons.append("refusal")
     elif any(pattern in lowered for pattern in HEDGE_PATTERNS):
         reasons.append("vague")
