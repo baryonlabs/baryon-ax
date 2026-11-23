@@ -382,6 +382,8 @@ class Responder:
         channel, user = event["channel"], event.get("user", "unknown")
         question = strip_mentions(event.get("text"))
         thread_ts = event.get("thread_ts") or event["ts"]
+        if not question and event.get("files"):
+            return  # files posted without a question: wait for the question ("분석해줘") that usually follows
         if not question:
             usage = ("무엇을 찾아드릴까요? 질문을 그대로 보내 주세요. 예: `연차휴가는 며칠이야?`" if event.get("channel_type") == "im"
                      else "무엇을 찾아드릴까요? `@봇 질문` 형태로 물어봐 주세요. 예: `@baryon 연차휴가는 며칠이야?`")

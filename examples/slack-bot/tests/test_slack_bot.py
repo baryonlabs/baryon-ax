@@ -91,6 +91,10 @@ def test_direct_messages_are_answered_without_mention() -> None:
     bot.answer({**dm, "text": "  "}, empty)
     assert "@봇" not in empty.named("post")[0]["text"]
 
+    file_only = FakeWeb()
+    bot.answer({**dm, "text": "", "subtype": "file_share", "files": [{"id": "F1", "name": "a.xlsx"}]}, file_only)
+    assert not file_only.calls  # waits for the question that follows
+
     bot.config.direct_messages = False
     assert not bot.is_direct_message(dm)
 
