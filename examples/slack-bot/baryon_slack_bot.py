@@ -32,6 +32,12 @@ MENTION_RE = re.compile(r"<@[UW][A-Z0-9]+(?:\|[^>]*)?>")
 SECTION_LIMIT = 2900  # Slack section text limit is 3000 characters
 MAX_ANSWER_SECTIONS = 12  # a message holds 50 blocks; sources and notes need a few
 TEXT_LIMIT = 3500  # fallback `text` of a message with blocks; Slack rejects long ones with msg_too_long
+LINKED_CHARS = 4000  # text read from one linked Slack thread
+SLACK_LINK_RE = re.compile(
+    r"<?(https?://([a-z0-9-]+)\.slack\.com/archives/([A-Z0-9]+)/p(\d{10})(\d{6})([^|>\s]*))(?:\|[^>]*)?>?")
+FOREIGN_LINK_NOTE = (":link: 다른 Slack 워크스페이스의 링크는 봇이 읽을 수 없습니다(그 워크스페이스에 봇이 설치되어 있지 않음). "
+                     "내용이 필요하면 본문을 붙여 넣거나 파일로 올려 주세요.")
+UNREADABLE_LINK_NOTE = ":link: 링크된 Slack 대화를 읽지 못했습니다. 봇을 그 채널에 초대하면 다음부터 함께 읽습니다."
 ATTACHMENT_NOTE = (":paperclip: 첨부 파일은 읽지 않고 이미 등록된 문서에서 찾았습니다. 파일 내용으로 답하게 하려면 "
                    "`문서로 추가하고 분석해줘`라고 보내 주세요.")
 SNIPPET_CHARS = 180
@@ -160,6 +166,12 @@ class BaryonClient:
 
 
 # --------------------------------------------------------------------------- formatting
+
+
+def slack_domain(url: str) -> str:
+    """"https://acme.slack.com/" → "acme" (auth.test url of the bot's workspace)."""
+    match = re.match(r"https?://([a-z0-9-]+)\.slack\.com", url or "")
+    return match.group(1) if match else ""
 
 
 def strip_mentions(text: str | None) -> str:
@@ -302,6 +314,39 @@ class Responder:
         self.bot_user_id = bot_user_id
         self.subscriptions = subscriptions or ThreadSubscriptions()
         self.intake = intake  # doc_intake.DocumentIntake: "문서로 추가" requests
+        self.team_domain = ""  # the bot's workspace ("acme" of acme.slack.com); links elsewhere cannot be read
+
+    def expand_links(self, web, messages: list[dict]) -> tuple[list[dict], list[str]]:
+        """Slack message links in people's turns become the linked thread's text, so "see this thread" is
+        understood. Links to another workspace, or to a channel the bot is not in, are marked unreadable."""
+        notes: list[str] = []
+        cache: dict[str, str] = {}
+
+        def replace(match: re.Match) -> str:
+            url, domain, channel, seconds, micros, query = match.groups()
+            if self.team_domain and domain != self.team_domain:
+                if FOREIGN_LINK_NOTE not in notes:
+                    notes.append(FOREIGN_LINK_NOTE)
+                return f"[다른 Slack 워크스페이스({domain})의 링크: 봇이 읽을 수 없음]"
+            thread = re.search(r"thread_ts=(\d+\.\d+)", query or "")
+            ts = thread.group(1) if thread else f"{seconds}.{micros}"
+            if url not in cache:
+                try:
+                    found = web.conversations_replies(channel=channel, ts=ts, limit=50).get("messages", [])
+                    lines = [f"- {strip_mentions(m.get('text'))}" for m in found if strip_mentions(m.get("text"))]
+                    cache[url] = _clip("\n".join(lines), LINKED_CHARS)
+                except Exception as error:  # not_in_channel, channel_not_found, missing scope
+                    logger.info("linked thread %s unreadable (%s)", url, error)
+                    cache[url] = ""
+            if not cache[url]:
+                if UNREADABLE_LINK_NOTE not in notes:
+                    notes.append(UNREADABLE_LINK_NOTE)
+                return "[링크된 Slack 대화: 읽지 못함]"
+            return f"[링크된 Slack 대화]\n{cache[url]}\n[링크 끝]"
+
+        expanded = [{**m, "content": SLACK_LINK_RE.sub(replace, m["content"])} if m["role"] == "user" else m
+                    for m in messages]
+        return expanded, notes
 
     def is_direct_message(self, event: dict) -> bool:
         """A person's message in a 1:1 DM with the bot. Every DM is a question; no mention needed."""
@@ -345,20 +390,27 @@ class Responder:
         if self.config.subscribe_threads:
             self.subscriptions.add(channel, thread_ts)
         if self.intake and self.intake.config.enabled:
-            from doc_intake import wants_intake
+            from doc_intake import thread_files, wants_file_reading, wants_intake
 
             if wants_intake(question):
                 self.add_documents(event, web, question)
                 return
+            # "분석하라", "엑셀 읽어봐" in a thread where people shared files: read those files instead of guessing.
+            if wants_file_reading(question) and (event.get("thread_ts") or event.get("files")):
+                context = self._intake_context(web, event)
+                if thread_files(context + [event], self.bot_user_id):
+                    self.add_documents(event, web, question, analyze=True, messages=context)
+                    return
         self._react(web, channel, event["ts"], "eyes", add=True)
         # Read the thread before posting the placeholder so it is not part of the history.
         messages = self._history(web, channel, thread_ts, question) if event.get("thread_ts") else [{"role": "user", "content": question}]
+        messages, link_notes = self.expand_links(web, messages)
         pending = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=PENDING_TEXT)
         try:
             result = self.baryon.ask(messages, user, thread_id=f"slack:{channel}:{thread_ts}")
             snippets = (self.baryon.cited_snippets(question, result.citations[: self.config.max_sources * 2], user)
                         if self.config.show_snippets and result.citations and result.answered else {})
-            note = ATTACHMENT_NOTE if event.get("files") else ""
+            note = " ".join(link_notes + ([ATTACHMENT_NOTE] if event.get("files") else []))
             web.chat_update(channel=channel, ts=pending["ts"], text=_clip(result.text, TEXT_LIMIT),
                             blocks=build_blocks(result, snippets, self.config.max_sources, note=note))
             self._react(web, channel, event["ts"], "white_check_mark", add=True)
@@ -387,14 +439,16 @@ class Responder:
                 return [message]
         return []
 
-    def add_documents(self, event: dict, web, question: str) -> None:
-        """"문서로 추가": register the thread's files (or text), then analyze them if asked."""
+    def add_documents(self, event: dict, web, question: str, analyze: bool | None = None,
+                      messages: list[dict] | None = None) -> None:
+        """"문서로 추가": register the thread's files (or text), then analyze them if asked.
+        With ``analyze=True`` (a request to read the thread's files) the answer always comes from their text."""
         from doc_intake import ANALYSIS_PENDING, INTAKE_PENDING, IntakeError, analysis_blocks, result_text, wants_analysis
 
         channel, user = event["channel"], event.get("user", "unknown")
         thread_ts = event.get("thread_ts") or event["ts"]
         self._react(web, channel, event["ts"], "eyes", add=True)
-        messages = self._intake_context(web, event)
+        messages = self._intake_context(web, event) if messages is None else messages
         pending = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=INTAKE_PENDING)
         try:
             result = self.intake.collect(messages, event, self.bot_user_id, strip_mentions, user)
@@ -410,9 +464,13 @@ class Responder:
             self._react(web, channel, event["ts"], "eyes", add=False)
             return
         summary = result_text(result)
+        foreign = any(m.group(2) != self.team_domain for msg in messages + [event]
+                      for m in SLACK_LINK_RE.finditer(msg.get("text") or "")) if self.team_domain else False
+        if foreign:
+            summary += "\n\n" + FOREIGN_LINK_NOTE
         web.chat_update(channel=channel, ts=pending["ts"], text=summary,
                         blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": summary}}])
-        if result.added and wants_analysis(question):
+        if result.added and (analyze if analyze is not None else wants_analysis(question)):
             working = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=ANALYSIS_PENDING)
             try:
                 prompt, truncated = self.intake.analysis_prompt(question, result.added, user)
@@ -443,12 +501,16 @@ def create_app(config: Config | None = None):
 
     config = config or Config.from_env()
     app = App(token=os.environ["SLACK_BOT_TOKEN"])
-    bot_user_id = app.client.auth_test()["user_id"]
+    auth = app.client.auth_test()
+    bot_user_id = auth["user_id"]
     baryon = BaryonClient(config)
     from doc_intake import DocumentIntake, IntakeConfig
 
-    intake = DocumentIntake(IntakeConfig.from_env(), baryon, os.environ["SLACK_BOT_TOKEN"])
+    from doc_intake import IntakeLedger
+
+    intake = DocumentIntake(IntakeConfig.from_env(), baryon, os.environ["SLACK_BOT_TOKEN"], ledger=IntakeLedger.from_env())
     responder = Responder(config, baryon, bot_user_id, intake=intake)
+    responder.team_domain = slack_domain(auth.get("url", ""))
     desk = _create_desk(responder)
 
     @app.event("app_mention")

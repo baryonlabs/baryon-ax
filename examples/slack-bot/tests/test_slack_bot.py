@@ -138,6 +138,45 @@ def test_question_with_attachment_explains_how_to_read_the_file() -> None:
     assert "문서로 추가하고 분석해줘" not in str(plain.named("update")[0]["blocks"])
 
 
+class LinkWeb(FakeWeb):
+    def conversations_replies(self, **kwargs):
+        self.calls.append(("replies", kwargs))
+        if kwargs["channel"] == "CLOCKED":
+            raise RuntimeError("not_in_channel")
+        return {"messages": [{"user": "U7", "text": "회의 메모: 일정 점검 필요"}, {"user": "U8", "text": "<@UBOT> 다음 주까지 계획 정리"}]}
+
+
+def test_slack_links_are_expanded_or_marked_unreadable() -> None:
+    from baryon_slack_bot import FOREIGN_LINK_NOTE, UNREADABLE_LINK_NOTE, slack_domain
+
+    assert slack_domain("https://acme.slack.com/") == "acme"
+    bot, web = responder([]), LinkWeb()
+    bot.team_domain = "acme"
+    messages = [
+        {"role": "user", "content": "이것 봐 <https://acme.slack.com/archives/C1/p1795410004281229?thread_ts=1795410000.000100|링크>"},
+        {"role": "assistant", "content": "https://acme.slack.com/archives/C1/p1795410004281229"},
+        {"role": "user", "content": "그리고 <https://other-org.slack.com/archives/C9/p1795407816704509|other> 와 "
+                                    "https://acme.slack.com/archives/CLOCKED/p1795410004281229"},
+    ]
+    expanded, notes = bot.expand_links(web, messages)
+    assert "회의 메모: 일정 점검 필요" in expanded[0]["content"] and "다음 주까지 계획 정리" in expanded[0]["content"]
+    assert web.named("replies")[0]["ts"] == "1795410000.000100"  # the thread the link points into
+    assert expanded[1] == messages[1]  # the bot's own turns are left alone
+    assert "다른 Slack 워크스페이스(other-org)" in expanded[2]["content"]
+    assert "[링크된 Slack 대화: 읽지 못함]" in expanded[2]["content"]
+    assert notes == [FOREIGN_LINK_NOTE, UNREADABLE_LINK_NOTE]
+
+    requests: list[httpx.Request] = []
+    linked = responder(requests)
+    linked.team_domain = "acme"
+    answer_web = LinkWeb()
+    linked.answer({"channel": "C1", "user": "U1", "ts": "1.0", "text": "<@UBOT> <https://other-org.slack.com/archives/C9/p1795407816704509|x> 분석해줘"},
+                  answer_web)
+    sent = json.loads(requests[0].content)["messages"][-1]["content"]
+    assert "봇이 읽을 수 없음" in sent
+    assert "다른 Slack 워크스페이스의 링크는" in str(answer_web.named("update")[0]["blocks"])
+
+
 def test_strip_mentions_and_mrkdwn() -> None:
     assert strip_mentions("<@UBOT> 연차는 며칠? <@U123|kim>") == "연차는 며칠?"
     assert to_mrkdwn("## 요약\n[RFP](https://x.test/a)") == "*요약*\n<https://x.test/a|RFP>"

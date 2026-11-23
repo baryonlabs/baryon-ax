@@ -17,6 +17,7 @@ just added instead of from search results.
 from __future__ import annotations
 
 import io
+import json
 import logging
 import os
 import re
@@ -36,6 +37,9 @@ INTAKE_RE = re.compile(
     re.IGNORECASE,
 )
 ANALYZE_RE = re.compile(r"분석|요약|검토|정리|파악|analy[sz]|summar|review", re.IGNORECASE)
+# Asking to read or look at what was shared. With files in the thread this reads them (registers, then answers).
+READ_RE = re.compile(r"읽어|읽고|읽으|열어|살펴|봐라|봐줘|봐 줘|보아라|확인해|확인하라|이해해|분석|요약|검토|정리|파악"
+                     r"|\b(?:read|open|look at|check|analy[sz]e|summari[sz]e|review)\b", re.IGNORECASE)
 INTAKE_PENDING = ":inbox_tray: 문서로 등록하고 있습니다…"
 ANALYSIS_PENDING = ":hourglass_flowing_sand: 등록한 문서를 읽고 분석하고 있습니다…"
 SKIP_MEMBERS = ("__MACOSX/", ".DS_Store", "Thumbs.db", "desktop.ini")
@@ -88,6 +92,7 @@ class IntakeResult:
     added: list[Added] = field(default_factory=list)
     skipped: list[Skipped] = field(default_factory=list)
     source: str = "files"  # "files" or "text"
+    reused: int = 0        # of `added`, documents registered earlier from the same Slack files
 
 
 def wants_intake(text: str) -> bool:
@@ -96,6 +101,47 @@ def wants_intake(text: str) -> bool:
 
 def wants_analysis(text: str) -> bool:
     return bool(ANALYZE_RE.search(INTAKE_RE.sub(" ", text or "")))
+
+
+def wants_file_reading(text: str) -> bool:
+    return bool(READ_RE.search(text or ""))
+
+
+class IntakeLedger:
+    """Slack file id → the document it became, so asking again about the same thread does not upload twice."""
+
+    def __init__(self, path: str | None) -> None:
+        self.path = path
+        self.items: dict[str, dict] = {}
+        if path and os.path.exists(path):
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    self.items = json.load(handle)
+            except (OSError, ValueError):
+                logger.warning("could not read %s; starting empty", path)
+
+    @classmethod
+    def from_env(cls) -> "IntakeLedger":
+        path = os.getenv("SLACK_INTAKE_STATE_PATH", "").strip()
+        if not path:
+            proactive = os.getenv("PROACTIVE_STATE_PATH", "").strip()
+            path = os.path.join(os.path.dirname(proactive) if proactive else ".data", "intake_state.json")
+        return cls(path)
+
+    def get(self, file_id: str) -> list[Added]:
+        return [Added(**item) for item in self.items.get(file_id, [])]
+
+    def put(self, file_id: str, added: list[Added]) -> None:
+        if not file_id or not added:
+            return
+        self.items[file_id] = [vars(item) for item in added]
+        if self.path:
+            try:
+                os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+                with open(self.path, "w", encoding="utf-8") as handle:
+                    json.dump(self.items, handle, ensure_ascii=False, indent=1)
+            except OSError:
+                logger.warning("could not write %s", self.path, exc_info=True)
 
 
 # --------------------------------------------------------------------------- collecting
@@ -175,11 +221,13 @@ def expand(name: str, payload: bytes, max_bytes: int) -> tuple[list[tuple[str, b
 class DocumentIntake:
     """Collects files or text from a Slack thread and uploads them to baryon-ax."""
 
-    def __init__(self, config: IntakeConfig, baryon, slack_token: str, http: httpx.Client | None = None) -> None:
+    def __init__(self, config: IntakeConfig, baryon, slack_token: str, http: httpx.Client | None = None,
+                 ledger: IntakeLedger | None = None) -> None:
         self.config = config
         self.baryon = baryon
         self.slack_token = slack_token
         self.http = http or httpx.Client(timeout=120, follow_redirects=True)
+        self.ledger = ledger or IntakeLedger(None)
 
     def download(self, item: dict) -> bytes:
         url = item.get("url_private_download") or item.get("url_private")
@@ -215,6 +263,11 @@ class DocumentIntake:
         if files:
             for item in files:
                 name = item.get("name") or item.get("title") or item.get("id", "file")
+                earlier = self.ledger.get(item.get("id", ""))
+                if earlier:  # registered from this Slack file before: read that document again, do not upload twice
+                    result.added.extend(earlier)
+                    result.reused += len(earlier)
+                    continue
                 if len(result.added) + len(result.skipped) >= self.config.max_files:
                     result.skipped.append(Skipped(name, f"한 번에 {self.config.max_files}개까지만 등록합니다"))
                     continue
@@ -230,14 +283,18 @@ class DocumentIntake:
                     continue
                 members, skipped = expand(name, payload, self.config.max_file_bytes)
                 result.skipped.extend(skipped)
+                from_this_file: list[Added] = []
                 for member, data in members:
                     label = member if member == name else f"{name}/{member}"
                     if len(result.added) + len(result.skipped) >= self.config.max_files:
                         result.skipped.append(Skipped(label, f"한 번에 {self.config.max_files}개까지만 등록합니다"))
                         continue
-                    outcome = self.upload(member, data, slack_user, tags)
+                    outcome = self.upload(member, data, slack_user, tags + [f"slack-file:{item.get('id', '')}"])
                     outcome.name = label
+                    if isinstance(outcome, Added):
+                        from_this_file.append(outcome)
                     (result.added if isinstance(outcome, Added) else result.skipped).append(outcome)
+                self.ledger.put(item.get("id", ""), from_this_file)
             return result
 
         text = thread_text(messages, bot_user_id, request["ts"], strip)
@@ -319,7 +376,12 @@ def result_text(result: IntakeResult) -> str:
     lines: list[str] = []
     if result.added:
         what = "스레드 글" if result.source == "text" else "파일"
-        lines.append(f":white_check_mark: *{what}을 문서 {len(result.added)}건으로 등록했습니다.* 이제 질문하면 이 문서도 근거로 찾습니다.")
+        new = len(result.added) - result.reused
+        if new:
+            again = f" (앞서 등록한 {result.reused}건은 다시 올리지 않음)" if result.reused else ""
+            lines.append(f":white_check_mark: *{what}을 문서 {new}건으로 등록했습니다.*{again} 이제 질문하면 이 문서도 근거로 찾습니다.")
+        else:
+            lines.append(f":white_check_mark: *이 스레드의 파일은 이미 문서 {result.reused}건으로 등록되어 있어 그 내용을 읽었습니다.*")
         for item in result.added:
             detail = ", ".join(part for part in (f"{item.chunks}개 조각" if item.chunks else "", item.parser) if part)
             lines.append(f"• {item.title}" + (f" ({detail})" if detail else ""))

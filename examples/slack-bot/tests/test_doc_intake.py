@@ -198,6 +198,46 @@ def test_missing_scope_and_nothing_to_add_are_explained() -> None:
     assert "찾지 못했습니다" in empty.named("update")[0]["text"]
 
 
+def test_read_request_reads_the_threads_files_once() -> None:
+    from doc_intake import IntakeLedger, wants_file_reading
+
+    for text in ("분석하라", "엑셀파일은 읽어보아라 위의 쓰레드를", "이거 살펴봐줘", "please read this"):
+        assert wants_file_reading(text), text
+    assert not wants_file_reading("연차는 며칠이야?")
+
+    api = FakeApi()
+    files = {"plan.xlsx": b"PK-xlsx", "shot.png": b"\x89PNG"}
+    shared = {"user": "U1", "ts": "100.5", "text": "", "files": [
+        {"id": "F9", "name": "plan.xlsx", "size": 7, "url_private_download": "https://files.slack.test/plan.xlsx"},
+    ]}
+    link = {"user": "U1", "ts": "100.0", "text": "<https://other-org.slack.com/archives/C9/p1795407816704509|other-org.slack.com/archives/…>"}
+    ask = {"channel": "C1", "user": "U1", "ts": "101.0", "thread_ts": "100.0", "text": "<@UBOT> 분석하라"}
+    responder = bot(api, files)
+    responder.team_domain = "acme"
+    responder.intake.ledger = IntakeLedger(None)
+    web = FakeWeb(replies=[link, shared, ask])
+    responder.answer(ask, web)
+    assert [u["name"] for u in api.uploads] == ["plan.xlsx"]
+    assert "slack-file:F9" in api.uploads[0]["body"]
+    assert api.chats and api.chats[0]["use_retrieval"] is False  # analyzed although "분석" came without "문서로 추가"
+    summary = web.named("update")[0]["text"]
+    assert "다른 Slack 워크스페이스" in summary
+
+    again = FakeWeb(replies=[link, shared, {**ask, "ts": "102.0", "text": "<@UBOT> 엑셀 다시 읽어봐"}])
+    responder.answer({**ask, "ts": "102.0", "text": "<@UBOT> 엑셀 다시 읽어봐"}, again)
+    assert len(api.uploads) == 1  # the same Slack file is not uploaded twice
+    assert "이미 문서 1건으로 등록" in again.named("update")[0]["text"]
+    assert len(api.chats) == 2
+
+
+def test_thread_without_files_answers_normally() -> None:
+    api = FakeApi()
+    ask = {"channel": "C1", "user": "U1", "ts": "101.0", "thread_ts": "100.0", "text": "<@UBOT> 분석하라"}
+    web = FakeWeb(replies=[{"user": "U1", "ts": "100.0", "text": "주간 보고 초안"}, ask])
+    bot(api).answer(ask, web)
+    assert not api.uploads and api.chats and api.chats[0].get("use_retrieval", True) is True
+
+
 def test_result_text_without_documents() -> None:
     from doc_intake import IntakeResult, Skipped
 
