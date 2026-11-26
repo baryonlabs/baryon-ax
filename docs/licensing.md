@@ -4,6 +4,10 @@ Baryon AX는 **소스 공개(source-available) 멀티 라이선스**입니다. �
 
 > 원문(법적 효력)은 [LICENSE](../LICENSE)의 영문 **Baryon AX Community License 1.0**입니다. 이 문서는 이해를 돕기 위한 요약이며, 둘이 다르면 영문 원문이 우선합니다.
 
+> **가격 정책 변경 예정 (2026-11-26 결정):** v0.8.0부터 오픈소스 기본 기능은 무료(FREE), Pro 기능은 로그인 사용자·연결 기기
+> 수에 따라 유료(INDIVIDUAL $11.88 · BASIC $23.88 · CUSTOMIZED, 월·연 결제)로 바뀝니다. 자세한 내용은 [가격 안내](pricing.md).
+> 아래 표는 **현재 적용 중인** Community License 1.0 기준입니다.
+
 ## 한눈에
 
 | 사용 주체 | 라이선스 | 비용 |

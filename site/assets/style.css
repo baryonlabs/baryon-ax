@@ -955,3 +955,26 @@ details p { color: var(--muted); }
 @media (max-width: 520px) { .hero-formula em { flex-basis: 100%; margin-left: 0; } }
 .hero-formula li + li { position: relative; margin-left: 14px; }
 .hero-formula li + li::before { content: "+"; position: absolute; left: -13px; top: 50%; transform: translateY(-50%); color: var(--muted); font-weight: 700; font-size: .9rem; }
+
+/* Pricing (four self-hosting plans, in the style of rustdesk.com/pricing) */
+.price-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 8px 0 18px; }
+@media (max-width: 1020px) { .price-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .price-grid { grid-template-columns: 1fr; } }
+.price-card { position: relative; overflow: hidden; display: flex; flex-direction: column; padding: 26px 22px 22px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); text-align: center; }
+.price-card h3 { margin: 0; font-size: 1.15rem; font-weight: 800; letter-spacing: .12em; }
+.price-desc { margin: 8px 0 14px; color: var(--muted); font-size: .95rem; }
+.price-desc b { color: var(--ink); }
+.price-amount { display: flex; align-items: baseline; justify-content: center; gap: 4px; margin: 0; color: var(--ink); }
+.price-amount .cur { font-size: 1.6rem; font-weight: 700; }
+.price-amount b { font-size: 2.6rem; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+.price-amount .per { font-size: .9rem; font-weight: 700; }
+.price-amount .usd { align-self: flex-start; margin-left: 4px; color: var(--muted); font-size: .62rem; font-weight: 700; letter-spacing: .14em; }
+.price-billed { margin: 6px 0 16px; color: var(--muted); font-size: .9rem; }
+.price-card ul { margin: 0 0 18px; padding: 0; list-style: none; text-align: left; font-size: .92rem; line-height: 1.5; }
+.price-card li { position: relative; padding: 5px 0 5px 24px; }
+.price-card li::before { content: "✓"; position: absolute; left: 2px; color: var(--forest); font-weight: 800; }
+.price-card li.hi { color: var(--terracotta); font-weight: 700; }
+.price-card li.hi::before { content: "✓✓"; left: -2px; font-size: .8rem; }
+.price-card > a { margin-top: auto; align-self: stretch; text-align: center; }
+.price-featured { border-color: var(--forest); box-shadow: 0 0 0 1px var(--forest) inset, 0 14px 34px -22px rgba(15, 91, 78, .55); }
+.price-ribbon { position: absolute; top: 18px; right: -34px; width: 130px; padding: 4px 0; transform: rotate(45deg); background: var(--forest); color: #fff; font-size: .66rem; font-weight: 800; letter-spacing: .14em; text-align: center; }
