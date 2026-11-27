@@ -8,7 +8,7 @@ Baryon AX runs inside the customer's environment, including air-gapped networks.
 
 - Product: Baryon AX
 - Category: on-premises AI agent platform with grounded RAG, tacit-knowledge capture, and governance
-- Version: 0.7.0 (2026-11-21; first public release 0.6.0 on 2026-11-13)
+- Version: 0.8.0 (2026-11-28; 0.7.0 on 2026-11-21; first public release 0.6.0 on 2026-11-13)
 - License: Baryon AX Community License 1.0 (source-available; free for individuals, organizations under 10 people, and 30-day evaluation) + commercial license for 10+ people; copyright Baryon Labs
 - Deployment: self-hosted, on-premises, air-gapped capable
 - Model interface: OpenAI-compatible `/chat/completions`
@@ -64,6 +64,7 @@ Open http://localhost:3001. The `demo-local` model works without an API key and 
 - llms.txt: https://baryon-ax.baryon.ai/llms.txt
 - Extended brief: https://baryon-ax.baryon.ai/llms-full.txt
 - Repository: https://github.com/baryonlabs/baryon-ax
+- Release v0.8.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.8.0
 - Release v0.7.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.7.0
 - Architecture: https://github.com/baryonlabs/baryon-ax/blob/main/docs/architecture.md
 - Hardware requirements: https://github.com/baryonlabs/baryon-ax/blob/main/docs/hardware-requirements.md

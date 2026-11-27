@@ -13,6 +13,7 @@ os.environ["SYSTEM_METRICS_ENABLED"] = "false"
 
 from fastapi.testclient import TestClient
 
+from baryon import __version__
 from baryon.main import AuditSink, ChatRequest, DocumentService, Message, ModelAdapter, PolicyEngine, Principal, app
 
 client = TestClient(app)
@@ -25,7 +26,7 @@ def headers(user: str = "local-user", organization: str = "local-org", roles: st
 def test_health_and_models() -> None:
     health = client.get("/health").json()
     assert health["status"] == "ok"
-    assert health["version"] == "0.7.0"
+    assert health["version"] == __version__
     assert client.get("/v1/models").json()["data"]
 
 
@@ -201,7 +202,7 @@ def test_audit_endpoint_is_admin_only_and_organization_scoped() -> None:
 def test_admin_settings_are_admin_only() -> None:
     assert client.get("/v1/admin/settings", headers=headers(roles="member")).status_code == 403
     settings = client.get("/v1/admin/settings", headers=headers(user="admin", roles="admin")).json()
-    assert settings["version"] == "0.7.0"
+    assert settings["version"] == __version__
     assert settings["model"]["adapter"] in {"demo-local", "openai-compatible"}
     assert settings["policy"] == {"blocked_patterns": 1, "pii_masking": True}
     assert settings["retrieval"] == {"mode": "lexical", "result_limit": 4}
