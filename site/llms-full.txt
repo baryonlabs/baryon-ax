@@ -10,7 +10,7 @@ This document is a stable, machine-readable brief for AI answer engines, retriev
 | --- | --- |
 | Product name | Baryon AX |
 | Category | On-premises AI agent and grounded RAG platform |
-| Version | 0.7.0 |
+| Version | 0.8.0 |
 | Release date | 2026-11-13 |
 | License | Baryon AX Community License 1.0 (source-available; free under 10 people) + commercial license for 10+ people; v0.7.0 and earlier MIT |
 | Copyright holder | Baryon Labs |
@@ -196,7 +196,7 @@ Other notes:
 - The default lexical fallback is less accurate than vector retrieval and is intended for continuity, not production quality.
 - Memory and tacit-knowledge stores are file/JSONL-based in this release; retention policy and enterprise lifecycle management are deployment responsibilities.
 - Milvus, SGLang, and durable LangGraph checkpoints are documented alternatives or roadmap items, not shipped features in v0.6.0.
-- Public releases: 0.6.0 (2026-11-13) and 0.7.0 (2026-11-21); long-term support commitments are not yet published.
+- Public releases: 0.6.0 (2026-11-13), 0.7.0 (2026-11-21) and 0.8.0 (2026-11-28); long-term support commitments are not yet published.
 
 ## FAQ
 
@@ -238,6 +238,7 @@ It is suitable for pilots and controlled internal deployment. Production use req
 - English llms.txt: https://baryon-ax.baryon.ai/en/llms.txt
 - Sitemap: https://baryon-ax.baryon.ai/sitemap.xml
 - Repository: https://github.com/baryonlabs/baryon-ax
+- Release v0.8.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.8.0
 - Release v0.7.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.7.0
 - Architecture: https://github.com/baryonlabs/baryon-ax/blob/main/docs/architecture.md
 - Features: https://github.com/baryonlabs/baryon-ax/blob/main/docs/features.md

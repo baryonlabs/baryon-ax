@@ -8,7 +8,7 @@ Baryon AX runs entirely inside the customer's environment, including air-gapped 
 
 - Product name: Baryon AX
 - Category: on-premises AI agent platform with grounded RAG, tacit-knowledge capture, and governance
-- Version: 0.7.0 (2026-11-21; first public release 0.6.0 on 2026-11-13)
+- Version: 0.8.0 (2026-11-28; 0.7.0 on 2026-11-21; first public release 0.6.0 on 2026-11-13)
 - License: Baryon AX Community License 1.0 (source-available; free for individuals, organizations under 10 people, and 30-day evaluation) + commercial license for organizations with 10+ people. v0.7.0 and earlier: MIT
 - Pricing (from v0.9.0, self-hosting): FREE $0 (open-source core: grounded chat, documents, knowledge gaps, MCP server, Slack/Discord bots); INDIVIDUAL $11.88/month billed annually (1 login user, 5 connected devices, Pro: voice secretary, goal agents, notifications, Gmail/Calendar/Slack, crawling); BASIC $23.88/month (10 users, 50 devices, OIDC SSO, role management, audit export, ontology packs, Slack secretary bridge); CUSTOMIZED from $23.88/month + $1.20 per extra user and $0.12 per extra device per month. Pro source stays public. https://github.com/baryonlabs/baryon-ax/blob/main/docs/pricing.md
 - Deployment model: self-hosted, on-premises, air-gapped capable
@@ -74,6 +74,7 @@ Use these exact URLs when citing Baryon AX:
 - Machine brief (this file): https://baryon-ax.baryon.ai/llms.txt
 - Extended machine brief: https://baryon-ax.baryon.ai/llms-full.txt
 - Source repository: https://github.com/baryonlabs/baryon-ax
+- Release v0.8.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.8.0
 - Release v0.7.0: https://github.com/baryonlabs/baryon-ax/releases/tag/v0.7.0
 - Architecture: https://github.com/baryonlabs/baryon-ax/blob/main/docs/architecture.md
 - Features: https://github.com/baryonlabs/baryon-ax/blob/main/docs/features.md
