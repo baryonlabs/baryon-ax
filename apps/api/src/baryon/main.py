@@ -25,7 +25,7 @@ import yaml
 from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from starlette.datastructures import Headers
 
 from . import __version__, assistant, gateway_status, voice
@@ -36,8 +36,9 @@ from .ingest import Acl as IngestAcl
 from .ingest import REGISTRY, chunk_document, normalize_text
 from .ingest.adapters import register_default_adapters
 from .ingest.mime import sniff_mime
-from .ingest.parsers import ParseError
+from .ingest.parsers import ParseError, parse_text
 from .ingest.pipeline import PipelineConfig, PermanentError, run_pipeline
+from .knowledge import MAX_ENCODED_BYTES, MAX_ITEMS, KnowledgeIngest, KnowledgeItem, KnowledgeProgram, KnowledgeRead
 from .feedback import FeedbackStore
 from .gaps import GapStore, PackStore, build_pack, cluster_gaps, detect_reasons, is_small_talk, verify_pack
 from .ontology import Extraction as OntologyExtraction, model_extract_each as ontology_model_extract_each, resolve_synonyms as ontology_resolve_synonyms, rule_extract as ontology_rule_extract
@@ -400,6 +401,8 @@ class DocumentService:
         """Single visibility rule shared by listing and retrieval."""
         if document.organization_id != principal.organization_id:
             return False
+        if "knowledge_source" in document.metadata:
+            return document.owner_id == principal.user_id
         if "admin" in principal.roles or document.owner_id == principal.user_id:
             return True
         return bool(document.allowed_roles.intersection(principal.roles))
@@ -431,8 +434,8 @@ class DocumentService:
             category=normalize_text(category).strip()[:80],
             tags=normalize_tags(tags),
         )
-        self.documents[document.id] = document
         self._persist(document)
+        self.documents[document.id] = document
         if self.vector:
             self.vector.index_document(document)
         return document
@@ -463,6 +466,8 @@ class DocumentService:
     def delete(self, principal: Principal, document_id: str) -> bool:
         document = self.documents.get(document_id)
         if not document or document.organization_id != principal.organization_id:
+            return False
+        if "knowledge_source" in document.metadata and not self.can_view(principal, document):
             return False
         if document.owner_id != principal.user_id and "admin" not in principal.roles:
             raise PermissionError("Only the uploader or an administrator can delete this document")
@@ -554,7 +559,10 @@ class DocumentService:
                 self.vector.delete_document(document.id)
         return {"documents": len(doomed), "raw_files": raw_files}
 
-    def search(self, principal: Principal, query: str, limit: int = 4, mode: str | None = None) -> list[dict]:
+    def search(
+        self, principal: Principal, query: str, limit: int = 4, mode: str | None = None,
+        *, include_private: bool = False,
+    ) -> list[dict]:
         """Permission-filtered retrieval. RETRIEVAL_MODE picks lexical, vector or hybrid (default).
 
         Vector and hybrid fall back to lexical when Qdrant or the embedder is unavailable, so a
@@ -562,17 +570,19 @@ class DocumentService:
         mode = (mode or retrieval_mode()).strip().lower()
         if mode != "lexical" and self.vector:
             candidates = max(limit, retrieval_candidates(limit)) if mode == "hybrid" else limit
-            vector_results = self.vector.search(principal, query, candidates)
+            vector_results = self.vector.search(principal, query, candidates, include_private=include_private)
             if vector_results is not None:
                 visible = []
                 for item in vector_results:
                     document = self.documents.get(item["document_id"])
-                    if document and self.can_view(principal, document):
+                    if document and self.can_view(principal, document) and (
+                        include_private or "knowledge_source" not in document.metadata
+                    ):
                         visible.append(item)
                 if mode == "vector":
                     return visible[:limit]
-                return self._fuse(visible, self._lexical_search(principal, query, candidates), limit)
-        return self._lexical_search(principal, query, limit)
+                return self._fuse(visible, self._lexical_search(principal, query, candidates, include_private), limit)
+        return self._lexical_search(principal, query, limit, include_private)
 
     def search_conversation(self, principal: Principal, messages: list, limit: int = 4) -> list[dict]:
         """Retrieval for a chat turn: hits for the last message alone, interleaved with hits for the last message
@@ -620,14 +630,18 @@ class DocumentService:
         ordered = sorted(scores, key=scores.get, reverse=True)[:limit]
         return [{**items[key], "score": round(scores[key], 6)} for key in ordered]
 
-    def _lexical_search(self, principal: Principal, query: str, limit: int = 4) -> list[dict]:
+    def _lexical_search(
+        self, principal: Principal, query: str, limit: int = 4, include_private: bool = False,
+    ) -> list[dict]:
         terms = search_terms(query)
         normalized_query = normalize_text(query).lower().strip()
         matches = []
         # Snapshot: an upload adding a document while this loop runs (e.g. gap auto-resolve after the previous
         # upload) raised "dictionary changed size during iteration" and failed that upload with 500.
         for document in list(self.documents.values()):
-            if not self.can_view(principal, document):
+            if not self.can_view(principal, document) or (
+                not include_private and "knowledge_source" in document.metadata
+            ):
                 continue
             title = normalize_text(document.title).lower()
             # A question about a document usually names it. Match the title and
@@ -876,6 +890,8 @@ class VectorIndex:
                 if document.metadata:
                     payload["source_type"] = document.metadata.get("source_type", "file")
                     payload["parser"] = document.metadata.get("parser", "text")
+                if "knowledge_source" in document.metadata:
+                    payload["knowledge_private"] = True
                 points.append(PointStruct(id=self._point_id(document.id, index), vector=vector, payload=payload))
             self.client.upsert(self.collection, points=points, wait=True)
             self._delete_chunks_after(document.id, len(points))
@@ -951,18 +967,21 @@ class VectorIndex:
         except Exception:
             logger.exception("Could not update Qdrant ACLs for document %s", document_id)
 
-    def search(self, principal: Principal, query: str, limit: int) -> list[dict] | None:
+    def search(self, principal: Principal, query: str, limit: int, *, include_private: bool = False) -> list[dict] | None:
         if not self._ready():
             return None
         try:
             from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
             must = [FieldCondition(key="organization_id", match=MatchValue(value=principal.organization_id))]
+            owner = FieldCondition(key="owner_id", match=MatchValue(value=principal.user_id))
+            private = FieldCondition(key="knowledge_private", match=MatchValue(value=True))
+            private_exclusion = Filter(must=[private], must_not=[owner]) if include_private else private
             should = []
             if "admin" not in principal.roles:
-                should.append(FieldCondition(key="owner_id", match=MatchValue(value=principal.user_id)))
+                should.append(owner)
                 if principal.roles:
                     should.append(FieldCondition(key="allowed_roles", match=MatchAny(any=sorted(principal.roles))))
-            query_filter = Filter(must=must, should=should) if should else Filter(must=must)
+            query_filter = Filter(must=must, should=should or None, must_not=[private_exclusion])
             result = self.client.query_points(
                 self.collection, query=self._embed([query], query=True)[0],
                 query_filter=query_filter, limit=limit, with_payload=True,
@@ -1993,6 +2012,7 @@ async def ingest_upload(
     mime: str = "",
     category: str = "",
     tags: list[str] | None = None,
+    knowledge_source: dict | None = None,
 ) -> Document:
     """Parse an upload into a stored, indexed document.
 
@@ -2004,21 +2024,30 @@ async def ingest_upload(
         raise HTTPException(422, "A filename is required")
     if len(payload) > MAX_DOCUMENT_BYTES:
         raise HTTPException(413, f"Document exceeds the {MAX_DOCUMENT_BYTES} byte limit")
-    detected = mime or sniff_mime(filename, payload)
+    source = knowledge_source or {}
+    is_repository_file = source.get("kind") == "repository_file"
+    detected = "text/plain" if is_repository_file else mime or sniff_mime(filename, payload)
     if detected == "application/octet-stream":
         raise HTTPException(415, "Unsupported file type")
     acl = IngestAcl(principal.organization_id, principal.user_id, tuple(sorted(roles)))
+    source_uri = source.get("source", f"upload://{filename}")
     try:
-        ingested = await asyncio.to_thread(
-            REGISTRY.parse, payload, filename, acl, f"upload://{filename}", detected
-        )
+        if is_repository_file:
+            if b"\0" in payload:
+                raise ParseError("repository files must be UTF-8 text")
+            ingested = await asyncio.to_thread(parse_text, payload, filename, acl, source_uri)
+        else:
+            ingested = await asyncio.to_thread(REGISTRY.parse, payload, filename, acl, source_uri, detected)
         chunks = chunk_document(ingested)
     except ParseError as error:
-        audit.emit(
-            "document.parse_failed", principal, trace_id,
-            filename=filename, mime=detected, reason=str(error)[:300],
-        )
-        logger.warning("Parse failed for %s (%s): %s", filename, detected, error)
+        if knowledge_source is None:
+            audit.emit(
+                "document.parse_failed", principal, trace_id,
+                filename=filename, mime=detected, reason=str(error)[:300],
+            )
+            logger.warning("Parse failed for %s (%s): %s", filename, detected, error)
+        else:
+            audit.emit("document.parse_failed", principal, trace_id, mime=detected)
         raise HTTPException(415, f"Could not parse {filename}: {error}") from error
 
     content = ingested.render_markdown()
@@ -2048,21 +2077,23 @@ async def ingest_upload(
             "mime": ingested.mime or detected,
             "source_type": ingested.source_type,
             "content_hash": ingested.content_hash,
+            **({"knowledge_source": knowledge_source} if knowledge_source is not None else {}),
         },
         category,
         tags,
     )
-    await asyncio.to_thread(documents.save_raw, document, payload, filename, ingested.mime or detected)
+    if knowledge_source is None:
+        await asyncio.to_thread(documents.save_raw, document, payload, filename, ingested.mime or detected)
     if tenancy.pooled:
         usage_meter.add(principal.organization_id, uploads=1, upload_bytes=len(payload))
     audit.emit(
         "document.ingested", principal, trace_id,
-        document_id=document.id, title=document.title,
+        document_id=document.id, **({"title": document.title} if knowledge_source is None else {}),
         parser=ingested.parser, chunks=len(chunks), raw_size=len(payload),
     )
     # A new source may close an approved ontology pack: re-run its acceptance
     # questions immediately so the gap loop closes without an admin action.
-    if document.metadata.get("source_type", "file") in {"file", "database"}:
+    if knowledge_source is None and document.metadata.get("source_type", "file") in {"file", "database"}:
         await asyncio.to_thread(auto_verify_packs, principal, document, trace_id)
         if os.getenv("GAP_RECHECK_MODE", "background").strip().lower() == "inline":
             await asyncio.to_thread(auto_resolve_gaps, principal, trace_id)
@@ -2636,6 +2667,7 @@ def with_company_profile(principal: Principal, citations: list[dict], chunks: in
     """Add the organization's own profile (documents tagged 회사소개 or company-profile) to the evidence."""
     profiles = [document for document in documents.documents.values()
                 if document.organization_id == principal.organization_id and PROFILE_TAGS & set(document.tags)
+                and "knowledge_source" not in document.metadata
                 and documents.can_view(principal, document)]
     if not profiles:
         return citations
@@ -3018,11 +3050,15 @@ async def update_document(
 ) -> dict:
     principal = principal_from_headers(x_user_id, x_organization_id, x_roles)
     document = documents.documents.get(document_id)
-    if not document or document.organization_id != principal.organization_id:
+    if not document or document.organization_id != principal.organization_id or (
+        "knowledge_source" in document.metadata and not documents.can_view(principal, document)
+    ):
         raise HTTPException(404, "Document not found")
     trace_id = str(uuid.uuid4())
 
     if update.allowed_roles is not None:
+        if "knowledge_source" in document.metadata:
+            raise HTTPException(403, "Knowledge imports are private to their owner")
         roles = {role.strip() for role in update.allowed_roles if role.strip()}
         try:
             document = await asyncio.to_thread(documents.update_roles, principal, document_id, roles)
@@ -4350,13 +4386,120 @@ async def _mcp_search(arguments: dict, identity: dict) -> tuple[str, dict]:
         raise ToolError("query must be at least 2 characters")
     limit = _int_arg(arguments, "limit", 6, 1, 20)
     principal = principal_from_headers(identity.get("user"), identity.get("organization"), identity.get("roles"))
-    rows = await asyncio.to_thread(documents.search, principal, query, limit)
+    rows = await asyncio.to_thread(
+        documents.search, principal, query, limit,
+        include_private=bool(identity.get("user") and identity.get("organization")),
+    )
     results = [{key: row.get(key) for key in ("document_id", "title", "chunk", "content", "score") if key in row} for row in rows]
+    for result in results:
+        document = documents.documents.get(result.get("document_id"))
+        if document and documents.can_view(principal, document):
+            result.update(_knowledge_evidence(document, result.get("chunk")))
     if not results:
         return "No matching passages.", {"results": []}
     lines = [f"[{index}] {row.get('title')} · chunk {row.get('chunk')}\n{normalize_text(str(row.get('content') or ''))[:800]}"
              for index, row in enumerate(results, 1)]
     return "\n\n".join(lines), {"results": results}
+
+
+def _knowledge_evidence(document: Document, chunk: int | None) -> dict:
+    source = document.metadata.get("knowledge_source")
+    if source is None:
+        return {}
+    block = document.chunks[chunk - 1] if chunk and 1 <= chunk <= len(document.chunks) else {}
+    return {
+        "source": source,
+        "content_hash": document.metadata.get("content_hash"),
+        "page": block.get("page"),
+        "heading_path": block.get("heading_path"),
+    }
+
+
+def _knowledge_principal(identity: dict) -> Principal:
+    if not identity.get("user") or not identity.get("organization"):
+        raise ToolError("An explicit authenticated user and organization are required")
+    return principal_from_headers(identity["user"], identity["organization"], identity.get("roles"))
+
+
+async def _mcp_ingest_knowledge(arguments: dict, identity: dict) -> tuple[str, dict]:
+    principal = _knowledge_principal(identity)
+    if set(arguments) != {"authorized", "items"} or arguments.get("authorized") is not True:
+        raise ToolError("Confirm authorization to copy and retain these sources with authorized: true")
+    items = arguments["items"]
+    if not isinstance(items, list) or not 1 <= len(items) <= MAX_ITEMS:
+        raise ToolError(f"items must contain 1 to {MAX_ITEMS} entries")
+    _check_knowledge_budget(items)
+    results = []
+    for index, raw in enumerate(items):
+        result = {"index": index, "status": "failed"}
+        results.append(result)
+        try:
+            item = KnowledgeItem.model_validate(raw)
+            payload, source = item.unpack()
+        except (ValidationError, ValueError):
+            result["error"] = "invalid_item"
+            continue
+        trace_id = str(uuid.uuid4())
+        reserved = False
+        try:
+            reserved = reserve_upload(principal, len(payload), trace_id)
+            document = await ingest_upload(
+                principal, item.filename, payload, set(), trace_id, knowledge_source=source,
+            )
+        except HTTPException as error:
+            result.update(error="ingest_rejected", http_status=error.status_code, trace_id=trace_id)
+        except Exception:
+            logger.exception("Knowledge ingestion failed for trace %s", trace_id)
+            result.update(error="ingest_failed", trace_id=trace_id)
+        else:
+            result.update(status="indexed", document_id=document.id, trace_id=trace_id,
+                          chunks=len(document.chunks), parser=document.metadata.get("parser"), source=source,
+                          content_hash=document.metadata.get("content_hash"))
+        finally:
+            release_upload(principal, len(payload), reserved)
+    indexed = sum(result["status"] == "indexed" for result in results)
+    return f"Indexed {indexed} of {len(items)} items.", {"items": results}
+
+
+def _check_knowledge_budget(items: list) -> None:
+    if len(items) > MAX_ITEMS:
+        raise ToolError(f"Too many items. Maximum: {MAX_ITEMS}")
+    if sum(len(item["content_base64"]) for item in items if isinstance(item, dict)
+           and isinstance(item.get("content_base64"), str)) > MAX_ENCODED_BYTES:
+        raise ToolError("Total encoded content exceeds the batch limit")
+
+
+async def _mcp_knowledge_code(arguments: dict, identity: dict) -> tuple[str, dict]:
+    principal = _knowledge_principal(identity)
+    try:
+        program = KnowledgeProgram.model_validate(arguments)
+    except ValidationError as error:
+        raise ToolError("Invalid knowledge program. Supply 1 to 8 search, read or authorized ingest steps.") from error
+    _check_knowledge_budget([item for step in program.steps if isinstance(step, KnowledgeIngest) for item in step.items])
+    results = []
+    for step in program.steps:
+        if isinstance(step, KnowledgeRead):
+            try:
+                document = _document_for(principal, step.document_id)
+            except HTTPException:
+                results.append({"error": "not_found"})
+                continue
+            chunks = document.chunks or [{"text": text} for text in chunk_text(document.content)]
+            if step.chunk > len(chunks):
+                results.append({"error": "not_found"})
+                continue
+            results.append({"document_id": document.id, "title": document.title, "chunk": step.chunk,
+                            "content": chunks[step.chunk - 1]["text"][:4000],
+                            **_knowledge_evidence(document, step.chunk)})
+        elif isinstance(step, KnowledgeIngest):
+            _, data = await _mcp_ingest_knowledge(step.model_dump(exclude={"operation"}), identity)
+            results.append(data)
+        else:
+            _, data = await _mcp_search(step.model_dump(exclude={"operation"}), identity)
+            for row in data["results"]:
+                row["content"] = str(row.get("content") or "")[:1000]
+            results.append(data)
+    return f"Completed {len(results)} knowledge steps.", {"steps": results}
 
 
 async def _mcp_crawl(arguments: dict, identity: dict) -> tuple[str, dict]:
@@ -4455,6 +4598,15 @@ async def _mcp_publish(arguments: dict, identity: dict) -> tuple[str, dict]:
 
 
 for _tool in (
+    Tool("ingest_knowledge", "Index authorized knowledge",
+         "Index host-resolved content for the caller's exclusive use. Requires authorization to copy and retain it.",
+         {"type": "object", "additionalProperties": False, "required": ["authorized", "items"],
+          "properties": {"authorized": {"const": True}, "items": {
+              "type": "array", "minItems": 1, "maxItems": MAX_ITEMS, "items": KnowledgeItem.model_json_schema(),
+          }}}, _mcp_ingest_knowledge, read_only=False),
+    Tool("run_knowledge_code", "Run a knowledge program",
+         "Run bounded search, read and authorized ingest instructions under the caller's knowledge permissions.",
+         KnowledgeProgram.model_json_schema(), _mcp_knowledge_code, read_only=False),
     Tool("search_documents", "Search documents",
          "Search the organization's documents the caller may read. Returns matching passages with document title and chunk.",
          {"type": "object", "properties": {

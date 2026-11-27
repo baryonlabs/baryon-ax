@@ -63,6 +63,17 @@ def test_vector_hits_stay_inside_the_organization(store) -> None:
     assert ids(store.search(ALICE_B, "재택근무 허용", mode="hybrid")) == {doc_b.id}
 
 
+def test_knowledge_visibility_filters_vectors_before_ranking(store) -> None:
+    query = "synthetic glacier specimen catalog"
+    private = store.create(ALICE_A, "restricted.md", query, set(), metadata={"knowledge_source": {"kind": "file"}})
+    shared = store.create(ALICE_A, "shared.md", "glacier catalog specimen", {"member"})
+    admin = Principal("admin", ALICE_A.organization_id, {"admin"})
+    assert ids(store.search(ALICE_A, query, limit=1, mode="vector", include_private=True)) == {private.id}
+    assert ids(store.search(ALICE_A, query, limit=1, mode="vector")) == {shared.id}
+    assert ids(store.search(admin, query, limit=1, mode="vector", include_private=True)) == {shared.id}
+    assert store.search(ALICE_B, query, mode="vector", include_private=True) == []
+
+
 def test_role_acl_applies_to_vector_hits(store) -> None:
     owner = Principal("hr-lead", "org-a", {"hr"})
     secret = store.create(owner, "salary.md", "연봉 테이블은 인사팀만 본다", {"hr"})

@@ -52,3 +52,14 @@ python repo_sync.py --repo ../../../my-service --ref origin/main --fetch --name 
 ```bash
 python -m pytest -q tests
 ```
+## Private knowledge manifests
+
+To prepare tracked source files for the [knowledge MCP tools](../../docs/mcp-server.md#knowledge-imports-and-code-mode), read a local commit and select the approved paths explicitly. Set the source URL prefix to the repository browser's commit file route.
+
+```sh
+python repo_sync.py --repo <checkout> --ref <commit> \
+  --knowledge-manifest-prefix https://example.invalid/repository/blob \
+  --knowledge-include 'src/**'
+```
+
+The command prints one JSON item per selected regular UTF-8 file. Each item carries a relative path and commit-pinned provenance. Review the selected content for secrets and retention permission before sending items through `ingest_knowledge`. The manifest command itself performs no upload.

@@ -20,7 +20,7 @@ class FakeVector:
     def delete_document(self, document_id: str) -> None:
         pass
 
-    def search(self, principal, query: str, limit: int):
+    def search(self, principal, query: str, limit: int, *, include_private: bool = False):
         self.requested_limit = limit
         return self.hits[:limit]
 
