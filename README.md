@@ -17,7 +17,7 @@
 [![CI](https://github.com/baryonlabs/baryon-ax/actions/workflows/ci.yml/badge.svg)](https://github.com/baryonlabs/baryon-ax/actions/workflows/ci.yml)
 [![security-sweep](https://github.com/baryonlabs/baryon-ax/actions/workflows/security-sweep.yml/badge.svg)](https://github.com/baryonlabs/baryon-ax/actions/workflows/security-sweep.yml)
 
-[홈페이지](https://baryon-ax.baryon.ai/) · [빠른 시작](#quick-start) · [음성 비서](#voice-secretary) · [아키텍처](#architecture) · [연동](#integrations) · [문서](#docs) · [로드맵](docs/roadmap.md) · [English](#english)
+[홈페이지](https://baryon-ax.baryon.ai/) · [빠른 시작](#quick-start) · [음성 비서](#voice-secretary) · [아키텍처](#architecture) · [연동](#integrations) · [문서](#docs) · [가격](#pricing) · [로드맵](docs/roadmap.md) · [English](#english)
 
 </div>
 
@@ -108,7 +108,7 @@
 - [빠른 시작](#quick-start) · [기존 설치 업데이트](#updating-an-existing-install) · [실행 구성](#profiles)
 - [음성 비서: 말로 일하기](#voice-secretary) · [아키텍처](#architecture) · [암묵지 지식화 사이클](#tacit--explicit-cycle)
 - [연동: API · 메신저 봇 · MCP](#integrations) · [설정](#configuration) · [API](#api)
-- [보안](#security) · [로드맵](#roadmap) · [문서 지도](#docs) · [개발·기여](#development) · [English](#english)
+- [보안](#security) · [로드맵](#roadmap) · [문서 지도](#docs) · [개발·기여](#development) · [English](#english) · [가격](#pricing) · [라이선스](#license)
 
 ---
 
@@ -150,6 +150,7 @@
 - 대화 맥락 검색: "다시 해봐"처럼 주제어 없는 후속 질문도 앞 대화의 주제로 근거를 찾음. 실제 업무 스레드에서 근거가 들어온 턴 6/11 → 11/11 ([설명](docs/retrieval.md#conversation))
 - FastEmbed 또는 OpenAI 호환 임베딩
 - Apache Ossie 의미 모델 가져오기 · 내보내기
+- 웹 링크 읽기 · 사이트 크롤링(사이트맵 · robots.txt, 내부 주소 차단), 코드 저장소 지식(repo-sync)
 
 </td>
 </tr>
@@ -170,7 +171,7 @@
 - PostgreSQL 감사 로그 + JSONL, Langfuse 트레이스
 - OIDC 인증, 웹 PKCE 로그인, 봇 · MCP용 서비스 계정 위임
 - OpenAI 호환 `/v1/chat/completions`, MCP 서버 `POST /mcp`
-- Slack · Discord 봇 예제
+- Slack · Discord 봇 예제(DM · 스레드 파일 · 슬랙 비서 브리지)
 
 </td>
 </tr>
@@ -185,6 +186,7 @@
 - 말은 짧게, 화면엔 목록 · 표 · 막대/선 차트 · 숫자 카드로 따로 정리
 - 사진(영수증 · 명함 · 문서)과 녹음(회의 · 강의)을 보여 주면 읽고 요약
 - 자체 알림 · 알람: "7시에 깨워 줘" → 화면을 켜고 울림 (FCM 없음)
+- 메일 초안은 Gmail 임시보관함에 바로 저장하고 링크로 열기, 보내기는 되읽고 확인
 
 </td>
 <td valign="top">
@@ -194,6 +196,7 @@
 - 목표마다 전용 git 브랜치 · 샌드박스, push · 발송은 하지 않음
 - 막히면 질문하고, 끝나면 비서가 먼저 말로 보고
 - 진행 단계와 작업 카드가 앱 화면에 실시간으로 표시
+- 앱 첫 화면 '할 일': #번호로 진행 중 · 완료 · 예약 알림 · 답을 기다리는 질문
 
 </td>
 </tr>
@@ -212,26 +215,25 @@
 <a id="whats-new"></a>
 ## What's new
 
-**v0.8.0 — 말로 일하는 비서** · [릴리스 노트](https://github.com/baryonlabs/baryon-ax/releases/tag/v0.8.0)
+**v0.8.0 — 말로 일하는 비서** (2026-11-28) · [릴리스 노트](https://github.com/baryonlabs/baryon-ax/releases/tag/v0.8.0)
 
-- **후속 질문 검색 개선**: 채팅이 마지막 메시지만이 아니라 대화의 첫 질문과 최근 질문까지 함께 검색합니다. "다시 해봐", "그거 어디에 명시돼 있어?"처럼 주제어 없는 질문도 근거를 찾습니다. 실제 업무 스레드 재생에서 근거가 들어온 턴 6/11 → 11/11 ([retrieval.md](docs/retrieval.md#conversation)).
-- **Slack 봇이 스레드를 더 잘 이해함**: 1:1 DM에 답하고, 스레드에 올라온 파일(.zip·엑셀·한글 포함)을 "문서로 추가"하거나 "분석하라"는 말만으로 읽어 원문으로 답합니다. 같은 워크스페이스의 Slack 링크는 내용까지 읽고, 긴 답은 잘리지 않습니다([개선 내역](examples/slack-bot/README.md#개선-내역)).
-- **코드 저장소를 지식으로(repo-sync)**: 설계 문서만으로는 "현재 코드 기준으로 무엇을 더 할 수 있나"에 답할 수 없었습니다. git 저장소의 문서, 모듈별 코드 지도, 머지 이력을 주기적으로 올려 봇이 현재 구현 상태를 근거로 답합니다([examples/repo-sync](examples/repo-sync)).
-
-- **음성**: 받아쓰기와 음성 명령, 말하면 멈추는 라이브 대화. sherpa-onnx STT와 Supertonic TTS가 사내에서만 돕니다 ([voice.md](docs/voice.md)).
-- **음성 비서**: 메일 · 일정 · 할 일 · PR/CI를 요약하고 DureClaw 플릿에 일을 맡깁니다. 바뀌는 일은 음성 확인을 거쳐야 실행됩니다 ([voice-secretary.md](docs/voice-secretary.md)).
-- **목표 에이전트**: 대화로 맡긴 목표를 백그라운드 에이전트 여러 개가 각자 브랜치에서 병렬로 처리하고, 끝나면 비서가 먼저 알려 줍니다.
-- **바리온 비서 앱 · 전화**: Flutter 안드로이드 앱과 SIP 전화. 차량 블루투스로 쓰고, 상태는 효과음으로 알 수 있습니다 ([voice-app.md](docs/voice-app.md) · [phone.md](docs/phone.md)).
-- **비서에게 알려 주기**: 앱에서 나에 대한 소개, 원하는 활용 방식, 기억, MCP 연결을 적고 켜고 끕니다. 통화 중 "이거 기억해 줘"라고 말해도 쌓입니다.
-- **내 목소리만 듣기**: 말마다 잡음을 지우고(GTCRN), 휴대폰 가까이에서 한 말만 받아씁니다. 소음과 옆 사람 말은 요청으로 들어가지 않습니다.
-- **번호 붙은 할 일 · 자체 알림 · 떠 있는 얼굴**: 앱을 열면 목표 에이전트가 #번호로 보이고, "7시에 깨워 줘"는 FCM 없이 화면을 켜고 울립니다.
+*말로 맡기는 비서*
+- **바리온 비서 앱 · 전화**: 통화하듯 말로 묻고 맡깁니다. 차량 블루투스로 쓰고, 내 목소리만 듣고(잡음 제거 · 근거리 판별), 상태는 효과음과 떠 있는 얼굴로 보여 줍니다 ([voice-app.md](docs/voice-app.md) · [phone.md](docs/phone.md)).
+- **목표 에이전트 · 할 일 보드 · 알림**: 코딩·조사는 백그라운드 에이전트가 #번호를 달고 처리하고, 앱을 열면 진행 중·완료·예약 알림이 보입니다. "7시에 깨워 줘"는 FCM 없이 화면을 켜고 울립니다.
 - **사진 · 녹음 · 화면 카드**: 영수증·문서 사진과 회의 녹음을 이해하고, 말은 짧게, 목록·표·차트는 화면에 따로 보여 줍니다.
-- **웹 링크 읽기 · 사이트 크롤링**: 질문 속 링크를 읽어 근거로 답하고, 사이트 전체를 백그라운드로 크롤링해 지식으로 쌓습니다.
-- **메일 초안 · 슬랙 비서 브리지**: "메일 초안으로 만들어 줘"는 Gmail 임시보관함에 바로 저장되고 링크가 옵니다. 슬랙에서 맡긴 일도 비서가 스레드 맥락을 읽고 처리합니다.
+
+*일을 끝까지*
+- **메일 · 일정 · 슬랙**: Gmail·캘린더를 읽고 대화로 일정을 조정합니다. "메일 초안으로 만들어 줘"는 Gmail 임시보관함에 저장되고 링크가 오며, 보내기는 되읽고 확인을 받습니다 ([voice-secretary.md](docs/voice-secretary.md)).
+- **슬랙 비서 브리지 · DM · 파일**: 슬랙에서 맡긴 일은 비서가 스레드 맥락까지 읽고 처리하고(진행/취소 버튼), 봇은 DM과 스레드 파일(.zip·엑셀·한글)도 다룹니다 ([slack-bot](examples/slack-bot/README.md)).
+
+*더 넓은 지식*
+- **웹 링크 · 사이트 크롤링**: 질문 속 링크를 읽어 근거로 답하고, 사이트 전체를 사이트맵·robots.txt를 지켜 크롤링합니다. 회사소개 문서와 함께 "이 업체와 협력한다면?"에도 답합니다 ([getting-started-ko.md](docs/getting-started-ko.md)).
+- **코드 저장소 지식 · 후속 질문 검색**: git 저장소의 문서·코드 지도·이력을 지식으로 올리고([repo-sync](examples/repo-sync)), "다시 해봐" 같은 후속 질문도 앞 대화의 주제로 근거를 찾습니다(근거가 들어온 턴 6/11 → 11/11, [retrieval.md](docs/retrieval.md#conversation)).
+- **온톨로지 꾸러미**: 지식 공백에서 엔티티와 "아직 모르는 값"을 뽑습니다. 처음 보는 질문 10개 중 9개를 정확히 맞혔습니다 ([ontology-quality.md](docs/ontology-quality.md)).
 
 **v0.7.0 — 사내 메신저 안에서 먼저 묻는 AI** · [릴리스 노트](https://github.com/baryonlabs/baryon-ax/releases/tag/v0.7.0)
 
-- **Slack · Discord 봇**: 멘션하면 출처와 함께 답하고, 지식 공백은 담당자에게 먼저 묻습니다. Slack에서는 DM으로도 묻고, 스레드에 올린 파일을 "문서로 추가"로 바로 등록합니다.
+- **Slack · Discord 봇**: 멘션하면 출처와 함께 답하고, 지식 공백은 담당자에게 먼저 묻습니다.
 - **MCP 서버** `POST /mcp`: 검색 · 근거 답변 · 지식 공백 도구를 Claude, IDE, 에이전트 채팅 앱에 엽니다.
 - **서비스 계정 위임 인증**: 봇과 MCP 게이트웨이가 사람마다 대신 요청해도 권한과 감사 기록은 사람 단위로 남습니다. 웹 OIDC 로그인(PKCE)도 추가했습니다.
 - **하이브리드 검색 · OpenAI 호환 임베딩**, **Apache Ossie 지식 교환**, **MCP 도구 선택**
@@ -864,10 +866,9 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 | --- | --- | --- |
 | v0.6.0 ✅ | 첫 공개 | 근거 채팅, HWP 수집, ACL · 감사, 암묵지 루프, PR 보안 점검 |
 | v0.7.0 ✅ | 사내 메신저 안에서 먼저 묻는 AI | Slack · Discord 봇, MCP 서버, 서비스 계정 위임, 하이브리드 검색 |
-| v0.8.0 ✅ | 말로 일하는 비서 | 바리온 비서 앱·전화, 목표 에이전트, 자체 알림, 사진·녹음, 웹 크롤링, 코드 지식, 슬랙 비서 브리지 |
-| main ✅ | 말로 일하는 비서 | 받아쓰기 · 라이브 대화, 음성 비서, 목표 에이전트, 바리온 비서 앱 · SIP 전화, 효과음 |
-| v0.8.0 | 보안 심사를 통과하는 운영 기능 | 사용자 · 조직 · 역할 관리 UI, 감사 로그 검색 · 내보내기 · 보존, 백업 · 복구 런북, 공유 링크 |
-| v0.9.0 | 지식 품질 | 온톨로지 편집 UI, 대화 자동 메모리, E2E CI |
+| v0.8.0 ✅ | 말로 일하는 비서 | 바리온 비서 앱 · 전화, 목표 에이전트, 자체 알림, 사진 · 녹음, 메일 초안, 웹 크롤링, 코드 지식, 슬랙 비서 브리지 |
+| v0.9.0 | 보안 심사를 통과하는 운영 기능 + Pro | 사용자 · 조직 · 역할 관리 UI, 감사 로그 검색 · 내보내기 · 보존, 백업 · 복구 런북, 공유 링크, Pro 플랜 라이선스 |
+| 이후 | 지식 품질 | 온톨로지 편집 UI, 대화 자동 메모리, PR 단위 E2E CI |
 
 대상 고객과 공개 범위(무엇을 공개하고 무엇을 지원으로 제공하는지)는 [docs/roadmap.md](docs/roadmap.md)에 있습니다.
 
@@ -881,11 +882,13 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 | AWS 배포 · 멀티테넌트 | [aws-deploy.md](docs/aws-deploy.md) · [multi-tenancy.md](docs/multi-tenancy.md) |
 | 검색 (Qdrant 하이브리드 · 재색인 · 벤치) | [retrieval.md](docs/retrieval.md) |
 | 구조 · 설계 | [architecture.md](docs/architecture.md) · [ingestion/architecture.md](docs/ingestion/architecture.md) · [ux-principles.md](docs/ux-principles.md) · [research/knowledge-gap-loop.md](docs/research/knowledge-gap-loop.md) |
-| 기능 전체 | [features.md](docs/features.md) · [screenshots.md](docs/screenshots.md) |
+| 처음 쓰는 사람 · 기능 전체 | [getting-started-ko.md](docs/getting-started-ko.md) · [features.md](docs/features.md) · [screenshots.md](docs/screenshots.md) |
+| 지식 품질 | [ontology-quality.md](docs/ontology-quality.md) · [retrieval.md](docs/retrieval.md) |
 | 인증 · 보안 | [auth-oidc.md](docs/auth-oidc.md) · [multi-tenancy.md](docs/multi-tenancy.md) · [security.md](docs/security.md) · [security-ci.md](docs/security-ci.md) · [SECURITY.md](SECURITY.md) |
 | 연동 | [mcp-server.md](docs/mcp-server.md) · [mcp-connectors.md](docs/mcp-connectors.md) · [examples/](examples) |
 | 음성 비서 · 앱 | [voice.md](docs/voice.md) · [voice-secretary.md](docs/voice-secretary.md) · [phone.md](docs/phone.md) · [voice-app.md](docs/voice-app.md) · [voice-architecture.md](docs/voice-architecture.md) (UML) · [voice-app-design.md](docs/voice-app-design.md) (UX 가이드) |
-| 오픈소스 · 라이선스 | [open-source.md](docs/open-source.md) · [ingestion/open-source-inventory.md](docs/ingestion/open-source-inventory.md) |
+| 가격 · 라이선스 · 오픈소스 | [pricing.md](docs/pricing.md) · [licensing.md](docs/licensing.md) · [open-source.md](docs/open-source.md) · [ingestion/open-source-inventory.md](docs/ingestion/open-source-inventory.md) |
+| 테스트 · CI | [selfhosted-runner.md](docs/selfhosted-runner.md) (전체 e2e · 맥미니 runner) · [security-ci.md](docs/security-ci.md) |
 | 방향 | [roadmap.md](docs/roadmap.md) |
 | 홈페이지 운영 | [promotion-playbook.md](docs/promotion-playbook.md) · [site-seo.md](docs/site-seo.md) · [domain-migration.md](docs/domain-migration.md) |
 
@@ -911,8 +914,10 @@ cd apps/voice_app && flutter test && flutter build apk --debug # 바리온 비�
 uvicorn baryon.main:app --app-dir apps/api/src --port 8000 --env-file .env   # 호스트에서 API 실행
 ```
 
+**전체를 한 번에**: 스택을 띄운 뒤 `scripts/e2e_all.sh`가 모든 테스트 묶음(API · 비서 · 게이트웨이 · STT · 슬랙 봇 · repo-sync · 웹 · 앱)과 라이브 점검(근거 답변 · MCP · 웹 읽기 · 크롤링 · 웹 Playwright)을 돌리고 결과를 표로 보여 줍니다([selfhosted-runner.md](docs/selfhosted-runner.md)).
+
 <details>
-<summary><b>E2E · 스모크 테스트</b></summary>
+<summary><b>E2E · 스모크 테스트 (개별 실행)</b></summary>
 
 API(8000)와 웹 개발 서버(5173)를 띄운 뒤:
 
@@ -945,7 +950,10 @@ API_BASE=http://127.0.0.1:8000 REQUIRE_FULL=1 python3 scripts/smoke_full_stack.p
 - **Ask-first loop**: unanswered questions become knowledge gaps, experts answer from a question queue, and published answers are indexed through the same pipeline.
 - **Integrations**: OpenAI-compatible `/v1/chat/completions`, an MCP server at `POST /mcp`, an MCP tool picker, Slack and Discord bots (the Slack bot also answers DMs and adds files shared in a thread as documents), and Apache Ossie import/export.
 - **Voice secretary**: dictation, interruptible live conversation, and a resident secretary you can phone, by SIP or from the **바리온 비서** Android app. It shows up as a normal call, so car Bluetooth works. The secretary summarizes mail, calendar, to-dos and PRs, and acts only after a spoken "yes". It hands long work to **goal agents** that run in parallel on their own sandboxed git branches and report back by voice. Speech-to-text and text-to-speech stay on-premises.
+- **Gets work done** (v0.8.0): mail drafts saved straight to Gmail with a link (sending only after a read-back), scheduling from mail, Slack and KakaoTalk, a Slack bridge that hands the owner's requests with the thread's context to the secretary, photos and recordings understood, and lists, tables and charts on screen while the spoken answer stays short.
+- **Wider knowledge**: links in a question are read and cited; whole websites are crawled (sitemap, robots.txt, internal addresses refused); git repositories become knowledge (docs, code map, history).
 - **Governance**: OIDC with delegated identity for bots and MCP gateways, audit events in PostgreSQL/JSONL, Langfuse traces, and a security sweep that blocks P0/P1 findings on every PR.
+- **Pricing**: the open-source core is free; Pro plans (from v0.9.0) are $11.88 and $23.88 per month billed annually, by login users and connected devices ([pricing](docs/pricing.md)).
 
 <p align="center"><img src="docs/images/baryon-ax-figure1-en.png" width="920" alt="Figure 1. (a) Composition: Glean + Palantir Ontology + ChatGPT Enterprise + Slack AI + OpenAI dots · Pickle ≈ Baryon AX. (b) One on-premises stack: data, knowledge chunks, ontology, grounded chat, Slack agent and resident voice secretary on the company server, with an ask-the-expert loop back to the ontology."></p>
 
@@ -953,6 +961,20 @@ In one picture: roughly Glean + Palantir's ontology + ChatGPT Enterprise + Slack
 
 Start with one line (Docker only, no GPU or API key): see [Quick start](#quick-start). The English website is at [baryon-ax.baryon.ai/en](https://baryon-ax.baryon.ai/en/).
 
+<a id="pricing"></a>
+## 가격
+
+셀프 호스팅 가격표입니다. 서버는 **로그인 사용자**, 클라이언트는 **연결 기기**(바리온 비서 앱을 쓰는 폰 · 데스크톱, 슬랙 · 디스코드 봇, MCP 연결)로 셉니다.
+
+| | FREE | INDIVIDUAL | BASIC | CUSTOMIZED |
+| --- | --- | --- | --- | --- |
+| 가격 (USD, 연 결제) | $0 | $11.88/월 | $23.88/월 | $23.88/월부터 |
+| 로그인 사용자 · 연결 기기 | – | 1명 · 5대 | 10명 · 50대 | 추가 1명 $1.20 · 1대 $0.12/월 |
+| 내용 | 오픈소스 기본: 근거 답변, 문서, 지식 공백, MCP, 봇 | Pro: 음성 비서, 목표 에이전트, 알림, 사진 · 녹음, 메일 · 일정 · 슬랙, 크롤링 | OIDC SSO, 권한 관리, 감사 내보내기, 온톨로지, 코드 지식, 슬랙 비서 브리지 | 설치 · IdP · 커넥터 · GPU 서빙 · SLA |
+
+Pro 플랜은 **v0.9.0부터** 적용되며, 그 전까지는 아래 Community License가 우선합니다. 자세한 기준은 [docs/pricing.md](docs/pricing.md)에 있습니다.
+
+<a id="license"></a>
 ## 라이선스
 
 **소스 공개 멀티 라이선스**입니다. 개인·10인 미만 조직·30일 도입 검토는 [Baryon AX Community License 1.0](LICENSE)으로 무료이고, **10인 이상 조직의 운영 사용과 호스팅 제공은 상용 라이선스**가 필요합니다(도입 상담: martin@baryon.ai). v0.7.0 이하 릴리스는 계속 [MIT](LICENSE.MIT-legacy)입니다. 자세한 기준은 [docs/licensing.md](docs/licensing.md)를 보세요.
