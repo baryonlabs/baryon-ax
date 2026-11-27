@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 from pathlib import PurePosixPath, PureWindowsPath
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
@@ -87,7 +87,9 @@ class KnowledgeRead(StrictInput):
 class KnowledgeIngest(StrictInput):
     operation: Literal["ingest"]
     authorized: Literal[True]
-    items: list[dict] = Field(min_length=1, max_length=MAX_ITEMS)
+    items: list[Any] = Field(
+        min_length=1, max_length=MAX_ITEMS, json_schema_extra={"items": KnowledgeItem.model_json_schema()},
+    )
 
 
 class KnowledgeProgram(StrictInput):

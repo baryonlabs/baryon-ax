@@ -101,6 +101,7 @@ def test_knowledge_import_and_program_use_owner_and_tenant_scope() -> None:
         assert call("search_documents", query, headers=identity)["structuredContent"]["results"] == []
         hidden = call("run_knowledge_code", {"steps": steps}, headers=identity)
         assert hidden["structuredContent"]["steps"] == [{"results": []}, {"error": "not_found"}]
+        assert client.delete(f"/v1/documents/{report[0]['document_id']}", headers=identity).status_code == 404
 
 
 def test_knowledge_program_validates_before_running_any_steps() -> None:

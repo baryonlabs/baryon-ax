@@ -467,6 +467,8 @@ class DocumentService:
         document = self.documents.get(document_id)
         if not document or document.organization_id != principal.organization_id:
             return False
+        if "knowledge_source" in document.metadata and not self.can_view(principal, document):
+            return False
         if document.owner_id != principal.user_id and "admin" not in principal.roles:
             raise PermissionError("Only the uploader or an administrator can delete this document")
         document = self.documents.pop(document_id)
@@ -568,7 +570,7 @@ class DocumentService:
         mode = (mode or retrieval_mode()).strip().lower()
         if mode != "lexical" and self.vector:
             candidates = max(limit, retrieval_candidates(limit)) if mode == "hybrid" else limit
-            vector_results = self.vector.search(principal, query, candidates)
+            vector_results = self.vector.search(principal, query, candidates, include_private=include_private)
             if vector_results is not None:
                 visible = []
                 for item in vector_results:
@@ -888,6 +890,8 @@ class VectorIndex:
                 if document.metadata:
                     payload["source_type"] = document.metadata.get("source_type", "file")
                     payload["parser"] = document.metadata.get("parser", "text")
+                if "knowledge_source" in document.metadata:
+                    payload["knowledge_private"] = True
                 points.append(PointStruct(id=self._point_id(document.id, index), vector=vector, payload=payload))
             self.client.upsert(self.collection, points=points, wait=True)
             self._delete_chunks_after(document.id, len(points))
@@ -963,18 +967,21 @@ class VectorIndex:
         except Exception:
             logger.exception("Could not update Qdrant ACLs for document %s", document_id)
 
-    def search(self, principal: Principal, query: str, limit: int) -> list[dict] | None:
+    def search(self, principal: Principal, query: str, limit: int, *, include_private: bool = False) -> list[dict] | None:
         if not self._ready():
             return None
         try:
             from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
             must = [FieldCondition(key="organization_id", match=MatchValue(value=principal.organization_id))]
+            owner = FieldCondition(key="owner_id", match=MatchValue(value=principal.user_id))
+            private = FieldCondition(key="knowledge_private", match=MatchValue(value=True))
+            private_exclusion = Filter(must=[private], must_not=[owner]) if include_private else private
             should = []
             if "admin" not in principal.roles:
-                should.append(FieldCondition(key="owner_id", match=MatchValue(value=principal.user_id)))
+                should.append(owner)
                 if principal.roles:
                     should.append(FieldCondition(key="allowed_roles", match=MatchAny(any=sorted(principal.roles))))
-            query_filter = Filter(must=must, should=should) if should else Filter(must=must)
+            query_filter = Filter(must=must, should=should or None, must_not=[private_exclusion])
             result = self.client.query_points(
                 self.collection, query=self._embed([query], query=True)[0],
                 query_filter=query_filter, limit=limit, with_payload=True,
