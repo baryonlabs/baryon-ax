@@ -19,6 +19,7 @@ removed. The uploads are owned by the sync's own identity (``--user``) and reada
 from __future__ import annotations
 
 import argparse
+import base64
 import fnmatch
 import hashlib
 import json
@@ -28,9 +29,11 @@ import re
 import subprocess
 import sys
 from collections import defaultdict
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -81,7 +84,7 @@ def git(repo: Path, *args: str) -> bytes:
     return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True).stdout
 
 
-def list_files(repo: Path, ref: str) -> dict[str, str]:
+def list_files(repo: Path, ref: str, *, regular_only: bool = False) -> dict[str, str]:
     """path → blob sha at ``ref``."""
     out = git(repo, "-c", "core.quotepath=false", "ls-tree", "-r", "-z", ref).decode("utf-8", "replace")
     files: dict[str, str] = {}
@@ -90,7 +93,7 @@ def list_files(repo: Path, ref: str) -> dict[str, str]:
             continue
         meta, path = entry.split("\t", 1)
         mode, kind, sha = meta.split()
-        if kind == "blob":
+        if kind == "blob" and (not regular_only or mode in {"100644", "100755"}):
             files[path] = sha
     return files
 
@@ -99,6 +102,39 @@ def read_blob(repo: Path, sha: str) -> bytes:
     if sha.startswith("file:"):  # --worktree: the "sha" is the file's path on disk
         return (repo / sha[5:]).read_bytes()
     return git(repo, "cat-file", "blob", sha)
+
+
+def knowledge_items(
+    repo: Path, ref: str, source_prefix: str, include: list[str], exclude: list[str],
+) -> Iterator[dict[str, str]]:
+    """Yield candidates from an explicitly selected Git tree without uploading."""
+    url = urlsplit(source_prefix)
+    if (url.scheme != "https" or not url.hostname or url.username is not None
+            or url.query or url.fragment or any(char.isspace() for char in source_prefix)):
+        raise ValueError("A credential-free HTTPS commit URL prefix is required")
+    commit = git(repo, "rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}").decode("ascii").strip()
+    for path, sha in list_files(repo, commit, regular_only=True).items():
+        if not matches(path, include) or matches(path, exclude):
+            continue
+        if int(git(repo, "cat-file", "-s", sha)) > MAX_CODE_BYTES:
+            logger.warning("Skipping oversized file: %s", path)
+            continue
+        payload = read_blob(repo, sha)
+        try:
+            text = payload.decode("utf-8")
+        except UnicodeDecodeError:
+            logger.warning("Skipping non-UTF-8 file: %s", path)
+            continue
+        if "\0" in text or not text.strip():
+            logger.warning("Skipping binary or empty file: %s", path)
+            continue
+        yield {
+            "kind": "repository_file",
+            "filename": PurePosixPath(path).name,
+            "repository_path": path,
+            "source": f"{source_prefix.rstrip('/')}/{commit}/{quote(path)}",
+            "content_base64": base64.b64encode(payload).decode("ascii"),
+        }
 
 
 def is_git_repo(repo: Path) -> bool:
@@ -435,6 +471,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--repo", required=True, help="path to a git checkout (any branch; files come from --ref)")
     parser.add_argument("--ref", default="origin/main")
+    parser.add_argument("--knowledge-manifest-prefix", help="emit knowledge items as JSON lines using this HTTPS URL prefix")
+    parser.add_argument("--knowledge-include", nargs="+", help="approved path patterns for a knowledge manifest")
     parser.add_argument("--name", default="", help="name shown in titles and tags (default: folder name)")
     parser.add_argument("--fetch", action="store_true", help="git fetch before reading --ref")
     parser.add_argument("--include", nargs="*", default=DEFAULT_INCLUDE)
@@ -462,12 +500,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--allowed-roles", default="member,admin", help="who may read the documents")
     parser.add_argument("--category", default="code")
     parser.add_argument("--state", default=".data/repo-sync.json")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.knowledge_manifest_prefix and (not args.knowledge_include or args.worktree or args.fetch):
+        parser.error("a knowledge manifest requires --knowledge-include and reads a local commit")
+    return args
 
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
-    report = sync(parse_args(argv))
+    args = parse_args(argv)
+    if args.knowledge_manifest_prefix:
+        for item in knowledge_items(Path(args.repo), args.ref, args.knowledge_manifest_prefix,
+                                    args.knowledge_include, args.exclude + args.code_exclude):
+            print(json.dumps(item))
+        return 0
+    report = sync(args)
     print(json.dumps({**report, "failed": report["failed"][:20], "failed_count": len(report["failed"])}, ensure_ascii=False))
     return 1 if report["failed"] else 0
 
