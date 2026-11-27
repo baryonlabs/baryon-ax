@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import subprocess
 import sys
 from pathlib import Path, PurePosixPath
@@ -84,6 +85,22 @@ def make_repo(tmp_path: Path) -> Path:
 
 def args_for(repo: Path, tmp_path: Path, *extra: str):
     return rs.parse_args(["--repo", str(repo), "--ref", "main", "--name", "shop", "--state", str(tmp_path / "state.json"), *extra])
+
+
+def test_knowledge_manifest_reads_only_selected_tracked_files_at_commit(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    blob = rs.git(repo, "rev-parse", "HEAD:tools/app.py").decode().strip()
+    git(repo, "update-index", "--add", "--cacheinfo", f"120000,{blob},tools/link.py")
+    git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "synthetic link")
+    write(repo, "tools/app.py", "uncommitted change")
+    write(repo, "tools/untracked.py", "untracked file")
+    prefix = "https://example.invalid/repository/blob"
+    item, = rs.knowledge_items(repo, "main", prefix, ["tools/**"], rs.DEFAULT_EXCLUDE)
+    revision = rs.git(repo, "rev-parse", "HEAD").decode().strip()
+    assert item["source"] == f"{prefix}/{revision}/tools/app.py"
+    assert item["repository_path"] == "tools/app.py"
+    assert item["filename"] == "app.py"
+    assert base64.b64decode(item["content_base64"]).decode().replace("\r\n", "\n") == PY
 
 
 def test_code_map_finds_classes_and_endpoints() -> None:

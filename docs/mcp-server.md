@@ -28,6 +28,18 @@ ask before side effects will ask before saving or publishing.
 The "ask people first" flow from the chat bots maps directly onto these tools:
 `list_knowledge_gaps` → ask a colleague → `record_answer` → confirm with the author → `publish_answer`.
 
+## Knowledge imports and Code Mode
+
+The [Baryon knowledge skill](../.agents/skills/baryon-knowledge/SKILL.md) guides agents through Slack threads and share links, linked documents, attachments, and recursive repository selection. The agent host resolves the sources using the caller's authorized connector or explicitly supplied files. The MCP server accepts the resulting bytes and treats source references as provenance. Upstream permission changes do not revoke an indexed copy. The caller can delete the copy through the document API.
+
+`ingest_knowledge` accepts `authorized: true` and up to 16 `items` with a total of at most 8,000,000 base64 characters. Each item has a `filename`, a `kind`, and `content_base64`. Kinds include `file`, `link`, `thread`, `reply`, `analysis`, `attachment`, and `repository_file`. Use `source` for an HTTPS provenance reference and `parent` for the containing thread or message. Repository files also carry a `repository_path`. URL query strings are discarded. Results include the item index, status, and on success the document ID, hash, parser and chunk count. Binary parsing uses the configured [parser adapters](../deploy/parsers/README.md).
+
+Private knowledge is bound to the authenticated user and organization, including when retrieved with Code Mode. Indexed text is available through `search_documents` for the same explicit identity. It is excluded from chat retrieval and automatic gap verification. Use OIDC for multi-user access. Confirm that the configured parser and embedding services are authorized to process private content before uploading it.
+
+Code Mode takes a JSON program with one to eight sequential `steps`. Supported operations are `search` with `query` and optional `limit`, `read` with `document_id` and one-based `chunk`, and `ingest` with the same arguments as `ingest_knowledge`. Upload limits apply across the entire program. The tool is annotated as a write tool because programs can ingest content. Each step returns its result in order.
+
+    {"steps":[{"operation":"search","query":"specimen catalog","limit":3}]}
+
 ## Identity and permissions
 
 Each tool runs the same handler as the REST API with the caller's identity, so document role filters,

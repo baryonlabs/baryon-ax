@@ -1,5 +1,8 @@
+import base64
+import io
 import os
 import tempfile
+import zipfile
 from pathlib import Path
 
 TEST_ROOT = Path(tempfile.mkdtemp(prefix="baryon-ax-mcp-test-"))
@@ -9,8 +12,12 @@ os.environ.setdefault("FASTEMBED_CACHE_PATH", str(TEST_ROOT / "fastembed"))
 os.environ.setdefault("MEM0_HISTORY_DB", str(TEST_ROOT / "mem0" / "history.db"))
 os.environ.setdefault("SYSTEM_METRICS_ENABLED", "false")
 
+import httpx
 from fastapi.testclient import TestClient
 
+from baryon import main
+from baryon.ingest.adapters import register_default_adapters
+from baryon.ingest.parsers import ParserRegistry
 from baryon.main import app
 
 client = TestClient(app)
@@ -48,10 +55,131 @@ def test_initialize_negotiates_version_and_lists_tools() -> None:
 
     tools = {tool["name"]: tool for tool in rpc("tools/list")["result"]["tools"]}
     assert set(tools) == {"search_documents", "ask", "list_knowledge_gaps", "suggest_questions", "record_answer", "publish_answer",
-                          "crawl_site"}
+                          "crawl_site", "ingest_knowledge", "run_knowledge_code"}
     assert tools["search_documents"]["annotations"]["readOnlyHint"] is True
     assert tools["publish_answer"]["annotations"]["readOnlyHint"] is False
     assert tools["ask"]["inputSchema"]["required"] == ["question"]
+
+
+def test_knowledge_import_and_program_use_owner_and_tenant_scope() -> None:
+    thread = "https://example.invalid/share/specimen"
+    item = {
+        "kind": "reply",
+        "filename": "reply.md",
+        "source": f"{thread}?tracking=discarded#reply",
+        "parent": thread,
+        "content_base64": base64.b64encode(b"# Collection\n\nSynthetic specimen catalog.").decode(),
+    }
+    assert call("ingest_knowledge", {"items": [item], "authorized": False})["isError"]
+    assert call("ingest_knowledge", {"items": [item], "authorized": True},
+                headers={"Accept": "application/json"})["isError"]
+    report = call("ingest_knowledge", {
+        "items": [item, {**item, "content_base64": "!!!!"}, {**item, "filename": "../escape.md"}],
+        "authorized": True,
+    })["structuredContent"]["items"]
+    assert [(row["index"], row["status"]) for row in report] == [(0, "indexed"), (1, "failed"), (2, "failed")]
+
+    query = {"query": "specimen catalog"}
+    hit, = call("search_documents", query)["structuredContent"]["results"]
+    assert hit["source"] == {
+        "kind": "reply", "filename": "reply.md", "source": f"{thread}#reply", "parent": thread,
+    }
+    assert hit["content_hash"] == report[0]["content_hash"]
+    assert "Synthetic specimen catalog" in hit["content"]
+
+    steps = [{"operation": "search", **query}, {
+        "operation": "read", "document_id": report[0]["document_id"], "chunk": hit["chunk"],
+    }]
+    results = call("run_knowledge_code", {"steps": steps})["structuredContent"]["steps"]
+    assert results[0]["results"] == [hit]
+    assert results[1]["source"] == hit["source"]
+    assert results[1]["content"] == hit["content"]
+    assert client.get("/v1/documents/search", params={"q": query["query"]}, headers=headers()).json()["data"] == []
+
+    for identity in (headers("second-user"), headers("second-user", "admin"),
+                     {**headers(), "X-Organization-Id": "other-test-org"}):
+        assert call("search_documents", query, headers=identity)["structuredContent"]["results"] == []
+        hidden = call("run_knowledge_code", {"steps": steps}, headers=identity)
+        assert hidden["structuredContent"]["steps"] == [{"results": []}, {"error": "not_found"}]
+
+
+def test_knowledge_program_validates_before_running_any_steps() -> None:
+    item = {
+        "kind": "repository_file", "filename": "specimen.py", "repository_path": "src/tools/specimen.py",
+        "source": "https://example.invalid/tree/commit/src/tools/specimen.py",
+        "content_base64": base64.b64encode(b"orchid_record = 'synthetic fixture'").decode(),
+    }
+    ingest = {"operation": "ingest", "items": [item], "authorized": True}
+    search = {"operation": "search", "query": "orchid_record"}
+    for invalid in ({"operation": "shell"}, {**search, "limit": 21}, {**search, "organization": "other"}):
+        assert call("run_knowledge_code", {"steps": [ingest, invalid]})["isError"]
+    assert call("search_documents", {"query": search["query"]})["structuredContent"]["results"] == []
+    result = call("run_knowledge_code", {"steps": [ingest, search]})["structuredContent"]["steps"]
+    indexed, = result[0]["items"]
+    hit, = result[1]["results"]
+    assert hit["document_id"] == indexed["document_id"]
+    assert hit["source"]["repository_path"] == item["repository_path"]
+    assert call("run_knowledge_code", {"steps": [search] * 9})["isError"]
+
+
+def test_knowledge_attachments_use_existing_parser_adapters(monkeypatch) -> None:
+    registry = ParserRegistry()
+    register_default_adapters(registry, {
+        "DOCLING_URL": "https://docling.example.invalid",
+        "KORDOC_URL": "https://kordoc.example.invalid",
+        "TIKA_URL": "https://tika.example.invalid",
+    })
+    monkeypatch.setattr(main, "REGISTRY", registry)
+    ole = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+    zip_data = io.BytesIO()
+    with zipfile.ZipFile(zip_data, "w") as archive:
+        archive.writestr("word/document.xml", "<document/>")
+    files = [
+        ("page.pdf", b"%PDF-1.7 synthetic text", "docling"),
+        ("scan.pdf", b"%PDF-1.7 synthetic scan", "docling"),
+        ("photo.png", b"\x89PNG\r\n\x1a\n", "docling"),
+        ("form.hwp", ole, "kordoc"),
+        ("form.hwpx", b"PK\x03\x04", "kordoc"),
+        ("letter.doc", ole, "tika"),
+        ("letter.docx", zip_data.getvalue(), "docling"),
+        ("linked.html", b"<html><p>Fixture</p></html>", "docling"),
+    ]
+    expected = {name: (payload, parser) for name, payload, parser in files}
+    seen = []
+
+    def parse(url, *, files, timeout):
+        filename, payload, _mime = files["file"]
+        expected_payload, parser = expected[filename]
+        assert url == f"https://{parser}.example.invalid/parse"
+        assert expected_payload == payload
+        seen.append(filename)
+        return httpx.Response(200, json={"blocks": [
+            {"type": "paragraph", "text": "Synthetic adapter evidence", "page": 3},
+        ]})
+
+    def tika(url, *, content, headers, timeout):
+        assert url == "https://tika.example.invalid/tika"
+        assert headers["Content-Type"] == "application/msword"
+        assert content == ole
+        seen.append("letter.doc")
+        return httpx.Response(200, text="Synthetic adapter evidence")
+
+    monkeypatch.setattr(httpx, "post", parse)
+    monkeypatch.setattr(httpx, "put", tika)
+    parent = "https://example.invalid/share/attachments"
+    items = [
+        {"kind": "link" if name.endswith(".html") else "attachment", "filename": name,
+         "source": f"{parent}#{name}", "parent": parent, "content_base64": base64.b64encode(payload).decode()}
+        for name, payload, _ in files
+    ]
+    result = call("ingest_knowledge", {"authorized": True, "items": items})["structuredContent"]["items"]
+    assert [row.get("parser") for row in result] == [parser for _, _, parser in files]
+    assert seen == [name for name, _, _ in files]
+    evidence = call("run_knowledge_code", {"steps": [
+        {"operation": "read", "document_id": row["document_id"], "chunk": 1} for row in result
+    ]})["structuredContent"]["steps"]
+    assert all(row["source"]["parent"] == parent for row in evidence)
+    assert evidence[1]["page"] == 3
 
 
 def test_search_and_ask_respect_document_permissions() -> None:
