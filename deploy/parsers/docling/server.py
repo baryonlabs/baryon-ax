@@ -8,8 +8,9 @@ representation across versions and preserves headings and tables (GFM) that the
 ingest pipeline needs. The API adapter parses the Markdown back into blocks, so
 this service stays a thin wrapper.
 
-First conversion downloads layout/table models into the container cache. Mount
-a volume at /models (DOCLING_ARTIFACTS_PATH) to keep restarts offline.
+The first conversion downloads the layout, table and OCR models into /models (DOCLING_ARTIFACTS_PATH).
+Mount a volume there to keep restarts offline; DOCLING_DOWNLOAD_MODELS=0 skips the download when the
+models are copied in by hand (air-gapped installs).
 """
 
 from __future__ import annotations
@@ -33,11 +34,28 @@ app = FastAPI(title="baryon-docling", version=VERSION)
 _converter = None
 
 
+def ensure_models() -> None:
+    """With DOCLING_ARTIFACTS_PATH set, docling only reads models from that folder and never downloads
+    them, so a fresh /models volume made every PDF fail ("RapidOCR artifacts not found"). Download the
+    layout, table and OCR models into it once; later starts find them and stay offline.
+    DOCLING_DOWNLOAD_MODELS=0 skips this for air-gapped installs that copy the models in themselves."""
+    path = os.getenv("DOCLING_ARTIFACTS_PATH", "")
+    if not path or os.getenv("DOCLING_DOWNLOAD_MODELS", "1") == "0":
+        return
+    from pathlib import Path
+
+    from docling.utils.model_downloader import download_models
+
+    logger.info("making sure docling models are in %s (first run downloads them)", path)
+    download_models(output_dir=Path(path))  # skips what is already there
+
+
 def converter():
     global _converter
     if _converter is None:
         from docling.document_converter import DocumentConverter
 
+        ensure_models()
         logger.info("initializing docling converter")
         _converter = DocumentConverter()
     return _converter
