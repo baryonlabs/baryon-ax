@@ -80,12 +80,19 @@ Arms
            the messages held because they stopped mid-sentence come from it. CI runs this.
     model  the same with an OpenAI-compatible model for the round (--model-url): terms are read from the
            archived document, gaps judged and questions written by the model. The mention path stays canned.
+    understand
+           the thread-understanding step (S3, baryon.thread_understanding): the events build the thread snapshot
+           (S2) and the truncation hold, then the whole thread is read once through POST /v1/loop/threads/understand.
+           Rules only unless --model-url is given (then the model reads it and the rules fill what it missed; every
+           item is still checked against the thread). CI runs the rules (--arm understand).
     judge  optional: a model judges whether the predicted purpose means the expected one (--judge-url).
 
 Run from apps/api:
     uv run python eval/thread_eval.py                       # rule arm, repository + private fixtures
     uv run python eval/thread_eval.py --verbose --json /tmp/thread.json
     uv run python eval/thread_eval.py --model-url http://127.0.0.1:8020/v1 --model baryon-ax-qwen --no-thinking
+    uv run python eval/thread_eval.py --arm understand      # the thread-understanding step, rules
+    uv run python eval/thread_eval.py --arm understand --model-url http://127.0.0.1:8020/v1 --model baryon-ax-qwen --no-thinking
 """
 
 from __future__ import annotations
@@ -108,6 +115,7 @@ SLACK_BOT = HERE.parents[2] / "examples" / "slack-bot"
 
 REPO_FIXTURES = HERE / "thread_fixtures"
 BASELINE = HERE / "thread_baseline.json"
+BASELINES = {"rule": BASELINE, "understand": HERE / "thread_baseline_understand.json"}
 DEFAULT_PRIVATE = "~/.baryon-ax/thread-fixtures"
 
 DEFAULT_PASS = {
@@ -687,8 +695,9 @@ def rule_arm(fixture: Fixture, complete: Callable[[list[dict[str, str]]], Awaita
             baryon.current_ts = event.get("ts", "")
             actions_before = len(api.store.load(api.organization)["actions"])
             desk.observe(event, web)
-            if len(api.store.load(api.organization)["actions"]) > actions_before:
-                recorded.append(event.get("ts", ""))
+            # one entry per action recorded at this event (the loop may record several decisions of one message)
+            target_ts = (event.get("message") or {}).get("ts", "") if event.get("subtype") == "message_changed" else event.get("ts", "")
+            recorded += [target_ts] * (len(api.store.load(api.organization)["actions"]) - actions_before)
             if event.get("user") == bot_user or event.get("subtype") in ("message_changed", "message_deleted"):
                 continue
             posts_before = len(web.posts)
@@ -720,8 +729,12 @@ def rule_arm(fixture: Fixture, complete: Callable[[list[dict[str, str]]], Awaita
 
     actions = sorted(data["actions"].values(), key=lambda a: a["created_at"])
     action_ts = dict(zip([a["id"] for a in actions], recorded))
-    decisions = [{"statement": a["text"], "decided_by": a["actor"], "kind": "explicit",
-                  "evidence_ts": [action_ts[a["id"]]] if a["id"] in action_ts else []} for a in actions]
+    # since S3 the loop records only decisions a person confirmed in words (loop_desk: "…님이 슬랙에서 확정한 결정: …")
+    confirmed = {a["id"] for a in actions if CONFIRMED_ACTION in a["text"]}
+    # (the other kind of action it records, "…님이 아직 정하지 않았다고 한 것", is a gap to ask about, not a decision)
+    decisions = [{"statement": a["text"], "decided_by": a["actor"], "kind": "explicit", "confirmed": True,
+                  "evidence_ts": [action_ts[a["id"]]] if a["id"] in action_ts else []} for a in actions
+                 if a["id"] in confirmed or OPEN_ACTION not in a["text"]]
     questions = [{"text": q["question"], "evidence_ts": [action_ts[q["action_id"]]] if q["action_id"] in action_ts else []}
                  for q in sorted(data["questions"].values(), key=lambda q: q["created_at"])]
     accounted, understood = _archive_lines(markdown, fixture)
@@ -737,8 +750,9 @@ def rule_arm(fixture: Fixture, complete: Callable[[list[dict[str, str]]], Awaita
         "accounted": accounted,
         "understood": understood,
         "quotes": [],
-        # every recorded loop action is a write nobody approved (the consent list is not an approval)
-        "writes": [{"kind": "loop_action", "ts": ts, "approved": False} for ts in recorded],
+        # a recorded loop action is approved only when it is a decision its author confirmed in words (the consent
+        # list alone is not an approval: before S3 every keyword match was recorded)
+        "writes": [{"kind": "loop_action", "ts": action_ts.get(a["id"], ""), "approved": a["id"] in confirmed} for a in actions],
         "confirmations": [],  # the secretary bridge's buttons are not replayed (bridge off)
         **_snapshot_view(fixture, thread, held),
         "claims": [],
@@ -746,7 +760,88 @@ def rule_arm(fixture: Fixture, complete: Callable[[list[dict[str, str]]], Awaita
     }
 
 
+CONFIRMED_ACTION = "확정한 결정"
+OPEN_ACTION = "아직 정하지 않았다고 한 것"
 AUTHOR_KINDS = {"human": "human", "user_token_app": "human", "self_bot": "self", "other_bot": "other_bot"}
+
+
+# --------------------------------------------------------------------------- understand arm: the thread-understanding step (S3)
+
+
+def understand_arm(fixture: Fixture, complete: Callable[[list[dict[str, str]]], Awaitable[str]] | None = None) -> dict:
+    """Replay the events into a thread snapshot (and the truncation hold), then read the whole thread once through
+    POST /v1/loop/threads/understand (baryon.thread_understanding). Rules only when complete is None (CI)."""
+    if str(SLACK_BOT) not in sys.path:
+        sys.path.append(str(SLACK_BOT))
+    import thread_snapshot
+    from slack_text import UserDirectory
+
+    bot_user = fixture.meta.get("bot_user_id", "UBOT0000000")
+    channel = fixture.meta.get("channel", "C0000000000")
+    web = FakeWeb(fixture)
+    directory = UserDirectory.from_web(web)
+    held: list[tuple[str, str]] = []
+    hold = thread_snapshot.TruncationHold(lambda _c, message, reason: held.append((message.ts, reason)),
+                                          thread_snapshot.HoldConfig(wait_seconds=20), timer=lambda *_: None)
+    snapshots = thread_snapshot.SnapshotStore(directory, bot_user, fixture.meta.get("bot_id", ""), hold=hold)
+    interactions = []
+    for event in events_of(fixture):
+        web.now = float(event.get("event_ts") or event.get("ts") or (event.get("message") or {}).get("ts") or web.now)
+        _apply_to_view(web, event)
+        if event.get("type") == "block_actions":  # a button press on one of the bot's cards
+            interactions.append({key: event.get(key) for key in ("ts", "user", "message_ts", "value", "action_id")})
+            continue
+        snapshots.on_event(event)
+    web.now = float("inf")
+    for ts, final in fixture.by_ts.items():  # conversations.replies at the end carries the reactions (no events for them)
+        if ts in web.visible and final.get("reactions") and not web.visible[ts].get("reactions"):
+            web.visible[ts]["reactions"] = json.loads(json.dumps(final["reactions"]))
+    thread_ts = fixture.messages[0].get("thread_ts") or fixture.messages[0]["ts"] if fixture.messages else ""
+    thread = snapshots.get(web, channel, thread_ts, refresh=True)
+    waiting = {ts for _, ts in hold.pending()} | {ts for ts, reason in held if reason == "timeout"}
+    owners = fixture.meta.get("owners") or []
+    payload = thread_snapshot.understanding_payload(thread, me_name=directory.name(bot_user, ""), owners=owners, held=waiting,
+                                                    interactions=interactions, is_dm=fixture.meta.get("channel_type") == "im")
+    with tempfile.TemporaryDirectory() as store_dir:
+        api = LoopApi(store_dir, complete, "org-thread-eval")
+        response = api.request("POST", "/v1/loop/threads/understand", "slack-bot", "agent", json=payload)
+        response.raise_for_status()
+        result = response.json()
+    return understanding_prediction(result, payload)
+
+
+def understanding_prediction(result: dict, payload: dict) -> dict:
+    """The thread-understanding JSON in the scorer's prediction shape."""
+    people = [m for m in payload["messages"] if m["author_kind"] in ("human", "user_token_app") and not m["deleted"]]
+    authors: dict[str, str] = {}
+    for message in payload["messages"]:
+        if message["author_id"] and not message["deleted"]:
+            authors.setdefault(message["author_id"], AUTHOR_KINDS.get(message["author_kind"], message["author_kind"]))
+    return {
+        "purpose": (result.get("purpose") or {}).get("text", ""),
+        "decisions": [{"statement": d["statement"], "decided_by": d["decided_by"], "kind": d["kind"], "evidence_ts": d["evidence_ts"],
+                       "quote": d["quote"], "confirmed": d["confirmed"]} for d in result["decisions"]],
+        "tacit": [{"statement": a["statement"], "evidence_ts": a["evidence_ts"], "quote": a["quote"]} for a in result["assumptions"]],
+        "questions": [{"text": q["text"], "evidence_ts": q["evidence_ts"]} for q in result["ask"]],
+        "ontology_change": {"added": [], "merged": [],
+                            "contested": [{"label": c["subject"], "evidence_ts": c["evidence_ts"]} for c in result["contests"]],
+                            "relations": [{"s": r.get("s", ""), "p": r.get("p", ""), "o": r.get("o", "")} for r in result["relations"]]},
+        "responded_ts": [r["ts"] for r in result["addressed_to_bot"] if r["action"] == "respond"],
+        "accounted": [{"ts": m["ts"], "speaker": m["author_name"], "text": m["text"]} for m in people],
+        "understood": {m["ts"]: m["text"] for m in people},
+        "quotes": [],
+        # only confirmed decisions are written (loop actions), each one stated by the person it is recorded for
+        "writes": [{"kind": "loop_action", "ts": d["evidence_ts"][0], "approved": True} for d in result["decisions"] if d["confirmed"]],
+        "confirmations": [{"card_ts": c["card_ts"], "by": c["by"], "result": c["result"]} for c in result["confirmations"]],
+        "incomplete_ts": [i["ts"] for i in result["incomplete"]],
+        "mentions": {m["ts"]: [{"id": x["id"], "entity": "self" if x["is_me"] else x["name"]} for x in m["mentions"]]
+                     for m in payload["messages"] if m["mentions"]},
+        "authors": authors,
+        "claims": [{"statement": " ".join(x for x in (c["subject"], c["predicate"], c["value"]) if x), "evidence_ts": c["evidence_ts"],
+                    "status": c["trust"]} for c in result["claims"]],
+        "trace": {"method": result["method"], "dropped": result["dropped"], "bot_inputs": [],
+                  "replies": [r for r in result["addressed_to_bot"]]},
+    }
 
 
 def _snapshot_view(fixture: Fixture, thread, held: list | None) -> dict:
@@ -885,10 +980,13 @@ def table(results: dict[str, dict], keys: list[str] = TABLE_KEYS) -> str:
     return "\n".join(lines)
 
 
-def evaluate(fixtures: list[Fixture], complete=None) -> tuple[dict[str, dict], dict[str, dict]]:
+ARMS = {"rule": rule_arm, "understand": understand_arm}
+
+
+def evaluate(fixtures: list[Fixture], complete=None, arm: str = "rule") -> tuple[dict[str, dict], dict[str, dict]]:
     predictions, scores = {}, {}
     for fixture in fixtures:
-        predictions[fixture.name] = rule_arm(fixture, complete)
+        predictions[fixture.name] = ARMS[arm](fixture, complete)
         scores[fixture.name] = score(fixture, predictions[fixture.name])
     return predictions, scores
 
@@ -897,12 +995,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--fixtures", default="", help="one fixture directory instead of discovering them")
     parser.add_argument("--no-private", action="store_true", help=f"skip $THREAD_FIXTURES (default {DEFAULT_PRIVATE})")
-    parser.add_argument("--model-url", default="", help="model arm: an OpenAI-compatible endpoint for the loop round")
+    parser.add_argument("--arm", choices=sorted(ARMS), default="rule",
+                        help="rule: today's per-message pipeline; understand: the thread-understanding step (S3)")
+    parser.add_argument("--model-url", default="", help="model arm: an OpenAI-compatible endpoint (the loop round, or the thread reading)")
     parser.add_argument("--model", default="qwen2.5:7b")
     parser.add_argument("--no-thinking", action="store_true", help="send enable_thinking=false (Qwen3.x on vLLM)")
     parser.add_argument("--judge-url", default="", help="judge arm: a model judges the predicted purpose")
     parser.add_argument("--judge-model", default="")
-    parser.add_argument("--write-baseline", action="store_true", help=f"store repository fixture scores in {BASELINE.name}")
+    parser.add_argument("--write-baseline", action="store_true", help="store repository fixture scores in the arm's baseline file")
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--json", default="", help="write predictions and scores here (may contain private thread text)")
     args = parser.parse_args()
@@ -913,13 +1013,13 @@ def main() -> int:
         print("no fixtures found")
         return 1
     complete = openai_complete(args.model_url, args.model, args.no_thinking) if args.model_url else None
-    predictions, scores = evaluate(fixtures, complete)
+    predictions, scores = evaluate(fixtures, complete, args.arm)
     if args.judge_url:
         judge_complete = openai_complete(args.judge_url, args.judge_model or args.model, args.no_thinking)
         verdicts = asyncio.run(judge_purposes([(f, predictions[f.name]) for f in fixtures], judge_complete))
         for fixture in fixtures:
             scores[fixture.name] = score(fixture, predictions[fixture.name], verdicts)
-    arm = "model" if complete else "rule"
+    arm = args.arm + (" + model" if complete else "")
     print(f"arm: {arm} · fixtures: {len(fixtures)} ({sum(f.private for f in fixtures)} private)\n")
     print(table(scores))
     for name, result in scores.items():
@@ -933,15 +1033,18 @@ def main() -> int:
             prediction = predictions[fixture.name]
             print(f"\n## {fixture.name}")
             print("  responded:", prediction["responded_ts"])
-            print("  bot inputs:", prediction["trace"]["bot_inputs"])
+            print("  bot inputs:", prediction["trace"].get("bot_inputs"))
             for decision in prediction["decisions"]:
                 print("  decision:", decision["statement"][:100], decision["evidence_ts"])
             for question in prediction["questions"]:
                 print("  question:", question["text"][:100])
     if args.write_baseline:
+        if complete:
+            print("\nnot writing a baseline from a model run (baselines are the deterministic paths)")
+            return 1
         repo = {name: {k: v for k, v in result.items() if k != "failing"} for name, result in scores.items() if not name.startswith("private:")}
-        BASELINE.write_text(json.dumps({"arm": arm, "fixtures": repo}, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-        print(f"\nwrote {BASELINE}")
+        BASELINES[args.arm].write_text(json.dumps({"arm": arm, "fixtures": repo}, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        print(f"\nwrote {BASELINES[args.arm]}")
     if args.json:
         Path(args.json).write_text(json.dumps({"scores": scores, "predictions": predictions}, ensure_ascii=False, indent=1, default=str))
     return 0

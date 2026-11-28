@@ -271,3 +271,40 @@ def test_private_fixtures_are_scored() -> None:
         pytest.skip("private fixture directory has no complete fixture")
     _, scores = te.evaluate(fixtures)
     assert all(name.startswith("private:") and "pass" in result for name, result in scores.items())
+
+
+# --------------------------------------------------------------------------- the understand arm (S3: thread understanding)
+
+
+def _worse(before: dict, now: dict) -> list[str]:
+    out = []
+    for name, old_scores in before.items():
+        for key in [*te.DEFAULT_PASS, "pass"]:
+            old, new = old_scores.get(key), now[name].get(key)
+            if old is None:
+                continue
+            if new is None or ((new > old) if key in te.LOWER_IS_BETTER else (new < old)):
+                out.append(f"{name}.{key}: {old} → {new}")
+    return out
+
+
+def test_the_understand_arm_does_not_get_worse_than_its_baseline_or_the_rule_arm() -> None:
+    fixtures = te.discover(include_private=False)
+    _, scores = te.evaluate(fixtures, arm="understand")
+    own = json.loads(te.BASELINES["understand"].read_text(encoding="utf-8"))["fixtures"]
+    rule = json.loads(te.BASELINE.read_text(encoding="utf-8"))["fixtures"]
+    assert {f.name for f in fixtures} == set(own), "new or removed fixture: refresh eval/thread_baseline_understand.json"
+    assert not _worse(own, scores), "understand arm got worse:\n" + "\n".join(_worse(own, scores))
+    assert not _worse(rule, scores), "understand arm is worse than the rule arm:\n" + "\n".join(_worse(rule, scores))
+    for name, result in scores.items():  # the targets of S3 on every synthetic thread
+        assert result["decision_precision"] == 1.0 and result["decision_recall"] == 1.0, name
+        assert result["evidence_validity"] in (None, 1.0) and result["quote_validity"] in (None, 1.0), name
+        assert result["wrong_replies"] == 0 and result["attribution"] >= 0.9 and result["false_contests"] == 0, name
+
+
+def test_the_understand_arm_skips_other_bots_and_keeps_their_claims_unverified() -> None:
+    prediction = te.understand_arm(fixture("multi-bot"))
+    assert prediction["responded_ts"] == ["1700400000.000100"]  # not notes-bot's post that mentions us
+    assert [c["label"] for c in prediction["ontology_change"]["contested"]] == ["환불 승인"]
+    assert {c["status"] for c in prediction["claims"] if "song" in c["statement"]} == {"needs_verification"}
+    assert len(prediction["questions"]) == 1 and "환불" in prediction["questions"][0]["text"]
