@@ -322,4 +322,4 @@ def test_result_text_without_documents() -> None:
 
     text = result_text(IntakeResult(skipped=[Skipped("a.exe", "지원하지 않는 형식입니다")]))
     assert "등록한 문서가 없습니다" in text and "a.exe" in text
-    assert strip_mentions("<@UBOT> 문서로 추가") == "문서로 추가"
+    assert strip_mentions("<@UBOT> 문서로 추가", me="UBOT") == "문서로 추가"

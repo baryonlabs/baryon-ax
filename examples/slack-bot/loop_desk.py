@@ -30,6 +30,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from slack_text import Message, UserDirectory, readable
+
 logger = logging.getLogger("baryon.slack.loop")
 
 ACTION_PICK = "loop_pick"          # value: question id|choice
@@ -175,13 +177,16 @@ class LoopDesk:
         self.config = config
         self.baryon = baryon
         self.bot_user_id = bot_user_id
+        self.directory: UserDirectory | None = None  # user names; create_app shares the bot's, else made from web
 
     # ---------------------------------------------------------------- recording
 
     def observe(self, event: dict, web) -> bool:
         """Record a consenting person's decision or request as an action. True when recorded."""
         user = event.get("user", "")
-        text = re.sub(r"<@[A-Z0-9]+>", " ", event.get("text") or "").strip()
+        if self.directory is None:
+            self.directory = UserDirectory.from_web(web)
+        text = readable(event.get("text"), me=self.bot_user_id, directory=self.directory)
         if (not self.config.records or event.get("bot_id") or user == self.bot_user_id or event.get("subtype") not in (None, "file_share")
                 or (not self.config.everyone and user not in self.config.users) or len(text) < 6 or not DECISION_RE.search(text)
                 or wants_questions(text) or wants_certify_list(text)):
@@ -192,7 +197,8 @@ class LoopDesk:
             try:
                 replies = web.conversations_replies(channel=channel, ts=event["thread_ts"], limit=20).get("messages", [])
                 before = [m for m in replies if float(m.get("ts", 0)) < float(event.get("ts", 0))][-4:]
-                context = "\n".join(re.sub(r"<@[A-Z0-9]+>", "", m.get("text") or "").strip() for m in before)[:2000]
+                said = [Message.from_event(m, self.directory, self.bot_user_id) for m in before]
+                context = "\n".join(m.line() for m in said if m.text_for_me)[:2000]
             except Exception:  # noqa: BLE001 - no history scope: record without context
                 pass
         try:

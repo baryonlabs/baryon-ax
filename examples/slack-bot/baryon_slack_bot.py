@@ -25,10 +25,10 @@ from typing import Any
 import httpx
 
 from baryon_auth import ApiAuth, TokenSource
+from slack_text import Message, UserDirectory, readable
 
 logger = logging.getLogger("baryon.slack")
 
-MENTION_RE = re.compile(r"<@[UW][A-Z0-9]+(?:\|[^>]*)?>")
 SECTION_LIMIT = 2900  # Slack section text limit is 3000 characters
 MAX_ANSWER_SECTIONS = 12  # a message holds 50 blocks; sources and notes need a few
 TEXT_LIMIT = 3500  # fallback `text` of a message with blocks; Slack rejects long ones with msg_too_long
@@ -174,8 +174,10 @@ def slack_domain(url: str) -> str:
     return match.group(1) if match else ""
 
 
-def strip_mentions(text: str | None) -> str:
-    return MENTION_RE.sub("", text or "").strip()
+def strip_mentions(text: str | None, me: str = "", directory: UserDirectory | None = None) -> str:
+    """Readable question text: the mention of ``me`` (the bot) is dropped when it only calls the bot; every other
+    mention stays as "@이름" so "<@BOT> <@U2> 이 뭐 해?" keeps who it is about (slack_text.readable)."""
+    return readable(text, me=me, directory=directory)
 
 
 def to_mrkdwn(markdown: str) -> str:
@@ -199,20 +201,31 @@ def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
-def thread_messages(replies: list[dict], bot_user_id: str, max_turns: int) -> list[dict]:
-    """Slack thread → chat messages; the bot's own posts become assistant turns."""
-    messages: list[dict] = []
+def thread_messages(replies: list[dict], bot_user_id: str, max_turns: int,
+                    directory: UserDirectory | None = None) -> list[dict]:
+    """Slack thread → chat messages. The bot's own posts become assistant turns; everyone else's (people and
+    other bots) are user turns written as "이름: 내용" / "이름 (봇): 내용", so the model knows who said what.
+    The last turn is the question being answered and stays unlabelled (the API searches with its text)."""
+    turns: list[tuple[str, str, str]] = []  # (role, labelled content, bare content)
     for reply in replies:
-        from_bot = reply.get("user") == bot_user_id or bool(reply.get("bot_id"))
-        if reply.get("subtype") and not from_bot:
+        own = bool(bot_user_id) and reply.get("user") == bot_user_id
+        if reply.get("subtype") not in (None, "file_share", "bot_message", "thread_broadcast") and not own:
             continue
-        content = (reply.get("text") or "").strip() if from_bot else strip_mentions(reply.get("text"))
-        if not content or (from_bot and content.startswith(STATUS_PREFIXES)):
+        if own:
+            content = (reply.get("text") or "").strip()
+            if content and not content.startswith(STATUS_PREFIXES):
+                turns.append(("assistant", content, content))
             continue
-        messages.append({"role": "assistant" if from_bot else "user", "content": content})
-    messages = messages[-max_turns:]
-    while messages and messages[0]["role"] == "assistant":
-        messages.pop(0)
+        message = Message.from_event(reply, directory, bot_user_id)  # another bot's post counts as a bot (is_bot)
+        content = message.text_for_me
+        if content:
+            turns.append(("user", message.line(), content))
+    turns = turns[-max_turns:]
+    while turns and turns[0][0] == "assistant":
+        turns.pop(0)
+    messages = [{"role": role, "content": labelled} for role, labelled, _ in turns]
+    if turns and turns[-1][0] == "user":
+        messages[-1]["content"] = turns[-1][2]
     return messages
 
 
@@ -320,7 +333,12 @@ class Responder:
         self.bot_user_id = bot_user_id
         self.subscriptions = subscriptions or ThreadSubscriptions()
         self.intake = intake  # doc_intake.DocumentIntake: "문서로 추가" requests
+        self.directory = UserDirectory()  # user id → name and bot flag; create_app backs it with users.info
         self.team_domain = ""  # the bot's workspace ("acme" of acme.slack.com); links elsewhere cannot be read
+
+    def read(self, text: str | None) -> str:
+        """Slack mrkdwn → readable text without the mention that only calls this bot (slack_text.readable)."""
+        return readable(text, me=self.bot_user_id, directory=self.directory)
 
     def expand_links(self, web, messages: list[dict]) -> tuple[list[dict], list[str]]:
         """Slack message links in people's turns become the linked thread's text, so "see this thread" is
@@ -339,7 +357,8 @@ class Responder:
             if url not in cache:
                 try:
                     found = web.conversations_replies(channel=channel, ts=ts, limit=50).get("messages", [])
-                    lines = [f"- {strip_mentions(m.get('text'))}" for m in found if strip_mentions(m.get("text"))]
+                    said = [Message.from_event(m, self.directory, self.bot_user_id) for m in found]
+                    lines = [f"- {m.line()}" for m in said if m.text_for_me]
                     cache[url] = _clip("\n".join(lines), LINKED_CHARS)
                 except Exception as error:  # not_in_channel, channel_not_found, missing scope
                     logger.info("linked thread %s unreadable (%s)", url, error)
@@ -379,14 +398,14 @@ class Responder:
         except Exception as error:  # missing channels:history scope, private channel, …
             logger.info("thread history unavailable (%s); answering the single message", error)
             replies = []
-        messages = thread_messages(replies, self.bot_user_id, self.config.thread_turns)
+        messages = thread_messages(replies, self.bot_user_id, self.config.thread_turns, self.directory)
         if not messages or messages[-1]["role"] != "user":
             messages.append({"role": "user", "content": fallback})
         return messages
 
     def answer(self, event: dict, web) -> None:
         channel, user = event["channel"], event.get("user", "unknown")
-        question = strip_mentions(event.get("text"))
+        question = self.read(event.get("text"))
         thread_ts = event.get("thread_ts") or event["ts"]
         if not question and event.get("files"):
             return  # files posted without a question: wait for the question ("분석해줘") that usually follows
@@ -490,7 +509,7 @@ class Responder:
         messages = self._intake_context(web, event) if messages is None else messages
         pending = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=INTAKE_PENDING)
         try:
-            result = self.intake.collect(messages, event, self.bot_user_id, strip_mentions, user)
+            result = self.intake.collect(messages, event, self.bot_user_id, self.read, user)
         except IntakeError as error:
             web.chat_update(channel=channel, ts=pending["ts"], text=f":warning: {error}")
             self._react(web, channel, event["ts"], "x", add=True)
@@ -570,10 +589,14 @@ def create_app(config: Config | None = None):
 
     responder = Responder(config, baryon, bot_user_id, intake=intake, guide=Guide.from_env(baryon))
     responder.team_domain = slack_domain(auth.get("url", ""))
+    responder.directory = UserDirectory.from_web(app.client)  # users:read; without it names stay ids
     desk = _create_desk(responder)
     bridge = _create_bridge()
     loop_desk = _create_loop_desk(baryon, bot_user_id)
     archive = _create_archive(baryon, bot_user_id)
+    for part in (loop_desk, archive):
+        if part:
+            part.directory = responder.directory  # one name cache for the whole bot
 
     def loop_command(event, client) -> bool:
         """"질문 있어?" / "인증할 것": the loop's questions and certifications, on demand."""
@@ -581,7 +604,7 @@ def create_app(config: Config | None = None):
             return False
         from loop_desk import wants_certify_list, wants_questions
 
-        text, user = strip_mentions(event.get("text")), event.get("user", "")
+        text, user = responder.read(event.get("text")), event.get("user", "")
         thread_ts = event.get("thread_ts") or event["ts"]
         try:
             if wants_questions(text):
@@ -603,7 +626,7 @@ def create_app(config: Config | None = None):
         if loop_command(event, client):
             return
         # The owner asking for work (draft, send, contact, plan …) goes to the voice secretary (secretary_bridge.py).
-        if bridge and bridge.wants(event, strip_mentions(event.get("text"))):
+        if bridge and bridge.wants(event, responder.read(event.get("text"))):
             bridge.handle(event, client)
         else:
             responder.answer(event, client)
@@ -621,10 +644,15 @@ def create_app(config: Config | None = None):
             desk.on_answer(event, gap_id, client)
         elif bridge and bridge.follows(event) and f"<@{bot_user_id}" not in (event.get("text") or ""):
             bridge.handle(event, client)
-        elif bridge and responder.is_direct_message(event) and bridge.wants(event, strip_mentions(event.get("text"))):
+        elif bridge and responder.is_direct_message(event) and bridge.wants(event, responder.read(event.get("text"))):
             bridge.handle(event, client)  # the owner asking for work in a DM
         elif responder.is_direct_message(event) or responder.should_follow_up(event):
             responder.answer(event, client)
+
+    @app.event("reaction_added")
+    def on_reaction(event):
+        # Subscribed (reactions:read) so the thread snapshot can read reactions; nothing acts on them yet.
+        logger.debug("reaction %s on %s", event.get("reaction"), (event.get("item") or {}).get("ts"))
 
     if bridge:
         from secretary_bridge import ACTION_NO, ACTION_YES

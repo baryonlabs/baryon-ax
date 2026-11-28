@@ -84,6 +84,20 @@ jobs:
       - name: Secretary tests (fake agent, no Claude CLI or network)
         run: uv run --no-project --with-requirements requirements.txt --with pytest --with httpx python -m pytest -q
 
+  slack-bot:
+    name: slack bot
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/slack-bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install "uv==${UV_VERSION}"
+      - name: Slack bot tests (fake Slack and API, no network)
+        run: uv run --no-project --with-requirements requirements.txt --with pytest python -m pytest -q tests
+
   phone:
     name: phone gateway
     runs-on: ubuntu-latest

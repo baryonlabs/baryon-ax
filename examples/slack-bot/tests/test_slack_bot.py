@@ -12,6 +12,7 @@ from baryon_slack_bot import (  # noqa: E402
     PENDING_TEXT, Answer, BaryonClient, Config, Responder, ThreadSubscriptions, build_blocks, strip_mentions,
     thread_messages, to_mrkdwn,
 )
+from slack_text import UserDirectory  # noqa: E402
 
 BOT = "UBOT"
 CITATIONS = [
@@ -182,7 +183,8 @@ def test_slack_links_are_expanded_or_marked_unreadable() -> None:
 
 
 def test_strip_mentions_and_mrkdwn() -> None:
-    assert strip_mentions("<@UBOT> 연차는 며칠? <@U123|kim>") == "연차는 며칠?"
+    # the bot's own mention goes; other people stay as "@이름" (slack_text.readable)
+    assert strip_mentions("<@UBOT> 연차는 며칠? <@U123|kim>", me="UBOT") == "연차는 며칠? @kim"
     assert to_mrkdwn("## 요약\n[RFP](https://x.test/a)") == "*요약*\n<https://x.test/a|RFP>"
     assert to_mrkdwn("기간은 **15일**입니다") == "기간은 ​*15일*​입니다"
 
@@ -195,12 +197,30 @@ def test_thread_messages_maps_roles_and_skips_status_posts() -> None:
         {"user": "U1", "subtype": "channel_join", "text": "joined", "ts": "4"},
         {"user": "U1", "text": "그럼 반차도 돼?", "ts": "5"},
     ]
-    assert thread_messages(replies, BOT, 10) == [
-        {"role": "user", "content": "연차는 며칠?"},
+    directory = UserDirectory(lambda uid: {"U1": {"profile": {"display_name": "kim"}}}.get(uid))
+    # earlier turns say who spoke; the last one is the question being answered and stays bare
+    assert thread_messages(replies, BOT, 10, directory) == [
+        {"role": "user", "content": "kim: 연차는 며칠?"},
         {"role": "assistant", "content": "15일입니다."},
         {"role": "user", "content": "그럼 반차도 돼?"},
     ]
     assert thread_messages(replies, BOT, 2)[0]["role"] == "user"  # never starts with the assistant
+
+
+def test_thread_messages_keep_other_bots_and_who_is_meant() -> None:
+    replies = [
+        {"user": "U1", "text": "<@UBOT> 는 <@U_OTHERBOT> 이 어떤일을 하고 있는지 알고 있나?", "ts": "1"},
+        {"user": "U_OTHERBOT", "bot_id": "B9", "bot_profile": {"name": "orca-bot"}, "text": "작업 목록을 정리했어요.", "ts": "2"},
+        {"user": "U1", "text": "<@U_OTHERBOT> 여기 내용이다", "ts": "3"},
+    ]
+    people = {"U1": {"profile": {"display_name": "owner"}}, "UBOT": {"profile": {"display_name": "baryon"}, "is_bot": True},
+              "U_OTHERBOT": {"profile": {"display_name": "orca-bot"}, "is_bot": True}}
+    messages = thread_messages(replies, BOT, 10, UserDirectory(people.get))
+    assert messages == [
+        {"role": "user", "content": "owner: @baryon 는 @orca-bot 이 어떤일을 하고 있는지 알고 있나?"},
+        {"role": "user", "content": "orca-bot (봇): 작업 목록을 정리했어요."},  # another bot is not the assistant
+        {"role": "user", "content": "@orca-bot 여기 내용이다"},
+    ]
 
 
 def test_build_blocks_dedupes_sources_and_quotes_snippets() -> None:
