@@ -61,7 +61,7 @@ def test_a_quiet_channel_day_becomes_one_document_with_threads_and_no_bot_posts(
     assert keep.flush(FakeWeb(), force=True) == 1
     method, path, body = api.calls[0]
     assert path == "/v1/documents" and 'filename="slack-sales-2026-11-28.md"' in body
-    assert "# 슬랙 대화: #sales · 2026-11-28" in body and "<@U1>: 견적 유효기간은 30일로 하죠" in body
+    assert "# 슬랙 대화: #sales · 2026-11-28" in body and "U1: 견적 유효기간은 30일로 하죠" in body
     assert "  - " in body and "운송비는 별도로요" in body  # the thread reply, under its message
     assert "문서를 찾아" not in body and "근거: 견적 절차" not in body and "joined" not in body
     assert "https://example.com/a" in body and "(첨부: 단가표.xlsx)" in body

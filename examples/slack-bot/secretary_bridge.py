@@ -37,6 +37,7 @@ from typing import Any
 import httpx
 
 from doc_intake import IntakeError, download_slack_file, expand
+from slack_text import UserDirectory, readable
 
 logger = logging.getLogger("baryon-slack-bot.secretary")
 
@@ -47,9 +48,7 @@ ACTION_WORDS = re.compile(
     r"할\s*일로|리마인드|알려\s*줘\s*(?:몇|내일|오늘)|^\s*/?비서", re.I)
 START = ("[슬랙 메시지로 받은 요청이다. 답은 슬랙에 글로 올라간다. 본문은 핵심만 짧게 쓰고, 제안·초안·표처럼 자세한 내용은 "
          "show 카드로 남겨라. 메일 초안은 받는 사람·제목·본문을 text 카드로 보여 준다. 보내거나 바꾸는 일은 평소처럼 확인을 받는다.]\n")
-MENTION = re.compile(r"<@[A-Z0-9]+>|\[@[^\]]*\]\([^)]*\)|@\w+")
 CONTEXT_CHARS = 12000
-SLACK_LINK = re.compile(r"<(https?://[^|>]+)(?:\|[^>]*)?>")  # Slack sends links as <https://…|label>
 IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}
 TEXT_FILES = (".md", ".txt", ".csv", ".tsv", ".json", ".log", ".yaml", ".yml", ".xml", ".html", ".htm", ".py", ".js",
               ".ts", ".tsx", ".java", ".kt", ".go", ".rs", ".sql", ".sh", ".ini", ".toml", ".srt", ".vtt")
@@ -196,6 +195,12 @@ class SecretaryBridge:
         self.fetch = fetch or (lambda item: download_slack_file(downloads, config.slack_token, item))
         self.threads: dict[tuple[str, str], Thread] = {}
         self.guard = threading.Lock()
+        self.bot_user_id = ""  # set by create_app: the bot's own mention reads as "너(이름)"
+        self.directory: UserDirectory | None = None  # user names (slack_text); create_app shares the bot's
+
+    def read(self, text: str | None) -> str:
+        """Slack mrkdwn → readable text: mentions kept as "@이름" / "너(이름)", links as "label (url)"."""
+        return readable(text, me=self.bot_user_id, directory=self.directory)
 
     @property
     def headers(self) -> dict[str, str]:
@@ -220,8 +225,7 @@ class SecretaryBridge:
     def handle(self, event: dict, web, text: str | None = None) -> None:
         channel = event["channel"]
         thread_ts = event.get("thread_ts") or event["ts"]
-        raw = SLACK_LINK.sub(r"\1", text if text is not None else event.get("text", ""))
-        text = " ".join(MENTION.sub(" ", raw).split())
+        text = " ".join(self.read(text if text is not None else event.get("text", "")).split())
         if not text:
             return
         key = (channel, thread_ts)
@@ -282,7 +286,7 @@ class SecretaryBridge:
                 continue
             if attachments is not None and not message.get("bot_id"):
                 attachments += [item for item in message.get("files") or [] if item.get("mode") not in {"tombstone", "hidden_by_limit"}]
-            body = SLACK_LINK.sub(r"\1", message.get("text") or "").strip()
+            body = self.read(message.get("text"))
             files = ", ".join(item.get("name", "") for item in message.get("files") or [] if item.get("name"))
             if not body and not files:
                 continue

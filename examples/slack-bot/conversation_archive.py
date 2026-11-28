@@ -29,11 +29,12 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
+from slack_text import Message, UserDirectory
+
 logger = logging.getLogger("baryon.slack.archive")
 
 SKIP_SUBTYPES = {"channel_join", "channel_leave", "channel_topic", "channel_purpose", "channel_name", "bot_message",
                  "message_deleted", "pinned_item", "group_join", "group_leave"}
-SLACK_LINK = re.compile(r"<(https?://[^|>]+)(?:\|[^>]*)?>")
 
 
 @dataclass
@@ -75,6 +76,7 @@ class ConversationArchive:
         self.config = config
         self.baryon = baryon
         self.bot_user_id = bot_user_id
+        self.directory: UserDirectory | None = None  # user names; create_app shares the bot's, else made from web
         self.zone = timezone(timedelta(hours=config.utc_offset_hours))
         self.pending: dict[tuple[str, str], Pending] = {}
         self.lock = threading.Lock()
@@ -135,13 +137,17 @@ class ConversationArchive:
         return not (message.get("bot_id") or message.get("user") == self.bot_user_id or message.get("subtype") in SKIP_SUBTYPES)
 
     def _line(self, message: dict, indent: str = "") -> str:
+        """"- 10:02 이름: 내용": mentions as "@이름", links as "label (url)" (slack_text)."""
         when = datetime.fromtimestamp(float(message.get("ts", 0)), self.zone).strftime("%H:%M")
-        text = SLACK_LINK.sub(r"\1", message.get("text") or "").strip().replace("\n", "\n" + indent + "  ")
-        files = ", ".join(f.get("name", "") for f in message.get("files") or [] if f.get("name"))
-        return f"{indent}- {when} <@{message.get('user', '?')}>: {text}" + (f" (첨부: {files})" if files else "")
+        said = Message.from_event(message, self.directory)
+        text = said.text_plain.replace("\n", "\n" + indent + "  ")
+        files = ", ".join(f.name for f in said.files if f.name)
+        return f"{indent}- {when} {said.author.name or "?"}: {text}" + (f" (첨부: {files})" if files else "")
 
     def render(self, web, channel: str, day: str) -> tuple[str, str]:
         """(channel name, Markdown) of one channel's day; Markdown is empty when nobody said anything."""
+        if self.directory is None:
+            self.directory = UserDirectory.from_web(web)
         try:
             name = (web.conversations_info(channel=channel).get("channel") or {}).get("name") or channel
         except Exception:  # noqa: BLE001 - channels:read is optional

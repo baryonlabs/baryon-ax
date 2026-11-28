@@ -16,6 +16,8 @@ oauth_config:
       - app_mentions:read   # @baryon 멘션 수신
       - chat:write          # 스레드 답변 · 진행 메시지 수정
       - reactions:write     # 👀 / ✅ 반응 (선택)
+      - reactions:read      # 스레드 글에 붙은 반응 읽기 (reaction_added 이벤트)
+      - users:read          # 멘션 <@U…>을 표시 이름으로, 사람과 봇 구분 (slack_text.py)
       - channels:history    # 스레드 맥락 · 구독 스레드 후속 질문 (공개 채널)
       - groups:history      # 같은 기능, 비공개 채널
       - im:history          # 봇과의 1:1 DM 질문 (멘션 없이)
@@ -28,6 +30,7 @@ settings:
       - message.channels
       - message.groups
       - message.im
+      - reaction_added      # 반응 수신 (아직 처리하지 않음: 스레드 스냅샷 단계에서 사용)
   interactivity:
     is_enabled: true    # 버튼(문서로 등록·해당 없음). Socket Mode라 Request URL 불필요
   org_deploy_enabled: false
