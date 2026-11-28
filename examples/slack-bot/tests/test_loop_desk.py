@@ -9,7 +9,9 @@ from pathlib import Path
 import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "apps" / "api" / "src"))  # the API's thread reading (stdlib only)
 
+from baryon.thread_understanding import understand_rules_payload  # noqa: E402
 from baryon_slack_bot import BaryonClient, Config  # noqa: E402
 from loop_desk import (  # noqa: E402
     ACTION_CERTIFY, ACTION_PICK, CHECKS, LoopConfig, LoopDesk, certify_blocks, question_blocks, wants_certify_list, wants_questions,
@@ -34,6 +36,8 @@ class FakeApi:
         path = request.url.path
         if path == "/v1/loop/actions":
             return httpx.Response(200, json={"id": "a1"})
+        if path == "/v1/loop/threads/understand":  # the server's deterministic reading
+            return httpx.Response(200, json=understand_rules_payload(body))
         if path == "/v1/loop/questions":
             return httpx.Response(200, json={"data": [QUESTION]})
         if path.endswith("/asked") or path.endswith("/skip"):
@@ -71,17 +75,34 @@ def desk(api: FakeApi, users: set[str] | None = None) -> LoopDesk:
     return LoopDesk(LoopConfig(users=frozenset(users or {"U1"})), baryon, "UBOT")
 
 
-def test_only_consenting_peoples_decisions_are_recorded() -> None:
+def test_only_consenting_peoples_confirmed_decisions_are_recorded() -> None:
     api = FakeApi()
     loop = desk(api)
     web = FakeWeb()
     assert loop.observe({"user": "U1", "channel": "C1", "ts": "2.0", "thread_ts": "1.0", "text": "운송비는 빼고 견적 내자"}, web)
     method, path, body, sent = api.calls[-1]
-    assert path == "/v1/loop/actions" and "운송비는 빼고" in body["text"] and body["source_ref"] == "slack:C1:1.0"
-    assert body["context"] == "견적 어떻게 할까요?" and sent["x-on-behalf-of"] == "slack:U1"
+    assert path == "/v1/loop/actions" and "운송비는 빼고" in body["text"] and "확정한 결정" in body["text"]
+    assert body["source_ref"] == "slack:C1:1.0" and body["context"] == "견적 어떻게 할까요?" and sent["x-on-behalf-of"] == "slack:U1"
+    read = next(b for _, p, b, _ in api.calls if p == "/v1/loop/threads/understand")
+    assert [m["ts"] for m in read["messages"]] == ["1.0", "2.0"]  # the whole thread was read, not the message alone
+    assert not loop.observe({"user": "U1", "channel": "C1", "ts": "2.0", "thread_ts": "1.0", "text": "운송비는 빼고 견적 내자"}, web)  # once
     assert not loop.observe({"user": "U2", "channel": "C1", "ts": "3.0", "text": "운송비는 빼고 견적 내자"}, web)  # no consent
     assert not loop.observe({"user": "U1", "channel": "C1", "ts": "4.0", "text": "오늘 점심 맛있었어요"}, web)  # not a decision
     assert not loop.observe({"user": "U1", "bot_id": "B1", "channel": "C1", "ts": "5.0", "text": "보류하자"}, web)
+
+
+def test_requests_bot_summaries_and_unfinished_messages_are_not_recorded() -> None:
+    api = FakeApi()
+    loop = desk(api)
+    web = FakeWeb()
+    for ts, text in (("6.0", "<@UBOT> 이 스레드 내용 정리해 줘"), ("7.0", "<@UOTHER> 지난달 순번표 다시 올려줘"),
+                     ("8.0", "주간 보고는 금요일마다 해야하는데 그 전에 <@UBOT> 가")):
+        assert not loop.observe({"user": "U1", "channel": "C1", "ts": ts, "thread_ts": "1.0", "text": text}, web), text
+    assert not any(path == "/v1/loop/actions" for _, path, _, _ in api.calls)
+    edited = {"subtype": "message_changed", "channel": "C1", "ts": "9.5",
+              "message": {"user": "U1", "ts": "8.0", "thread_ts": "1.0", "text": "정산 기한은 2주가 맞아", "edited": {"ts": "9.5"}}}
+    assert loop.observe(edited, web)  # finished by an edit: now a confirmed decision of that message
+    assert "정산 기한은 2주가 맞아" in api.calls[-1][2]["text"]
 
 
 def test_the_bot_asks_first_with_three_answers_and_an_escape() -> None:

@@ -4,9 +4,12 @@ baryon-ax's loop (apps/api/src/baryon/loop.py) finds *behaviour–knowledge gaps
 company's knowledge does not explain — and turns each into one question with three expected answers. This module is
 its Slack front end:
 
-* **Recording** (consent): messages by people listed in LOOP_SLACK_USERS that make a decision or a request
-  ("운송비는 빼고 견적 내자", "이번 건은 보류하자") are recorded as actions with the thread just before them.
-  Nobody else is recorded. LOOP_SLACK_USERS=* records everyone in channels the bot is in — only with consent.
+* **Recording** (consent): when a person listed in LOOP_SLACK_USERS posts or edits a message, the whole thread is
+  read once (``POST /v1/loop/threads/understand``, apps/api thread_understanding.py) and the **confirmed decisions**
+  that message states ("운송비는 빼고 견적 내자", "정산 기한은 2주가 맞아") are recorded as actions with the thread
+  just before them. Requests ("정리해 줘"), other bots' summaries, proposals agreed only by reactions and messages
+  cut off mid-sentence are not decisions and are not recorded. Nobody else is recorded. LOOP_SLACK_USERS=* records
+  everyone in channels the bot is in — only with consent.
 * **Rounds**: every LOOP_INTERVAL_MINUTES the bot runs a round (ontology from new documents, gap judgment,
   questions) and **asks first**: a DM to the person with the question, three expected answers, "모두 틀림" and
   "직접 쓰기". Picking an answer opens a short form to add the condition; "모두 틀림" asks for the real criterion.
@@ -29,9 +32,8 @@ import threading
 from dataclasses import dataclass
 
 import httpx
-
-from slack_text import Message, UserDirectory, readable
-from thread_snapshot import fetch_replies
+from slack_text import UserDirectory, readable
+from thread_snapshot import ThreadSnapshot, fetch_replies, understanding_payload
 
 logger = logging.getLogger("baryon.slack.loop")
 
@@ -47,10 +49,10 @@ VIEW_REASON = "loop_reason_view"
 CHECKS = "loop_checks"
 CONTEST = "loop_contest"
 
-# A decision or a request: "~하자", "~하기로", "빼고", "보류", "승인", "~해 줘" …
-DECISION_RE = re.compile(
-    r"하자|하기로|합시다|갑시다|로\s*가자|으로\s*가자|정했|결정|확정|보류|반려|승인|허용|금지|제외|빼고|말고|대신|우선|먼저\s*해|"
-    r"하지\s*마|하지마|하지\s*말자|미루|늦추|당기|바꿔|바꾸자|올려\s*줘|내려\s*줘|해\s*줘|해줘|맡기|넘기자|중단|멈춰", re.I)
+# Context lines for the loop's gap judgment (apps/api loop.py THREAD_REASON / THREAD_CONFIRMS): the thread already
+# says why, or the decision confirms a value said earlier — not a gap to ask about.
+THREAD_REASON = "[스레드에 적힌 이유]"
+THREAD_CONFIRMS = "[스레드에서 확인한 값]"
 ASK_NOW_RE = re.compile(r"(?:나한테|내게|나에게)?\s*(?:질문|물어볼\s*것|물어볼\s*거)\s*(?:있어|있나|있니|있으면|보여|줘)|먼저\s*물어", re.I)
 CERTIFY_LIST_RE = re.compile(r"인증\s*(?:할\s*것|할\s*거|대기|목록|할게|하자)", re.I)
 MAX_LABEL = 75  # Slack button text limit
@@ -179,38 +181,91 @@ class LoopDesk:
         self.baryon = baryon
         self.bot_user_id = bot_user_id
         self.directory: UserDirectory | None = None  # user names; create_app shares the bot's, else made from web
+        self.snapshots = None  # thread_snapshot.SnapshotStore; create_app shares the bot's
+        self._recorded: dict[tuple[str, str, str], bool] = {}  # (channel, ts, statement) already recorded
 
     # ---------------------------------------------------------------- recording
 
-    def observe(self, event: dict, web) -> bool:
-        """Record a consenting person's decision or request as an action. True when recorded."""
-        user = event.get("user", "")
+    def observe(self, event: dict, web, snapshot: ThreadSnapshot | None = None) -> bool:
+        """Read the thread of a consenting person's new or edited message and record the confirmed decisions that
+        message states. True when something was recorded. ``snapshot``: the thread as the bot already holds it
+        (thread_snapshot.SnapshotStore); without one it is fetched."""
+        message = event.get("message") if event.get("subtype") == "message_changed" and isinstance(event.get("message"), dict) else event
+        user, ts = message.get("user", ""), message.get("ts", "")
         if self.directory is None:
             self.directory = UserDirectory.from_web(web)
-        text = readable(event.get("text"), me=self.bot_user_id, directory=self.directory)
-        if (not self.config.records or event.get("bot_id") or user == self.bot_user_id or event.get("subtype") not in (None, "file_share")
-                or (not self.config.everyone and user not in self.config.users) or len(text) < 6 or not DECISION_RE.search(text)
-                or wants_questions(text) or wants_certify_list(text)):
+        text = readable(message.get("text"), me=self.bot_user_id, directory=self.directory)
+        if (not self.config.records or message.get("bot_id") or user == self.bot_user_id
+                or event.get("subtype") not in (None, "file_share", "message_changed") or not self.consents(user)
+                or len(text) < 4 or wants_questions(text) or wants_certify_list(text)):
             return False
-        channel, thread_ts = event.get("channel", ""), event.get("thread_ts") or event.get("ts", "")
-        context = ""
-        if event.get("thread_ts"):
-            try:
-                replies = fetch_replies(web, channel, event["thread_ts"])
-                before = [m for m in replies if float(m.get("ts", 0)) < float(event.get("ts", 0))][-4:]
-                said = [Message.from_event(m, self.directory, self.bot_user_id) for m in before]
-                context = "\n".join(m.line() for m in said if m.text_for_me)[:2000]
-            except Exception:  # noqa: BLE001 - no history scope: record without context
-                pass
+        channel = event.get("channel", "")
+        thread_ts = message.get("thread_ts") or ts
+        thread = self._thread(web, channel, thread_ts, event, snapshot)
+        try:
+            response = self.baryon.as_user("POST", "/v1/loop/threads/understand", user,
+                                           json=understanding_payload(thread, me_name=self.directory.name(self.bot_user_id, "")))
+            response.raise_for_status()
+            reading = response.json()
+        except (httpx.HTTPError, ValueError):
+            logger.warning("could not read the thread %s/%s", channel, thread_ts, exc_info=True)
+            return False
+        before = [m for m in thread.visible() if float(m.ts or 0) < float(ts or 0)][-4:]
+        context = "\n".join(m.line() for m in before if m.text_for_me)[:2000]
+        recorded = False
+        for decision in reading.get("decisions") or []:
+            decider = (decision.get("decided_by_ids") or [""])[0]
+            if not decision.get("confirmed") or ts not in (decision.get("evidence_ts") or []) or not self.consents(decider):
+                continue
+            notes = [f"{THREAD_REASON} {r['statement']}" for r in decision.get("reasons") or []] + \
+                    [f"{THREAD_CONFIRMS} {c.get('by', '')}: {c.get('quote', '')}" for c in decision.get("confirms") or []]
+            recorded |= self._record(decider, channel, thread_ts, ts, f"<@{decider}>님이 슬랙에서 확정한 결정: {decision['statement']}",
+                                     "\n".join([context, *notes]).strip())
+        for question in reading.get("open_questions") or []:  # "환불 승인 기준은 아직 안 정했어": a gap the person named
+            if question.get("ask") and ts in (question.get("evidence_ts") or []) and self.consents(user):
+                recorded |= self._record(user, channel, thread_ts, ts, f"<@{user}>님이 아직 정하지 않았다고 한 것: {question.get('question', '')}",
+                                         context)
+        return recorded
+
+    def _record(self, user: str, channel: str, thread_ts: str, ts: str, text: str, context: str) -> bool:
+        """POST /v1/loop/actions once per (message, statement): an edit reads the message again."""
+        key = (channel, ts, re.sub(r"\s+", "", text))
+        if key in self._recorded:
+            return False
         try:
             response = self.baryon.as_user("POST", "/v1/loop/actions", user, json={
-                "text": f"<@{user}>님이 슬랙에서 말한 결정·요청: {text[:600]}", "context": context, "source": "slack",
-                "source_ref": f"slack:{channel}:{thread_ts}"})
+                "text": text[:900], "context": context[:4000], "source": "slack", "source_ref": f"slack:{channel}:{thread_ts}"})
             response.raise_for_status()
-            return True
         except httpx.HTTPError:
             logger.warning("could not record the action", exc_info=True)
             return False
+        self._recorded[key] = True
+        while len(self._recorded) > 5000:  # remember recent ones only
+            self._recorded.pop(next(iter(self._recorded)))
+        return True
+
+    def consents(self, user: str) -> bool:
+        return bool(user) and (self.config.everyone or user in self.config.users)
+
+    def _thread(self, web, channel: str, thread_ts: str, event: dict, snapshot: ThreadSnapshot | None) -> ThreadSnapshot:
+        """The thread with this event in it: the bot's snapshot, else every page of conversations.replies."""
+        if snapshot is None and self.snapshots is not None:
+            try:
+                snapshot = self.snapshots.get(web, channel, thread_ts)
+            except Exception:  # noqa: BLE001 - no history scope: read it below, or the message alone
+                snapshot = None
+        if snapshot is None:
+            snapshot = ThreadSnapshot(channel, thread_ts, self.directory, self.bot_user_id)
+            try:
+                snapshot.load(fetch_replies(web, channel, thread_ts))
+            except Exception as error:  # noqa: BLE001 - no history scope: the message alone
+                logger.info("could not read the thread %s/%s (%s): reading the message alone", channel, thread_ts, error)
+        target = (event.get("message") or {}).get("ts") if event.get("subtype") == "message_changed" else event.get("ts")
+        if target and target not in snapshot:  # replies can lag behind the event
+            snapshot.apply({**event, "type": "message"} if event.get("subtype") != "message_changed" else event)
+        elif event.get("subtype") == "message_changed":
+            snapshot.apply(event)
+        return snapshot
 
     # ---------------------------------------------------------------- asking first
 

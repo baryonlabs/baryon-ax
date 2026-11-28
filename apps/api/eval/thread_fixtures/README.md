@@ -16,7 +16,9 @@ Real threads are private. Put them under `$THREAD_FIXTURES` (default `~/.baryon-
 this repository is public. `eval/orca_thread_convert.py` turns a thread copied from Orca into `replies.json`,
 `users.json` and `meta.json`; `expected.json` is written by hand.
 
-The rule arm's scores for these fixtures are in `eval/thread_baseline.json`; `tests/test_thread_eval.py` fails when
-they get worse. After an improvement, refresh it:
+The rule arm's scores for these fixtures are in `eval/thread_baseline.json`, the understand arm's (S3, thread
+understanding, rules) in `eval/thread_baseline_understand.json`; `tests/test_thread_eval.py` fails when either gets
+worse, and when the understand arm is worse than the rule arm on any metric. After an improvement, refresh them:
 
     uv run python eval/thread_eval.py --no-private --write-baseline
+    uv run python eval/thread_eval.py --no-private --arm understand --write-baseline

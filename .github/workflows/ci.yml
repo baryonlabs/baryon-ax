@@ -23,6 +23,8 @@ jobs:
       - run: uv run pytest
       - name: Golden-thread eval (rule arm, repository fixtures, no model)
         run: uv run python eval/thread_eval.py --no-private
+      - name: Golden-thread eval (thread understanding, rules, repository fixtures, no model)
+        run: uv run python eval/thread_eval.py --no-private --arm understand
 
   web:
     runs-on: ubuntu-latest

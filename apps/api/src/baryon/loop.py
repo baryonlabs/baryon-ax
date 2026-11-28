@@ -289,6 +289,12 @@ QUESTION_PROMPT = """너는 사람의 행동 뒤에 있는 판단 기준(암묵�
 {{"question": "...", "expected_answers": [{{"perspective": "원칙", "text": "..."}}, {{"perspective": "조건", "text": "..."}}, {{"perspective": "기대 결과", "text": "..."}}]}}"""
 
 
+# Context lines the Slack loop adds to a recorded decision (loop_desk.py, from thread_understanding.py): the thread
+# already states the reason, or the decision confirms a value said earlier. Either way it is not a gap to ask about.
+THREAD_REASON = "[스레드에 적힌 이유]"
+THREAD_CONFIRMS = "[스레드에서 확인한 값]"
+
+
 def related_terms(data: dict, text: str, limit: int = 6) -> list[dict]:
     """Ontology terms that share words with the action (② 조회)."""
     words = tokens(text)
@@ -305,6 +311,9 @@ async def judge_gap(action: dict, terms: list[dict], passages: list[dict], compl
     """③ 판정: does what we know state the reason for this action? Without a model, only a certified or verified
     criterion that shares most of the action's words counts as an explanation."""
     if complete is None:
+        marker = re.search(rf"^({re.escape(THREAD_REASON)}|{re.escape(THREAD_CONFIRMS)})\s*(.+)$", action.get("context") or "", re.MULTILINE)
+        if marker:  # the Slack thread itself says why (thread_understanding: decisions[].reasons / confirms)
+            return {"explained": True, "by": "스레드", "why": f"{marker.group(1)} {marker.group(2)[:150]}"}
         words = tokens(action["text"])
         for term in terms:
             if term.get("kind") == "criterion" and term.get("status") in (VERIFIED, CERTIFIED):

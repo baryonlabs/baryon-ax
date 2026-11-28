@@ -607,6 +607,8 @@ def create_app(config: Config | None = None):
         if part:
             part.directory = responder.directory  # one name cache for the whole bot
     snapshots, hold = _create_snapshots(responder.directory, bot_user_id, auth.get("bot_id", ""))
+    if loop_desk:
+        loop_desk.snapshots = snapshots  # the loop reads the same thread snapshots (edits, deletions, reactions)
 
     def loop_command(event, client) -> bool:
         """"질문 있어?" / "인증할 것": the loop's questions and certifications, on demand."""

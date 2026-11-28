@@ -1,6 +1,8 @@
 """HTTP API of the question–certification loop (loop.py). main.py builds it with its services.
 
     POST /v1/loop/actions                 record a decision or request (who, what, situation) — the asker's own
+    POST /v1/loop/threads/understand      read one Slack thread snapshot: purpose, requests, decisions, claims, contests
+                                          (thread_understanding.py). Nothing is stored.
     POST /v1/loop/rounds                  run a round: ontology from new documents, gap judgment, questions (admin/agent)
     GET  /v1/loop/questions               open questions for me (or all, admin)
     POST /v1/loop/questions/{id}/answer   pick an expected answer (+ correction), or "모두 틀림" with my own words
@@ -27,7 +29,7 @@ from fastapi import APIRouter, Header, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import loop
+from . import loop, thread_understanding
 from .loop import CERTIFIED, DRAFT, VERIFIED, LoopError, LoopStore
 
 
@@ -48,6 +50,18 @@ class ActionBody(BaseModel):
     source: str = Field("api", max_length=40)       # slack | secretary | web | api
     source_ref: str = Field("", max_length=300)     # e.g. slack:C1:1712.33 (where to ask back)
     judge: bool = False                              # judge now instead of at the next round
+
+
+class ThreadBody(BaseModel):
+    """A thread snapshot (examples/slack-bot thread_snapshot.understanding_payload); messages are checked by the reader."""
+    channel: str = Field("", max_length=64)
+    thread_ts: str = Field("", max_length=32)
+    is_dm: bool = False
+    me: dict[str, Any] = Field(default_factory=dict)
+    owners: list[str] = Field(default_factory=list, max_length=50)
+    messages: list[dict[str, Any]] = Field(default_factory=list, max_length=2000)
+    interactions: list[dict[str, Any]] = Field(default_factory=list, max_length=200)
+    use_model: bool = True                           # false: the deterministic rules only
 
 
 class RoundBody(BaseModel):
@@ -113,6 +127,16 @@ def build_router(deps: LoopDeps, store: LoopStore | None = None) -> APIRouter:
             question = next((q for q in store.load(principal.organization_id)["questions"].values() if q["action_id"] == action["id"]), None)
             return {**action, "question": question}
         return action
+
+    @router.post("/threads/understand")
+    async def understand_thread(body: ThreadBody, x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None),
+                                x_roles: str | None = Header(None)) -> dict:
+        principal = who(x_user_id, x_organization_id, x_roles)
+        complete = deps.complete if body.use_model and deps.model_ready() else None
+        result = await thread_understanding.understand(body.model_dump(), complete)
+        deps.audit.emit("loop.thread_understood", principal, str(uuid.uuid4()), method=result["method"],
+                        messages=len(body.messages), decisions=len(result["decisions"]), dropped=result["dropped"])
+        return result
 
     async def judge_actions(principal, action_ids: list[str]) -> list[dict]:
         data = store.load(principal.organization_id)

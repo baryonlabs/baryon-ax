@@ -364,6 +364,45 @@ class SnapshotStore:
             self.hold.submit(channel, message)
 
 
+# --------------------------------------------------------------------------- what the thread-understanding step reads
+
+PLAIN_KINDS = ("text", "code", "block")
+
+
+def message_payload(message: Message, incomplete: bool | None = None) -> dict:
+    """One message as the thread-understanding API reads it (apps/api baryon.thread_understanding).
+
+    ``segments`` are the plain-text pieces between Slack markup: quotes are checked against them, so a quote never
+    depends on how a mention was rendered. ``incomplete`` defaults to "a person's message that stops mid-sentence
+    and was never edited" (what :class:`TruncationHold` waits on)."""
+    if incomplete is None:
+        incomplete = TruncationHold.should_hold(message) and not message.edited
+    mentions = [{"id": m.id, "name": m.name, "is_me": m.is_me, "is_bot": m.is_bot, "kind": m.kind} for m in message.mentions]
+    return {
+        "ts": message.ts, "author_id": message.author.id, "author_name": message.author.name, "author_kind": message.author.kind,
+        "text": message.text_for_me, "raw": "".join(t.raw for t in message.tokens),
+        "segments": [t.text for t in message.tokens if t.kind in PLAIN_KINDS and t.text.strip()],
+        "mentions": mentions, "mentions_me": message.mentions_me, "addressed_to_me": message.addressed_to_me,
+        "addressees": [m.id for m in message.addressees if m.kind in ("user", "usergroup") and not m.is_me],
+        "reactions": [{"name": r.name, "users": list(r.users), "count": r.count} for r in message.reactions],
+        "edited": message.edited, "deleted": message.deleted, "incomplete": bool(incomplete),
+    }
+
+
+def understanding_payload(snapshot: ThreadSnapshot, me_name: str = "", owners: Iterable[str] = (), held: Iterable[str] = (),
+                          interactions: Iterable[dict] = (), is_dm: bool = False) -> dict:
+    """The whole thread for ``POST /v1/loop/threads/understand``: every message (tombstones too, so the reading
+    knows what was deleted), who the bot is, who owns the thread, the ts the truncation hold is still waiting on,
+    and button presses on the bot's cards."""
+    held = set(held)
+    return {
+        "channel": snapshot.channel, "thread_ts": snapshot.thread_ts, "is_dm": is_dm,
+        "me": {"id": snapshot.me, "name": me_name}, "owners": sorted(set(owners)),
+        "messages": [message_payload(m, True if m.ts in held else None) for m in snapshot.messages if m.subtype not in NOISE_SUBTYPES],
+        "interactions": [dict(i) for i in interactions],
+    }
+
+
 # --------------------------------------------------------------------------- unfinished messages
 
 
