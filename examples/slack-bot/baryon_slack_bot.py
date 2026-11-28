@@ -183,7 +183,12 @@ def to_mrkdwn(markdown: str) -> str:
     # Slack only renders *bold* when the markers touch whitespace or punctuation, so
     # Korean text glued to them ("**15일**입니다") gets zero-width spaces around it.
     bold = "​*\\1*​"
-    text = re.sub(r"^#{1,6}\s+(.+)$", r"*\1*", markdown, flags=re.MULTILINE)
+    # Headings ("### **1. 소개**") become one bold line; the inner ** would otherwise show as stray stars.
+    text = re.sub(r"^#{1,6}\s+(.+)$", lambda m: "*" + m.group(1).replace("**", "").strip() + "*", markdown, flags=re.MULTILINE)
+    # Slack has no lists or tables: "*   item" / "- item" become bullets, table rows become "a · b" lines.
+    text = re.sub(r"^(\s*)[*-]\s+", lambda m: m.group(1) + "• ", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$\n?", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*\|(.+)\|\s*$", lambda m: " · ".join(cell.strip() for cell in m.group(1).split("|")), text, flags=re.MULTILINE)
     text = re.sub(r"\*\*(.+?)\*\*", bold, text)
     text = re.sub(r"__(.+?)__", bold, text)
     text = re.sub(r"\[([^\]]+)\]\((https?://[^)]+)\)", r"<\2|\1>", text)
@@ -308,8 +313,9 @@ class Responder:
     """Slack-framework-free core so it can be tested with a fake WebClient."""
 
     def __init__(self, config: Config, baryon: BaryonClient, bot_user_id: str, subscriptions: ThreadSubscriptions | None = None,
-                 intake=None) -> None:
+                 intake=None, guide=None) -> None:
         self.config = config
+        self.guide = guide  # guide.Guide: "설명서 알려줘" is answered from the whole usage guide
         self.baryon = baryon
         self.bot_user_id = bot_user_id
         self.subscriptions = subscriptions or ThreadSubscriptions()
@@ -403,6 +409,11 @@ class Responder:
                 if thread_files(context + [event], self.bot_user_id):
                     self.add_documents(event, web, question, analyze=True, messages=context)
                     return
+        if self.guide and self.guide.enabled:
+            from guide import wants_guide
+
+            if wants_guide(question) and self.answer_from_guide(event, web, question):
+                return
         self._react(web, channel, event["ts"], "eyes", add=True)
         # Read the thread before posting the placeholder so it is not part of the history.
         messages = self._history(web, channel, thread_ts, question) if event.get("thread_ts") else [{"role": "user", "content": question}]
@@ -423,6 +434,32 @@ class Responder:
             self._react(web, channel, event["ts"], "x", add=True)
         finally:
             self._react(web, channel, event["ts"], "eyes", add=False)
+
+    def answer_from_guide(self, event: dict, web, question: str) -> bool:
+        """Explain from the whole usage guide. False when there is no guide to read (search answers instead)."""
+        channel, user = event["channel"], event.get("user", "unknown")
+        thread_ts = event.get("thread_ts") or event["ts"]
+        document = self.guide.find(user)
+        if not document:
+            return False
+        self._react(web, channel, event["ts"], "eyes", add=True)
+        pending = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=":book: 사용 안내서를 읽고 설명을 준비하고 있습니다…")
+        try:
+            result = self.baryon.ask([{"role": "user", "content": self.guide.prompt(question, document)}], user,
+                                     thread_id=f"slack:{channel}:{thread_ts}", use_retrieval=False)
+            result.citations = [{"document_id": document["id"], "title": document["title"], "chunk": 0}]
+            result.answered = True
+            web.chat_update(channel=channel, ts=pending["ts"], text=_clip(result.text, TEXT_LIMIT),
+                            blocks=build_blocks(result, {}, self.config.max_sources, note=":book: 사용 안내서 전체를 근거로 설명했습니다."))
+            self._react(web, channel, event["ts"], "white_check_mark", add=True)
+        except Exception as error:
+            logger.exception("guide answer failed")
+            detail = f"HTTP {error.response.status_code}" if isinstance(error, httpx.HTTPStatusError) else type(error).__name__
+            web.chat_update(channel=channel, ts=pending["ts"], text=f"{ERROR_PREFIX} ({detail}). 잠시 후 다시 시도해 주세요.")
+            self._react(web, channel, event["ts"], "x", add=True)
+        finally:
+            self._react(web, channel, event["ts"], "eyes", add=False)
+        return True
 
     def _intake_context(self, web, event: dict) -> list[dict]:
         """The thread, or for a top-level request the person's message just above it."""
@@ -529,7 +566,9 @@ def create_app(config: Config | None = None):
     from doc_intake import IntakeLedger
 
     intake = DocumentIntake(IntakeConfig.from_env(), baryon, os.environ["SLACK_BOT_TOKEN"], ledger=IntakeLedger.from_env())
-    responder = Responder(config, baryon, bot_user_id, intake=intake)
+    from guide import Guide
+
+    responder = Responder(config, baryon, bot_user_id, intake=intake, guide=Guide.from_env(baryon))
     responder.team_domain = slack_domain(auth.get("url", ""))
     desk = _create_desk(responder)
     bridge = _create_bridge()
