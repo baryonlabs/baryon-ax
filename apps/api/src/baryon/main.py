@@ -4683,3 +4683,26 @@ async def mcp_endpoint(
 async def mcp_stream() -> Response:
     # No server-initiated messages: the spec allows 405 instead of an SSE stream.
     return Response(status_code=405, headers={"Allow": "POST"})
+
+
+# --------------------------------------------------------------------------- question–certification loop (loop.py)
+
+
+async def loop_publish(principal: Principal, filename: str, markdown: str, trace_id: str) -> str:
+    """A certified criterion becomes a document (tags loop, certified) so chat answers can cite it."""
+    payload = markdown.encode("utf-8")
+    reserved = reserve_upload(principal, len(payload), trace_id)
+    try:
+        document = await ingest_upload(principal, filename, payload, {"member", "admin"}, trace_id, mime="text/markdown",
+                                       category="certified", tags=["loop", "certified"])
+    finally:
+        release_upload(principal, len(payload), reserved)
+    return document.id
+
+
+from .loop_api import LoopDeps, build_router as build_loop_router  # noqa: E402
+
+app.include_router(build_loop_router(LoopDeps(
+    principal=principal_from_headers, acting_service=current_acting_service, documents=documents, audit=audit,
+    complete=ontology_complete, model_ready=ontology_model_ready, publish=loop_publish,
+)))

@@ -572,9 +572,35 @@ def create_app(config: Config | None = None):
     responder.team_domain = slack_domain(auth.get("url", ""))
     desk = _create_desk(responder)
     bridge = _create_bridge()
+    loop_desk = _create_loop_desk(baryon, bot_user_id)
+
+    def loop_command(event, client) -> bool:
+        """"질문 있어?" / "인증할 것": the loop's questions and certifications, on demand."""
+        if not loop_desk:
+            return False
+        from loop_desk import wants_certify_list, wants_questions
+
+        text, user = strip_mentions(event.get("text")), event.get("user", "")
+        thread_ts = event.get("thread_ts") or event["ts"]
+        try:
+            if wants_questions(text):
+                if not loop_desk.ask_pending(client, only_user=user, channel=event["channel"], thread_ts=thread_ts):
+                    client.chat_postMessage(channel=event["channel"], thread_ts=thread_ts, text="지금은 여쭤볼 게 없어요. 결정이나 요청이 쌓이면 먼저 여쭤볼게요.")
+                return True
+            if wants_certify_list(text):
+                if not loop_desk.list_for_certification(client, user, event["channel"], thread_ts):
+                    client.chat_postMessage(channel=event["channel"], thread_ts=thread_ts, text="인증을 기다리는 항목이 없어요.")
+                return True
+        except httpx.HTTPError as error:
+            logger.warning("loop command failed", exc_info=True)
+            client.chat_postMessage(channel=event["channel"], thread_ts=thread_ts, text=f"{ERROR_PREFIX} ({type(error).__name__}).")
+            return True
+        return False
 
     @app.event("app_mention")
     def on_mention(event, client):
+        if loop_command(event, client):
+            return
         # The owner asking for work (draft, send, contact, plan …) goes to the voice secretary (secretary_bridge.py).
         if bridge and bridge.wants(event, strip_mentions(event.get("text"))):
             bridge.handle(event, client)
@@ -583,6 +609,10 @@ def create_app(config: Config | None = None):
 
     @app.event("message")
     def on_message(event, client):
+        if loop_desk:  # record a consenting person's decision or request (loop_desk.py), off the event thread
+            threading.Thread(target=loop_desk.observe, args=(event, client), daemon=True).start()
+        if responder.is_direct_message(event) and loop_command(event, client):
+            return
         gap_id = desk.answer_gap_id(event) if desk else None
         if gap_id:
             desk.on_answer(event, gap_id, client)
@@ -599,6 +629,29 @@ def create_app(config: Config | None = None):
         app.action(ACTION_YES)(action_listener(lambda body, client: bridge.answer_confirmation(body, client, True)))
         app.action(ACTION_NO)(action_listener(lambda body, client: bridge.answer_confirmation(body, client, False)))
 
+    if loop_desk:
+        import loop_desk as loop_ui
+
+        app.action(re.compile(r"^loop_(pick_\d|none|write|skip|certify|hold|reject)$"))(
+            action_listener(lambda body, client: loop_desk.on_button(body, client)))
+        for passive in (loop_ui.CHECKS, loop_ui.CONTEST):  # ticking a box is read when 서명 is pressed
+            app.action(passive)(lambda ack: ack())
+
+        @app.view(loop_ui.VIEW_ANSWER)
+        def on_answer_view(ack, body, client):
+            result = loop_desk.on_answer_view(body, client)
+            if "item_id" not in result:
+                ack(**result)
+                return
+            ack()
+            loop_desk.after_answer(client, body["user"]["id"], result["item_id"])
+
+        @app.view(loop_ui.VIEW_REASON)
+        def on_reason_view(ack, body, client):
+            errors = loop_desk.on_reason_view(body, client)
+            ack(**errors) if errors else ack()
+
+    app.loop_desk = loop_desk
     if desk:
         from proactive import ACTION_DISCARD, ACTION_DISMISS, ACTION_PUBLISH
 
@@ -627,6 +680,18 @@ def _create_bridge():
         return None
     logger.info("secretary bridge on for %d Slack user(s) → %s", len(config.users), config.url)
     return SecretaryBridge(config)
+
+
+def _create_loop_desk(baryon: BaryonClient, bot_user_id: str):
+    """The question–certification loop (loop_desk.py): on unless LOOP_ENABLED=false."""
+    if os.getenv("LOOP_ENABLED", "true").strip().lower() in {"0", "false", "no", "off"}:
+        return None
+    from loop_desk import LoopConfig, LoopDesk
+
+    config = LoopConfig.from_env()
+    logger.info("question–certification loop on (recording %s, rounds every %s min)",
+                "everyone" if config.everyone else f"{len(config.users)} user(s)", config.interval_minutes)
+    return LoopDesk(config, baryon, bot_user_id)
 
 
 def _create_desk(responder: Responder):
@@ -658,6 +723,10 @@ def main() -> None:
         start_scheduler(app.desk, app.client)
         logger.info("proactive mode on: asking about knowledge gaps in %s every %.0f min",
                     app.desk.config.channel, app.desk.config.interval_minutes)
+    if app.loop_desk and app.loop_desk.config.records:
+        from loop_desk import start_loop_scheduler
+
+        start_loop_scheduler(app.loop_desk, app.client)
     SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"]).start()
 
 
