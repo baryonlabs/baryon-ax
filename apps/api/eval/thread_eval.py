@@ -640,6 +640,12 @@ def rule_arm(fixture: Fixture, complete: Callable[[list[dict[str, str]]], Awaita
         baryon = FakeBaryon(api)
         web = FakeWeb(fixture)
         responder = bot.Responder(bot.Config(), baryon, bot_user)
+        try:  # create_app backs the responder's user directory with users.info (S1, slack_text)
+            from slack_text import UserDirectory
+
+            responder.directory = UserDirectory.from_web(web)
+        except ImportError:
+            pass
         desk = loop_desk.LoopDesk(loop_desk.LoopConfig(everyone=True, interval_minutes=0), baryon, bot_user)
         archive = conversation_archive.ArchiveConfig(channels=frozenset({channel}), state_path=os.path.join(store_dir, "archive.json"))
         archiver = conversation_archive.ConversationArchive(archive, baryon, bot_user)
@@ -742,19 +748,21 @@ def _ontology_change(before: dict, after: dict) -> dict:
     return {"added": added, "merged": merged, "contested": contested, "relations": relations}
 
 
-LINE = re.compile(r"^\s*- \d\d:\d\d <@([^>]+)>: (.*)$")
+LINE = re.compile(r"^\s*- \d\d:\d\d (?:<@([^>]+)>|(.+?)): (.*)$")  # speaker as <@U…> (before S1) or a name
 
 
 def _archive_lines(markdown: str, fixture: Fixture) -> tuple[list[dict], dict[str, str]]:
     """Map the archived document's lines back to messages: who it names as the speaker, what text it kept."""
     lines = [LINE.match(line) for line in (markdown or "").splitlines()]
-    lines = [(match.group(1), match.group(2)) for match in lines if match]
+    lines = [(match.group(1) or match.group(2), match.group(3)) for match in lines if match]
     accounted, understood = [], {}
     used: set[int] = set()
     for message in fixture.messages:
-        start = norm(re.sub(r"<(https?://[^|>]+)(?:\|[^>]*)?>", r"\1", message.get("text") or ""))[:24]
+        # the longest stretch outside <…> tokens: mentions and links are rewritten by the archive, words are not
+        stretch = max(re.split(r"<[^>]*>", message.get("text") or ""), key=len, default="")
+        key = norm(stretch)[:16]
         for index, (speaker, text) in enumerate(lines):
-            if index not in used and start and norm(text).startswith(start):
+            if index not in used and key and key in norm(text):
                 used.add(index)
                 accounted.append({"ts": message["ts"], "speaker": speaker, "text": text})
                 understood[message["ts"]] = text

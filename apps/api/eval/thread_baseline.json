@@ -22,7 +22,7 @@
    "wrong_replies": 0,
    "silent_accuracy": 1.0,
    "attribution": 1.0,
-   "mention_resolution": 0.0,
+   "mention_resolution": 1.0,
    "stale_statements": 2,
    "pass": false
   },
@@ -49,7 +49,7 @@
    "wrong_replies": 2,
    "silent_accuracy": 0.0,
    "attribution": 1.0,
-   "mention_resolution": 0.0,
+   "mention_resolution": 1.0,
    "stale_statements": 0,
    "pass": false
   },
@@ -75,7 +75,7 @@
    "wrong_replies": 4,
    "silent_accuracy": 0.0,
    "attribution": 1.0,
-   "mention_resolution": 0.0,
+   "mention_resolution": 1.0,
    "stale_statements": 0,
    "pass": false
   },
@@ -105,7 +105,7 @@
    "wrong_replies": 3,
    "silent_accuracy": 0.4,
    "attribution": 1.0,
-   "mention_resolution": 0.0,
+   "mention_resolution": 1.0,
    "stale_statements": 0,
    "pass": false
   },
@@ -129,7 +129,7 @@
    "wrong_replies": 2,
    "silent_accuracy": 0.333,
    "attribution": 1.0,
-   "mention_resolution": 0.0,
+   "mention_resolution": 1.0,
    "stale_statements": 0,
    "owner_confirmed_count": 0,
    "owner_confirmed_ok": 0,
@@ -164,7 +164,7 @@
    "wrong_replies": 0,
    "silent_accuracy": 1.0,
    "attribution": 1.0,
-   "mention_resolution": 0.0,
+   "mention_resolution": 1.0,
    "stale_statements": 0,
    "pass": false
   }

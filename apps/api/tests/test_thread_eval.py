@@ -197,7 +197,9 @@ def test_the_rule_arm_replays_todays_failures() -> None:
     f = fixture("multi-bot")
     prediction = te.rule_arm(f)
     assert "1700400020.000300" in prediction["responded_ts"]  # another bot's post that mentions us gets an answer
-    assert prediction["trace"]["bot_inputs"][0].startswith("이번 달")  # mentions were deleted, not resolved
+    assert "@helper-bot" in prediction["trace"]["bot_inputs"][0]  # S1: mentions are names now, not deleted
+    assert "1700400100.000400" in prediction["responded_ts"]  # but a message for another bot still gets an answer
+    assert prediction["mentions"] == {} and "self" not in prediction["authors"].values()  # no entities, no self/other split
     assert all(item["ts"] in f.by_ts for item in prediction["accounted"])
 
 
