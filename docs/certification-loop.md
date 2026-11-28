@@ -52,6 +52,38 @@
   인증된 것만 골라 쓸 수 있습니다.
 - `GET /v1/loop/stats` — 상태별 항목 수, 쟁점, 행동·질문 현황, 온톨로지로 읽은 문서·조각 수(`ontology_coverage`), 마지막 라운드.
 
+## 온톨로지 병합 (S4)
+
+조직마다 온톨로지는 하나입니다. `$LOOP_STORE/<조직>.json`(schema 2)에 루프의 용어·기준·관계와 지식 갭 팩(`packs`)이 함께
+있고, 문서 라운드·슬랙 스레드·갭 팩이 모두 같은 병합기(`apps/api/src/baryon/ontology_merge.py`)를 씁니다.
+
+- **후보**: 라벨을 정규화(띄어쓰기·문장부호, 앞의 조사·시간어 제거)하고 라벨·동의어로 찾습니다. 비슷하기만 한 이름은 후보이고,
+  모델이 켜져 있으면 후보 안에서만 같은 것을 고릅니다. 모델이 없거나 실패하면 규칙(글자 하나 더 붙은 `견적`/`견적서`는 같음,
+  단어가 붙은 `환불`/`환불 승인`은 다름)으로 정합니다.
+- **정의 관계**: 문자열이 아니라 주장(대상, 항목, 값)으로 비교해 같음·세분화·상충을 가립니다. 상충은 숫자·기간·이름이 서로 다르거나
+  "안 정했다"와 값이 맞설 때, 또는 공통점 없는 짧은 값 둘일 때만입니다. 항목이 다르면 상충이 아닙니다.
+- **출처 가중치**: 오너 > 사람 = 문서 > 다른 봇. 강한 출처가 약한 쪽을 덮고(약한 쪽은 superseded로 남음), 약한 출처는
+  `needs_verification`(검증 필요)으로 붙습니다. 같은 무게끼리 맞설 때만 **[쟁점]**입니다. 다른 봇의 주장만으로는 검증 필요입니다.
+- **관계**: 끝점이 아직 용어가 아니면 `stub` 용어로 만들어 관계를 버리지 않습니다. 출처는 메시지 단위(채널, ts, permalink 경로)입니다.
+- **ChangeSet** `{added, merged, refined, contested, relations, stubs}`를 사본에서 만든 뒤 한 번의 저장으로 적용합니다. 같은 스레드를
+  다시 넣으면 변경 0입니다. `POST /v1/loop/threads/merge`(에이전트·관리자)에 `understanding`(S3 결과) 또는 `thread`(스냅샷)를
+  보내고, `dry_run: true`면 쓰지 않고 변경만 돌려줍니다.
+- 평가: `uv run python eval/merge_eval.py`(골든 쌍 P·R), `uv run python eval/thread_eval.py --arm understand`(`ontology_change`,
+  `rerun_changes`).
+
+### 배포 때 마이그레이션
+
+S4 이전 팩(`$ONTOLOGY_STORE/ont_*.json`)과 schema 1 루프 파일을 옮깁니다. 실행 전에 `$ONTOLOGY_STORE/backups/`에 백업을 만들고,
+두 번 실행해도 결과가 같습니다. 옮긴 팩 파일은 `$ONTOLOGY_STORE/migrated/`로 갑니다.
+
+```sh
+uv run python -m baryon.ontology_migrate --store /data/ontology --dry-run   # 무엇을 옮길지만
+uv run python -m baryon.ontology_migrate --store /data/ontology             # 백업 → 이전
+uv run python -m baryon.ontology_migrate --store /data/ontology --restore /data/ontology/backups/ontology-v1-<시각>.tar.gz
+```
+
+마이그레이션 전에도 API는 schema 1 루프 파일을 읽을 때 메모리에서 올려 씁니다. 다만 옮기기 전의 팩 파일은 목록에 보이지 않습니다.
+
 ## 설정
 
 | 변수 | 기본 | |

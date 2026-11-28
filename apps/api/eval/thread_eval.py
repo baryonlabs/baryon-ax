@@ -82,7 +82,10 @@ Arms
            archived document, gaps judged and questions written by the model. The mention path stays canned.
     understand
            the thread-understanding step (S3, baryon.thread_understanding): the events build the thread snapshot
-           (S2) and the truncation hold, then the whole thread is read once through POST /v1/loop/threads/understand.
+           (S2) and the truncation hold, then the whole thread is read once through POST /v1/loop/threads/understand,
+           and the reading is merged into the fixture's ontology through POST /v1/loop/threads/merge (S4,
+           baryon.ontology_merge); ``ontology_change`` is the merger's change set, ``rerun_changes`` what a second
+           merge of the same thread changed (must be 0).
            Rules only unless --model-url is given (then the model reads it and the rules fill what it missed; every
            item is still checked against the thread). CI runs the rules (--arm understand).
     judge  optional: a model judges whether the predicted purpose means the expected one (--judge-url).
@@ -125,10 +128,10 @@ DEFAULT_PASS = {
     "question_coverage": 1.0, "forbidden_questions": 0, "respond_recall": 1.0, "wrong_replies": 0, "stale_statements": 0,
     "owner_confirmed_ok": 1, "unapproved_writes": 0, "confirmation_accuracy": 1.0, "contest_evidence_hit": 1.0, "contest_count_ok": 1,
     "incomplete_recall": 1.0, "false_incomplete": 0, "mention_entity_accuracy": 1.0, "author_kind_accuracy": 1.0,
-    "claim_trust_recall": 1.0, "trusted_bot_claims": 0,
+    "claim_trust_recall": 1.0, "trusted_bot_claims": 0, "rerun_changes": 0,
 }
 LOWER_IS_BETTER = {"false_contests", "forbidden_questions", "wrong_replies", "stale_statements", "question_count",
-                   "unapproved_writes", "false_incomplete", "trusted_bot_claims"}
+                   "unapproved_writes", "false_incomplete", "trusted_bot_claims", "rerun_changes"}
 TRUSTED = {"verified", "certified", "confirmed", "trusted"}
 
 
@@ -339,6 +342,8 @@ def score(fixture: Fixture, prediction: dict, judge: dict | None = None) -> dict
                    for want in oc["relations_expected"])
         m["relation_recall"] = _ratio(hits, len(oc["relations_expected"]))
     m["ontology_added"] = len(added)
+    if prediction.get("rerun_changes") is not None:  # merging the same thread twice: the second time changes nothing
+        m["rerun_changes"] = prediction["rerun_changes"]
 
     # questions
     qx, asked = exp.get("questions") or {}, [q.get("text", "") for q in prediction.get("questions") or []]
@@ -804,10 +809,30 @@ def understand_arm(fixture: Fixture, complete: Callable[[list[dict[str, str]]], 
                                                     interactions=interactions, is_dm=fixture.meta.get("channel_type") == "im")
     with tempfile.TemporaryDirectory() as store_dir:
         api = LoopApi(store_dir, complete, "org-thread-eval")
+        _seed_ontology(api, fixture.ontology)
         response = api.request("POST", "/v1/loop/threads/understand", "slack-bot", "agent", json=payload)
         response.raise_for_status()
         result = response.json()
-    return understanding_prediction(result, payload)
+        # S4: the reading is merged into the ontology (POST /v1/loop/threads/merge); the same thread again must change nothing
+        merges = []
+        for _ in range(2):
+            merged = api.request("POST", "/v1/loop/threads/merge", "slack-bot", "agent", json={"understanding": result})
+            merged.raise_for_status()
+            merges.append(merged.json())
+    prediction = understanding_prediction(result, payload)
+    prediction["ontology_change"] = merge_change(merges[0])
+    prediction["rerun_changes"] = merges[1]["changes"]
+    prediction["trace"]["merge_counts"] = merges[0]["counts"]
+    return prediction
+
+
+def merge_change(changes: dict) -> dict:
+    """The merger's change set (ontology_merge.ChangeSet) in the scorer's ontology_change shape."""
+    return {"added": [{"label": t["label"], "definition": t.get("definition", "")} for t in changes["added"]],
+            "merged": [{"from": m["from"], "into": m["into"]} for m in changes["merged"]],
+            "contested": [{"label": c["label"], "evidence_ts": c["evidence_ts"]} for c in changes["contested"]],
+            "relations": [{"s": r["s"], "p": r["p"], "o": r["o"]} for r in changes["relations"]],
+            "stubs": [s["label"] for s in changes["stubs"]], "refined": len(changes["refined"])}
 
 
 def understanding_prediction(result: dict, payload: dict) -> dict:
@@ -879,7 +904,8 @@ def _ontology_change(before: dict, after: dict) -> dict:
     from baryon.loop import is_contested
 
     old = before["terms"]
-    added = [{"label": t["label"], "definition": t.get("definition", "")} for key, t in after["terms"].items() if key not in old]
+    added = [{"label": t["label"], "definition": t.get("definition", "")} for key, t in after["terms"].items()
+             if key not in old and t.get("kind") != "stub"]
     merged = [{"from": "", "into": t["label"]} for key, t in after["terms"].items()
               if key in old and len(t.get("sources") or []) > len(old[key].get("sources") or [])]
     contested = [t["label"] for key, t in after["terms"].items() if is_contested(t) and not (key in old and is_contested(old[key]))]
@@ -960,7 +986,8 @@ TABLE_KEYS = ["pass", "purpose", "decision_precision", "decision_recall", "decid
               "tacit_recall", "attribution", "mention_resolution", "ontology_add_recall", "ontology_merge_recall",
               "ontology_contest_recall", "false_contests", "relation_recall", "question_count", "questions_within_budget", "question_coverage",
               "forbidden_questions", "respond_recall", "wrong_replies", "stale_statements", "contest_evidence_hit", "contest_count_ok",
-              "incomplete_recall", "mention_entity_accuracy", "author_kind_accuracy", "claim_trust_recall", "trusted_bot_claims"]
+              "incomplete_recall", "mention_entity_accuracy", "author_kind_accuracy", "claim_trust_recall", "trusted_bot_claims",
+              "rerun_changes"]
 
 
 def _cell(value: Any) -> str:

@@ -1,0 +1,341 @@
+{
+ "description": "Held-out merge pairs (written after the merger rules were tuned on ontology_merge_gold.json; not tuned on). Synthetic.",
+ "classes": [
+  "same",
+  "different",
+  "refine",
+  "contest"
+ ],
+ "pairs": [
+  {
+   "id": "h01",
+   "existing": {
+    "label": "재택근무",
+    "value": "주 2회까지",
+    "trust": "document"
+   },
+   "new": {
+    "label": "재택 근무",
+    "value": "주 2회까지",
+    "trust": "human"
+   },
+   "expected": "same",
+   "why": "spacing"
+  },
+  {
+   "id": "h02",
+   "existing": {
+    "label": "경조사비",
+    "value": "부모상 50만원",
+    "trust": "document"
+   },
+   "new": {
+    "label": "경조사비",
+    "value": "부모상 50만 원",
+    "trust": "human"
+   },
+   "expected": "same",
+   "why": "amount spacing"
+  },
+  {
+   "id": "h03",
+   "existing": {
+    "label": "주간 회의",
+    "value": "매주 월요일 오전 10시",
+    "trust": "human"
+   },
+   "new": {
+    "label": "주간 회의",
+    "value": "월요일 오전 10시 매주",
+    "trust": "human"
+   },
+   "expected": "same",
+   "why": "order"
+  },
+  {
+   "id": "h04",
+   "existing": {
+    "label": "계약서",
+    "value": "양측 서명 후 효력",
+    "trust": "document"
+   },
+   "new": {
+    "label": "계약",
+    "value": "양측 서명 후 효력",
+    "trust": "human"
+   },
+   "expected": "same",
+   "why": "one syllable"
+  },
+  {
+   "id": "h05",
+   "existing": {
+    "label": "야근 식대",
+    "value": "1인 1만원",
+    "trust": "document"
+   },
+   "new": {
+    "label": "야근 식대",
+    "value": "1인 1만원입니다",
+    "trust": "human"
+   },
+   "expected": "same",
+   "why": "copula"
+  },
+  {
+   "id": "h06",
+   "existing": {
+    "label": "휴가 신청",
+    "value": "3일 전까지",
+    "trust": "document"
+   },
+   "new": {
+    "label": "휴가 신청서",
+    "value": "인사팀에 제출하는 양식",
+    "trust": "human"
+   },
+   "expected": "different",
+   "why": "the form, not the act"
+  },
+  {
+   "id": "h07",
+   "existing": {
+    "label": "서버 점검",
+    "value": "매월 첫째 주 토요일",
+    "trust": "human"
+   },
+   "new": {
+    "label": "서버 점검 담당",
+    "value": "인프라팀",
+    "trust": "human"
+   },
+   "expected": "different",
+   "why": "an attribute"
+  },
+  {
+   "id": "h08",
+   "existing": {
+    "label": "구매 요청",
+    "value": "팀장 승인 후 구매팀",
+    "trust": "document"
+   },
+   "new": {
+    "label": "구매",
+    "value": "회사 비용으로 물품을 사는 일",
+    "trust": "document"
+   },
+   "expected": "different",
+   "why": "the broader act"
+  },
+  {
+   "id": "h09",
+   "existing": {
+    "label": "인턴",
+    "value": "3개월 과정",
+    "trust": "document"
+   },
+   "new": {
+    "label": "인턴 평가",
+    "value": "수료 전 1회",
+    "trust": "document"
+   },
+   "expected": "different",
+   "why": "an act about it"
+  },
+  {
+   "id": "h10",
+   "existing": {
+    "label": "법인차량",
+    "value": "사전 예약 후 사용",
+    "trust": "document"
+   },
+   "new": {
+    "label": "법인차량 주유비",
+    "value": "실비 정산",
+    "trust": "human"
+   },
+   "expected": "different",
+   "why": "an attribute"
+  },
+  {
+   "id": "h11",
+   "existing": {
+    "label": "재택근무",
+    "value": "주 2회까지",
+    "trust": "document"
+   },
+   "new": {
+    "label": "재택근무",
+    "value": "주 2회까지, 신규 입사자는 3개월 후부터",
+    "trust": "human"
+   },
+   "expected": "refine",
+   "why": "adds an exception"
+  },
+  {
+   "id": "h12",
+   "existing": {
+    "label": "주간 회의",
+    "value": "매주 월요일 오전 10시",
+    "trust": "human"
+   },
+   "new": {
+    "label": "주간 회의",
+    "value": "매주 월요일 오전 10시, 회의록은 막내가 작성",
+    "trust": "human"
+   },
+   "expected": "refine",
+   "why": "adds a rule"
+  },
+  {
+   "id": "h13",
+   "existing": {
+    "label": "서버 점검",
+    "value": "매월 첫째 주 토요일",
+    "trust": "human"
+   },
+   "new": {
+    "label": "서버 점검",
+    "value": "매월 첫째 주 토요일 새벽 2시",
+    "trust": "human"
+   },
+   "expected": "refine",
+   "why": "adds a time"
+  },
+  {
+   "id": "h14",
+   "existing": {
+    "label": "경조사비",
+    "value": "부모상 50만원",
+    "trust": "owner"
+   },
+   "new": {
+    "label": "경조사비",
+    "value": "부모상 30만원",
+    "trust": "needs_verification"
+   },
+   "expected": "refine",
+   "why": "a bot against the owner"
+  },
+  {
+   "id": "h15",
+   "existing": {
+    "label": "야근 식대",
+    "value": "1인 1만원",
+    "trust": "needs_verification"
+   },
+   "new": {
+    "label": "야근 식대",
+    "value": "1인 1만5천원",
+    "trust": "owner"
+   },
+   "expected": "refine",
+   "why": "the owner over a bot"
+  },
+  {
+   "id": "h16",
+   "existing": {
+    "label": "재택근무",
+    "value": "주 2회까지",
+    "trust": "document"
+   },
+   "new": {
+    "label": "재택근무",
+    "value": "주 3회까지",
+    "trust": "document"
+   },
+   "expected": "contest",
+   "why": "two counts"
+  },
+  {
+   "id": "h17",
+   "existing": {
+    "label": "휴가 신청",
+    "value": "3일 전까지",
+    "trust": "document"
+   },
+   "new": {
+    "label": "휴가 신청",
+    "value": "7일 전까지",
+    "trust": "human"
+   },
+   "expected": "contest",
+   "why": "two lead times"
+  },
+  {
+   "id": "h18",
+   "existing": {
+    "label": "서버 점검",
+    "value": "매월 첫째 주 토요일 새벽 2시",
+    "trust": "human"
+   },
+   "new": {
+    "label": "서버 점검",
+    "value": "매월 첫째 주 토요일 새벽 4시",
+    "trust": "human"
+   },
+   "expected": "contest",
+   "why": "two times"
+  },
+  {
+   "id": "h19",
+   "existing": {
+    "label": "구매 요청",
+    "value": "팀장 승인 후 구매팀",
+    "trust": "document"
+   },
+   "new": {
+    "label": "구매 요청",
+    "value": "아직 정해진 게 없음",
+    "trust": "human"
+   },
+   "expected": "contest",
+   "why": "not decided against a value"
+  },
+  {
+   "id": "h20",
+   "existing": {
+    "label": "디자인 툴",
+    "value": "Figma",
+    "trust": "human"
+   },
+   "new": {
+    "label": "디자인 툴",
+    "value": "Sketch",
+    "trust": "human"
+   },
+   "expected": "contest",
+   "why": "two tools"
+  },
+  {
+   "id": "h21",
+   "existing": {
+    "label": "인턴",
+    "value": "3개월 과정",
+    "trust": "document"
+   },
+   "new": {
+    "label": "인턴",
+    "value": "6개월 과정",
+    "trust": "document"
+   },
+   "expected": "contest",
+   "why": "two durations"
+  },
+  {
+   "id": "h22",
+   "existing": {
+    "label": "야간 출입",
+    "value": "보안팀 승인 필요",
+    "trust": "human"
+   },
+   "new": {
+    "label": "야간 출입",
+    "value": "누구나 사원증으로 가능",
+    "trust": "human"
+   },
+   "expected": "contest",
+   "why": "needs approval vs anyone (no shared words)"
+  }
+ ]
+}

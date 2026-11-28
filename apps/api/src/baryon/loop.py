@@ -39,6 +39,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import ontology_merge
+
 logger = logging.getLogger("baryon.loop")
 
 Complete = Callable[[list[dict[str, str]]], Awaitable[str]]
@@ -153,13 +155,19 @@ def decide(item: dict, actor: str, is_person: bool, decision: str, reason: str =
 # --------------------------------------------------------------------------- store
 
 
+_LOCKS: dict[str, threading.RLock] = {}
+_LOCKS_GUARD = threading.Lock()
+
+
 class LoopStore:
-    """One JSON file per organization under ONTOLOGY_STORE/loop (a volume in the compose files)."""
+    """One JSON file per organization under ONTOLOGY_STORE/loop (a volume in the compose files): the organization's
+    whole ontology since S4 — loop terms and criteria, relations, actions, questions and the gap packs."""
 
     def __init__(self, root: str | Path | None = None) -> None:
         base = root or os.getenv("LOOP_STORE") or os.path.join(os.getenv("ONTOLOGY_STORE", "/tmp/baryon-ax-ontology"), "loop")
         self.root = Path(base)
-        self.lock = threading.RLock()
+        with _LOCKS_GUARD:  # one lock per directory: the loop router and the gap packs write the same files
+            self.lock = _LOCKS.setdefault(str(self.root.resolve()), threading.RLock())
 
     def _path(self, organization_id: str) -> Path:
         return self.root / (re.sub(r"[^A-Za-z0-9_.-]", "_", organization_id) + ".json")
@@ -171,9 +179,7 @@ class LoopStore:
                 data = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 data = {}
-            for key, empty in (("terms", {}), ("relations", []), ("actions", {}), ("questions", {}), ("rounds", []), ("seen_documents", {})):
-                data.setdefault(key, empty)
-            return data
+            return ontology_merge.upgrade(data)  # schema 2: one ontology (terms, relations, gap packs); see ontology_merge
 
     def save(self, organization_id: str, data: dict) -> None:
         with self.lock:
@@ -208,30 +214,16 @@ JSON만 출력: {{"terms": [{{"label": "...", "definition": "...", "quote": "...
 
 
 def _term_id(label: str) -> str:
-    slug = re.sub(r"\s+", "-", label.strip().lower())
-    return "t_" + re.sub(r"[^0-9a-z가-힣_-]", "", slug)[:60]
+    return ontology_merge.term_id(label)
 
 
 def merge_term(terms: dict, label: str, definition: str, source: dict, round_number: int, verified: bool) -> str:
-    """Add a term, or a second source to it. A different definition from another document makes it [쟁점]."""
-    key = _term_id(label)
-    existing = terms.get(key)
-    if not existing:
-        terms[key] = {"id": key, "label": label.strip(), "definition": definition.strip(), "kind": "term",
-                      "status": VERIFIED if verified else DRAFT, "sources": [source], "round": round_number,
-                      "created_at": now(), **({"verified_by": "agent:source-match", "verified_at": now()} if verified else {})}
-        return key
-    if any(s.get("document_id") == source.get("document_id") and s.get("chunk") == source.get("chunk") for s in existing["sources"]):
-        return key
-    existing["sources"].append(source)
-    if _norm(definition) != _norm(existing["definition"].removeprefix("[쟁점]").strip()) and existing["status"] != CERTIFIED:
-        if not existing.get("interpretations"):
-            existing["interpretations"] = [{"definition": existing["definition"], "source": existing["sources"][0]}]
-        existing["interpretations"].append({"definition": definition.strip(), "source": source})
-        if not existing["definition"].startswith("[쟁점]"):
-            existing["definition"] = "[쟁점] " + existing["definition"]
-        existing["status"] = DRAFT  # two readings: a person decides
-    return key
+    """Add a term, or a second source to it (ontology_merge: candidates, then same / refine / contest by claim).
+    Only a definition that really disagrees with another document's makes it [쟁점]."""
+    data = ontology_merge.upgrade({"terms": terms})
+    ontology_merge.merge(data, [ontology_merge.document_claim(label, definition, source, verified)], round_number=round_number)
+    terms.update(data["terms"])
+    return ontology_merge.exact_match(terms, label) or ontology_merge.term_id(ontology_merge.clean_label(label))
 
 
 async def extract_from_chunk(document: dict, chunk_number: int, text: str, complete: Complete, limit: int = 6) -> dict:

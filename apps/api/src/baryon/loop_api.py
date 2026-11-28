@@ -3,6 +3,9 @@
     POST /v1/loop/actions                 record a decision or request (who, what, situation) — the asker's own
     POST /v1/loop/threads/understand      read one Slack thread snapshot: purpose, requests, decisions, claims, contests
                                           (thread_understanding.py). Nothing is stored.
+    POST /v1/loop/threads/merge           merge a thread reading into the ontology (ontology_merge): one change set
+                                          {added, merged, refined, contested, relations, stubs}, applied at once;
+                                          the same thread again changes nothing (agent/admin)
     POST /v1/loop/rounds                  run a round: ontology from new documents, gap judgment, questions (admin/agent)
     GET  /v1/loop/questions               open questions for me (or all, admin)
     POST /v1/loop/questions/{id}/answer   pick an expected answer (+ correction), or "모두 틀림" with my own words
@@ -29,7 +32,7 @@ from fastapi import APIRouter, Header, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import loop, thread_understanding
+from . import loop, ontology_merge, thread_understanding
 from .loop import CERTIFIED, DRAFT, VERIFIED, LoopError, LoopStore
 
 
@@ -62,6 +65,14 @@ class ThreadBody(BaseModel):
     messages: list[dict[str, Any]] = Field(default_factory=list, max_length=2000)
     interactions: list[dict[str, Any]] = Field(default_factory=list, max_length=200)
     use_model: bool = True                           # false: the deterministic rules only
+
+
+class MergeBody(BaseModel):
+    """What to merge into the organization's ontology: a thread reading (POST /threads/understand) or a snapshot."""
+    understanding: dict[str, Any] | None = None
+    thread: ThreadBody | None = None
+    use_model: bool = True                           # false: rules only (same-as and the thread reading)
+    dry_run: bool = False                            # the change set without writing it
 
 
 class RoundBody(BaseModel):
@@ -137,6 +148,31 @@ def build_router(deps: LoopDeps, store: LoopStore | None = None) -> APIRouter:
         deps.audit.emit("loop.thread_understood", principal, str(uuid.uuid4()), method=result["method"],
                         messages=len(body.messages), decisions=len(result["decisions"]), dropped=result["dropped"])
         return result
+
+    @router.post("/threads/merge")
+    async def merge_thread(body: MergeBody, x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None),
+                           x_roles: str | None = Header(None)) -> dict:
+        principal = who(x_user_id, x_organization_id, x_roles)
+        if "admin" not in principal.roles and not principal.roles & AGENT_ROLES:
+            raise HTTPException(403, "Administrator or agent role required")
+        complete = deps.complete if body.use_model and deps.model_ready() else None
+        if body.understanding is not None:
+            result = body.understanding
+        elif body.thread is not None:
+            result = await thread_understanding.understand(body.thread.model_dump(), complete)
+        else:
+            raise HTTPException(422, "understanding or thread is required")
+        claims, relations, _types = ontology_merge.items_from_understanding(result)
+        same_as = await ontology_merge.same_as_for(store.load(principal.organization_id),
+                                                   ontology_merge.labels_of(claims, relations), complete)
+
+        def change(data: dict) -> ontology_merge.ChangeSet:
+            return ontology_merge.merge(data, claims, relations, same_as=same_as, write=not body.dry_run)
+
+        changes = change(store.load(principal.organization_id)) if body.dry_run else store.update(principal.organization_id, change)
+        deps.audit.emit("loop.thread_merged", principal, str(uuid.uuid4()), dry_run=body.dry_run, **changes.counts())
+        return {"channel": result.get("channel", ""), "thread_ts": result.get("thread_ts", ""), "method": result.get("method", ""),
+                "dry_run": body.dry_run, **{k: v for k, v in changes.to_dict().items()}}
 
     async def judge_actions(principal, action_ids: list[str]) -> list[dict]:
         data = store.load(principal.organization_id)
@@ -242,24 +278,29 @@ def build_router(deps: LoopDeps, store: LoopStore | None = None) -> APIRouter:
         progress_now = dict(data.get("read_progress") or {})
         seen_now = dict(data["seen_documents"])
 
+        claims, relations = [], []
+        for listed, chunk, result in extracted:
+            for term in result["terms"]:
+                source = {"type": "document", "document_id": listed["id"], "title": listed.get("title", ""), "chunk": chunk,
+                          "quote": term["quote"], "matched": term["verified"]}
+                claims.append(ontology_merge.document_claim(term["label"], term["definition"], source, term["verified"]))
+            for rel in result["relations"]:
+                relations.append(ontology_merge.Relation(s=rel["s"], p=rel["p"], o=rel["o"], source={
+                    "type": "document", "document_id": listed["id"], "chunk": chunk, "quote": rel.get("quote", "")}))
+        same_as = {}
+        if claims and deps.model_ready():
+            same_as = await ontology_merge.same_as_for(store.load(principal.organization_id),
+                                                       ontology_merge.labels_of(claims, relations), deps.complete)
+
         def apply(fresh: dict) -> None:
             fresh["seen_documents"].update(seen_now)
             fresh.setdefault("read_progress", {}).update(progress_now)
-            for listed, chunk, result in extracted:
-                for term in result["terms"]:
-                    source = {"type": "document", "document_id": listed["id"], "title": listed.get("title", ""), "chunk": chunk,
-                              "quote": term["quote"], "matched": term["verified"]}
-                    before = fresh["terms"].get(loop._term_id(term["label"]))
-                    key = loop.merge_term(fresh["terms"], term["label"], term["definition"], source, number, term["verified"])
-                    summary["terms"] += 0 if before else 1
-                    summary["contested"] += 1 if loop.is_contested(fresh["terms"][key]) and not (before and loop.is_contested(before)) else 0
-                for rel in result["relations"]:
-                    s_id, o_id = loop._term_id(rel["s"]), loop._term_id(rel["o"])
-                    if s_id in fresh["terms"] and o_id in fresh["terms"] and not any(
-                            r["s_id"] == s_id and r["p"] == rel["p"] and r["o_id"] == o_id for r in fresh["relations"]):
-                        fresh["relations"].append({**rel, "s_id": s_id, "o_id": o_id, "status": DRAFT, "round": number,
-                                                   "sources": [{"document_id": listed["id"], "chunk": chunk}]})
-                        summary["relations"] += 1
+            # one merger for every source (ontology_merge): candidates, same / refine / contest, stub ends, one change set
+            changes = ontology_merge.merge(fresh, claims, relations, same_as=same_as, round_number=number)
+            summary["terms"] += len(changes.added)
+            summary["contested"] += len(changes.contested)
+            summary["relations"] += len(changes.relations)
+            summary.update(merged=len(changes.merged), refined=len(changes.refined), stubs=len(changes.stubs))
 
         store.update(principal.organization_id, apply)
         # ②–④ actions waiting for judgment
