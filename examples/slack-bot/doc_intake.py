@@ -228,6 +228,25 @@ def expand(name: str, payload: bytes, max_bytes: int) -> tuple[list[tuple[str, b
     return members, skipped
 
 
+NO_FILES_READ = ("봇에 files:read 권한이 없어 파일을 받을 수 없습니다. 슬랙 앱 설정의 OAuth & Permissions에서 "
+                 "files:read를 추가하고 앱을 다시 설치해 주세요")
+
+
+def download_slack_file(http: httpx.Client, token: str, item: dict) -> bytes:
+    """A file shared in Slack, with the bot token. Without files:read Slack does not refuse plainly: it redirects
+    to the workspace sign-in page (302, then 403 or an HTML page), so those all mean the scope is missing."""
+    url = item.get("url_private_download") or item.get("url_private")
+    if not url:
+        raise IntakeError("파일 주소가 없습니다")
+    response = http.get(url, headers={"Authorization": f"Bearer {token}"})
+    signed_out = response.status_code in (401, 403) or any("redir=" in str(hop.headers.get("location", "")) for hop in response.history)
+    html = "text/html" in response.headers.get("content-type", "") and not str(item.get("name", "")).lower().endswith((".html", ".htm"))
+    if signed_out or html:
+        raise IntakeError(NO_FILES_READ)
+    response.raise_for_status()
+    return response.content
+
+
 # --------------------------------------------------------------------------- intake
 
 
@@ -243,15 +262,7 @@ class DocumentIntake:
         self.ledger = ledger or IntakeLedger(None)
 
     def download(self, item: dict) -> bytes:
-        url = item.get("url_private_download") or item.get("url_private")
-        if not url:
-            raise IntakeError("파일 주소가 없습니다")
-        response = self.http.get(url, headers={"Authorization": f"Bearer {self.slack_token}"})
-        response.raise_for_status()
-        # Without files:read Slack answers with its HTML sign-in page instead of the file.
-        if "text/html" in response.headers.get("content-type", "") and not str(item.get("name", "")).lower().endswith((".html", ".htm")):
-            raise IntakeError("봇에 files:read 권한이 없어 파일을 받을 수 없습니다")
-        return response.content
+        return download_slack_file(self.http, self.slack_token, item)
 
     def upload(self, name: str, payload: bytes, slack_user: str, tags: list[str]) -> Added | Skipped:
         response = self.baryon.as_user(

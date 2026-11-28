@@ -11,6 +11,12 @@ this service stays a thin wrapper.
 The first conversion downloads the layout, table and OCR models into /models (DOCLING_ARTIFACTS_PATH).
 Mount a volume there to keep restarts offline; DOCLING_DOWNLOAD_MODELS=0 skips the download when the
 models are copied in by hand (air-gapped installs).
+
+OCR (scanned PDFs, photos, screenshots) uses RapidOCR with the Korean recognizer by default; the stock
+recognizer is Chinese/English and drops Hangul entirely. DOCLING_OCR_LANG picks another PP-OCR language
+(english, chinese, japan, latin, ...), DOCLING_OCR_BACKEND the engine (torch is in the image; onnxruntime
+needs that package), and DOCLING_OCR_ORIENTATION=1 turns the 180° text classifier back on. It is off
+because it flipped "9,000원" into "공000'6" on ordinary upright receipts.
 """
 
 from __future__ import annotations
@@ -33,6 +39,10 @@ VERSION = os.getenv("DOCLING_VERSION", "unknown")
 app = FastAPI(title="baryon-docling", version=VERSION)
 _converter = None
 
+OCR_LANG = os.getenv("DOCLING_OCR_LANG", "korean").strip() or "korean"
+OCR_BACKEND = os.getenv("DOCLING_OCR_BACKEND", "torch").strip() or "torch"
+OCR_ORIENTATION = os.getenv("DOCLING_OCR_ORIENTATION", "0") == "1"
+
 
 def ensure_models() -> None:
     """With DOCLING_ARTIFACTS_PATH set, docling only reads models from that folder and never downloads
@@ -47,17 +57,30 @@ def ensure_models() -> None:
     from docling.utils.model_downloader import download_models
 
     logger.info("making sure docling models are in %s (first run downloads them)", path)
-    download_models(output_dir=Path(path))  # skips what is already there
+    # The Korean recognizer is not in the default set; ask for it (with the detector it pairs with).
+    download_models(output_dir=Path(path), rapidocr_models=[f"{OCR_BACKEND}:{OCR_LANG}"])  # skips what is there
+
+
+def pipeline_options():
+    from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions
+
+    options = PdfPipelineOptions()
+    options.do_ocr = True
+    options.ocr_options = RapidOcrOptions(lang=[OCR_LANG], backend=OCR_BACKEND, use_cls=OCR_ORIENTATION)
+    return options
 
 
 def converter():
     global _converter
     if _converter is None:
-        from docling.document_converter import DocumentConverter
+        from docling.datamodel.base_models import InputFormat
+        from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
 
         ensure_models()
-        logger.info("initializing docling converter")
-        _converter = DocumentConverter()
+        logger.info("initializing docling converter (OCR %s on %s)", OCR_LANG, OCR_BACKEND)
+        options = pipeline_options()
+        _converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options),
+                                                       InputFormat.IMAGE: ImageFormatOption(pipeline_options=options)})
     return _converter
 
 
@@ -68,6 +91,7 @@ def health() -> dict:
         "parser": "docling",
         "version": VERSION,
         "artifacts": os.getenv("DOCLING_ARTIFACTS_PATH", ""),
+        "ocr": {"lang": OCR_LANG, "backend": OCR_BACKEND},
     }
 
 
