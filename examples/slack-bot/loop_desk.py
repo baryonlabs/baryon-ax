@@ -31,6 +31,7 @@ from dataclasses import dataclass
 import httpx
 
 from slack_text import Message, UserDirectory, readable
+from thread_snapshot import fetch_replies
 
 logger = logging.getLogger("baryon.slack.loop")
 
@@ -195,7 +196,7 @@ class LoopDesk:
         context = ""
         if event.get("thread_ts"):
             try:
-                replies = web.conversations_replies(channel=channel, ts=event["thread_ts"], limit=20).get("messages", [])
+                replies = fetch_replies(web, channel, event["thread_ts"])
                 before = [m for m in replies if float(m.get("ts", 0)) < float(event.get("ts", 0))][-4:]
                 said = [Message.from_event(m, self.directory, self.bot_user_id) for m in before]
                 context = "\n".join(m.line() for m in said if m.text_for_me)[:2000]
