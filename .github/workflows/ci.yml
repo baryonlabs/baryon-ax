@@ -87,18 +87,34 @@ jobs:
         run: uv run --no-project --with-requirements requirements.txt --with pytest --with httpx python -m pytest -q
 
   slack-bot:
-    name: slack bot
+    # 3.11 is the Python of the Mac mini bot's venv: a 3.12-only f-string once kept the bot from starting there.
+    name: slack bot (${{ matrix.python }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
     defaults:
       run:
         working-directory: examples/slack-bot
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
+        with: { python-version: "${{ matrix.python }}" }
       - run: pip install "uv==${UV_VERSION}"
       - name: Slack bot tests (fake Slack and API, no network)
         run: uv run --no-project --with-requirements requirements.txt --with pytest python -m pytest -q tests
+
+  py311:
+    name: python 3.11 syntax
+    # Every bot and secretary file must at least compile on 3.11 (the oldest Python they run on).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: compileall on 3.11
+        run: python -m compileall -q -x '/\.venv/' examples/slack-bot apps/secretary
 
   phone:
     name: phone gateway

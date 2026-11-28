@@ -142,7 +142,7 @@ class ConversationArchive:
         said = Message.from_event(message, self.directory)
         text = said.text_plain.replace("\n", "\n" + indent + "  ")
         files = ", ".join(f.name for f in said.files if f.name)
-        return f"{indent}- {when} {said.author.name or "?"}: {text}" + (f" (첨부: {files})" if files else "")
+        return f"{indent}- {when} {said.author.name or '?'}: {text}" + (f" (첨부: {files})" if files else "")
 
     def render(self, web, channel: str, day: str) -> tuple[str, str]:
         """(channel name, Markdown) of one channel's day; Markdown is empty when nobody said anything."""
