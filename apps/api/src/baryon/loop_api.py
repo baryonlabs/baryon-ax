@@ -52,7 +52,7 @@ class ActionBody(BaseModel):
 
 class RoundBody(BaseModel):
     documents: int = Field(5, ge=0, le=50)
-    chunks_per_document: int = Field(3, ge=1, le=20)
+    chunks_per_document: int = Field(4, ge=1, le=20)
     actions: int = Field(20, ge=0, le=200)
 
 
@@ -171,35 +171,56 @@ def build_router(deps: LoopDeps, store: LoopStore | None = None) -> APIRouter:
         number = len(data["rounds"]) + 1
         summary: dict[str, Any] = {"round": number, "started_at": loop.now(), "documents": 0, "terms": 0, "relations": 0,
                                    "contested": 0, "questions": 0, "explained": 0, "errors": 0}
-        # ① ontology: documents the loop has not read yet (or that changed), a few chunks each
+        # ① ontology: documents are read a few chunks per round, continuing where the last round stopped, until the
+        # whole document is covered (data["read_progress"]: document id → created_at, next chunk, total).
         extracted: list[tuple[dict, int, dict]] = []
         if deps.model_ready() and body.documents:
-            seen = data["seen_documents"]
+            progress = data.setdefault("read_progress", {})
             # The ontology is shared by the whole organization, so it is built only from documents every member can
             # read; restricted documents would leak through term definitions.
             reader = deps.principal("loop-reader", principal.organization_id, "member")
-            fresh = [doc for doc in deps.documents.list_for(reader)
-                     if "member" in (doc.get("allowed_roles") or [])
-                     and seen.get(doc["id"]) != doc.get("created_at") and "loop" not in (doc.get("tags") or [])]
-            for listed in fresh[: body.documents]:
+            waiting = []
+            for doc in deps.documents.list_for(reader):
+                if "member" not in (doc.get("allowed_roles") or []) or "loop" in (doc.get("tags") or []):
+                    continue
+                state = progress.get(doc["id"])
+                if state and state.get("created_at") == doc.get("created_at") and state.get("done"):
+                    continue
+                if data["seen_documents"].get(doc["id"]) == doc.get("created_at") and not state:
+                    state = {"created_at": doc.get("created_at"), "next": body.chunks_per_document, "done": False}  # read by an older round
+                if not state or state.get("created_at") != doc.get("created_at"):
+                    state = {"created_at": doc.get("created_at"), "next": 0, "done": False}
+                waiting.append((doc, state))
+            waiting.sort(key=lambda pair: pair[1]["next"])  # new documents first, then the ones half read
+            for listed, state in waiting[: body.documents]:
                 document = deps.documents.documents.get(listed["id"])
                 if not document:
                     continue
                 chunks = [str(item.get("text") or "") for item in document.chunks] or [document.content]
-                for number_in_doc, text in enumerate(chunks[: body.chunks_per_document], 1):
+                start = int(state.get("next") or 0)
+                for index in range(start, min(start + body.chunks_per_document, len(chunks))):
+                    text = chunks[index]
                     if len(text.strip()) < 40:
                         continue
                     try:
-                        extracted.append((listed, number_in_doc, await loop.extract_from_chunk(listed, number_in_doc, text, deps.complete)))
+                        extracted.append((listed, index + 1, await loop.extract_from_chunk(listed, index + 1, text, deps.complete)))
                     except Exception:  # noqa: BLE001
                         summary["errors"] += 1
+                state["next"] = min(start + body.chunks_per_document, len(chunks))
+                state["total"] = len(chunks)
+                state["done"] = state["next"] >= len(chunks)
+                progress[listed["id"]] = state
                 summary["documents"] += 1
-                data["seen_documents"][listed["id"]] = listed.get("created_at")
+                if state["done"]:
+                    data["seen_documents"][listed["id"]] = listed.get("created_at")
+            summary["documents_waiting"] = sum(1 for _, state in waiting if not state.get("done"))
 
+        progress_now = dict(data.get("read_progress") or {})
         seen_now = dict(data["seen_documents"])
 
         def apply(fresh: dict) -> None:
             fresh["seen_documents"].update(seen_now)
+            fresh.setdefault("read_progress", {}).update(progress_now)
             for listed, chunk, result in extracted:
                 for term in result["terms"]:
                     source = {"type": "document", "document_id": listed["id"], "title": listed.get("title", ""), "chunk": chunk,
@@ -425,6 +446,10 @@ def build_router(deps: LoopDeps, store: LoopStore | None = None) -> APIRouter:
                 "criteria": count(items, "kind", "criterion"), "relations": len(data["relations"]),
                 "actions": {state: count(data["actions"].values(), "status", state) for state in ("new", "explained", "asked", "answered")},
                 "questions": {state: count(data["questions"].values(), "status", state) for state in ("open", "answered")},
+                "ontology_coverage": {"documents_done": sum(1 for v in (data.get("read_progress") or {}).values() if v.get("done")),
+                                      "documents_partial": sum(1 for v in (data.get("read_progress") or {}).values() if not v.get("done")),
+                                      "chunks_read": sum(int(v.get("next") or 0) for v in (data.get("read_progress") or {}).values()),
+                                      "chunks_total": sum(int(v.get("total") or 0) for v in (data.get("read_progress") or {}).values())},
                 "rounds": len(data["rounds"]), "last_round": data["rounds"][-1] if data["rounds"] else None}
 
     return router

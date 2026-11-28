@@ -161,3 +161,45 @@ def test_rounds_need_an_admin_or_agent_and_judge_waiting_actions() -> None:
     summary = client.post("/v1/loop/rounds", headers=headers("baryon-agent", org, "agent"), json={"documents": 0}).json()
     assert summary["round"] == 1 and summary["questions"] == 1
     assert client.get("/v1/loop/stats", headers=headers(organization=org)).json()["actions"]["asked"] == 1
+
+
+def test_rounds_read_a_long_document_to_the_end_and_skip_restricted_ones(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from fastapi import FastAPI
+
+    from baryon.loop import LoopStore
+    from baryon.loop_api import LoopDeps, build_router
+
+    chunks = [{"text": f"용어{i}는 데모상사의 {i}번째 규정에서 정한 절차를 말한다. 자세한 기준은 본문을 따른다."} for i in range(10)]
+    docs = {"long": SimpleNamespace(chunks=chunks, content=""), "secret": SimpleNamespace(chunks=chunks[:2], content="")}
+    listed = [{"id": "long", "title": "긴 규정", "allowed_roles": ["admin", "member"], "created_at": "t1", "tags": []},
+              {"id": "secret", "title": "임원 보수", "allowed_roles": ["admin"], "created_at": "t1", "tags": []}]
+    read: list[str] = []
+
+    async def complete(messages):
+        text = messages[0]["content"]
+        number = text.split("[문서: ", 1)[1].split("]", 1)[0]
+        read.append(number)
+        term = text.split("]\n", 1)[1].split("용어", 1)[1].split("는", 1)[0]  # the chunk, after the prompt
+        return json.dumps({"terms": [{"label": f"용어{term}", "definition": "절차", "quote": f"용어{term}는 데모상사의"}], "relations": []},
+                          ensure_ascii=False)
+
+    documents = SimpleNamespace(list_for=lambda principal: [d for d in listed if principal.roles & set(d["allowed_roles"])],
+                                documents=docs, search=lambda *a, **k: [], can_view=lambda p, d: True)
+    principal = lambda user, org, roles: SimpleNamespace(user_id=user or "u", organization_id=org or "o", roles=set((roles or "member").split(",")))  # noqa: E731
+    deps = LoopDeps(principal=principal, acting_service=lambda: None, documents=documents,
+                    audit=SimpleNamespace(emit=lambda *a, **k: None), complete=complete, model_ready=lambda: True, publish=None)
+    app = FastAPI()
+    app.include_router(build_router(deps, LoopStore(tmp_path)))
+    local = TestClient(app)
+    agent = headers("baryon-agent", "org-long", "agent")
+    first = local.post("/v1/loop/rounds", headers=agent, json={"documents": 5, "chunks_per_document": 4}).json()
+    assert first["documents"] == 1 and first["documents_waiting"] == 1 and first["terms"] == 4
+    local.post("/v1/loop/rounds", headers=agent, json={"documents": 5, "chunks_per_document": 4})
+    third = local.post("/v1/loop/rounds", headers=agent, json={"documents": 5, "chunks_per_document": 4}).json()
+    assert third["documents_waiting"] == 0 and len(read) == 10  # every chunk once, never the admin-only document
+    assert all("임원 보수" not in item for item in read)
+    stats = local.get("/v1/loop/stats", headers=agent).json()
+    assert stats["ontology_coverage"] == {"documents_done": 1, "documents_partial": 0, "chunks_read": 10, "chunks_total": 10}
+    assert local.post("/v1/loop/rounds", headers=agent, json={}).json()["documents"] == 0  # nothing left to read
