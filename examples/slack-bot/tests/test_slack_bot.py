@@ -293,3 +293,55 @@ def test_unanswered_question_lists_no_sources() -> None:
     blocks = build_blocks(Answer("문서에서 찾지 못했습니다", CITATIONS, "trace-2", answered=False), {}, max_sources=4)
     text = json.dumps(blocks, ensure_ascii=False)
     assert "근거*" not in text and "지식 공백" in text
+
+
+def test_guide_questions_are_told_apart_from_questions_about_other_things() -> None:
+    from guide import wants_guide
+
+    for question in ("설명서 알려줘", "사용법 자세히 설명해줘", "매뉴얼", "도움말", "뭘 할 수 있어?", "무슨 기능이 있어?",
+                     "슬랙에서 파일은 어떻게 올려?", "바리온 비서 사용법", "MCP 어떻게 연결해?", "기능을 모두 설명해봐", "help"):
+        assert wants_guide(question), question
+    for question in ("법인카드 사용 방법", "프린터 매뉴얼 어디 있어", "연차휴가는 며칠이야?", "출장비 정산 방법 알려줘",
+                     "VPN 접속 가이드", "회의실 예약 어떻게 해?", "ERP에 무슨 기능이 있어?"):
+        assert not wants_guide(question), question
+
+
+def test_a_guide_question_is_answered_from_the_whole_guide() -> None:
+    import json as _json
+
+    import httpx as _httpx
+
+    from guide import Guide
+
+    guide_text = "# Baryon AX 사용 안내\n## 슬랙 봇 사용법\n파일을 올리고 @baryon 문서로 추가\n## 음성 비서\n전화하듯 말하기"
+    seen: list[dict] = []
+
+    def handler(request: _httpx.Request) -> _httpx.Response:
+        if request.url.path == "/v1/documents":
+            assert request.url.params["tag"] == "guide"
+            return _httpx.Response(200, json={"data": [{"id": "old", "created_at": "2026-11-01"}, {"id": "g1", "created_at": "2026-11-28"}]})
+        if request.url.path == "/v1/documents/g1":
+            return _httpx.Response(200, json={"title": "Baryon AX 사용 안내.md", "content": guide_text})
+        if request.url.path == "/v1/chat/completions":
+            seen.append(_json.loads(request.content))
+            return _httpx.Response(200, json={"id": "t1", "choices": [{"message": {"content": "**슬랙 봇 사용법**\n1. 파일을 올립니다"}}]})
+        return _httpx.Response(404)
+
+    config = Config(api_url="http://api.test", organization_id="org", roles="member")
+    baryon = BaryonClient(config, http=_httpx.Client(base_url="http://api.test", transport=_httpx.MockTransport(handler)))
+    responder = Responder(config, baryon, "UBOT", guide=Guide(baryon))
+    web = FakeWeb()
+    responder.answer({"channel": "C1", "user": "U1", "ts": "1.0", "text": "<@UBOT> 설명서 자세히 알려줘"}, web)
+    body = seen[0]
+    assert body["use_retrieval"] is False and guide_text in body["messages"][0]["content"]
+    assert "모든 장을 빠짐없이" in body["messages"][0]["content"]
+    update = [kwargs for name, kwargs in web.calls if name == "update"][-1]
+    rendered = _json.dumps(update["blocks"], ensure_ascii=False)
+    assert "슬랙 봇 사용법" in rendered and "Baryon AX 사용 안내.md" in rendered and "사용 안내서 전체" in rendered
+
+
+def test_long_answers_read_well_in_slack() -> None:
+    from baryon_slack_bot import to_mrkdwn
+
+    text = to_mrkdwn("### **1. 소개**\n*   **웹 채팅**: 접속\n- 둘\n| 증상 | 원인 |\n| :--- | :--- |\n| 못 받음 | 권한 |").replace("​", "")
+    assert text == "*1. 소개*\n• *웹 채팅*: 접속\n• 둘\n증상 · 원인\n못 받음 · 권한"
