@@ -573,6 +573,7 @@ def create_app(config: Config | None = None):
     desk = _create_desk(responder)
     bridge = _create_bridge()
     loop_desk = _create_loop_desk(baryon, bot_user_id)
+    archive = _create_archive(baryon, bot_user_id)
 
     def loop_command(event, client) -> bool:
         """"질문 있어?" / "인증할 것": the loop's questions and certifications, on demand."""
@@ -609,6 +610,8 @@ def create_app(config: Config | None = None):
 
     @app.event("message")
     def on_message(event, client):
+        if archive:  # this channel's day changed: it is written as a document once the channel goes quiet
+            archive.observe(event)
         if loop_desk:  # record a consenting person's decision or request (loop_desk.py), off the event thread
             threading.Thread(target=loop_desk.observe, args=(event, client), daemon=True).start()
         if responder.is_direct_message(event) and loop_command(event, client):
@@ -652,6 +655,7 @@ def create_app(config: Config | None = None):
             ack(**errors) if errors else ack()
 
     app.loop_desk = loop_desk
+    app.archive = archive
     if desk:
         from proactive import ACTION_DISCARD, ACTION_DISMISS, ACTION_PUBLISH
 
@@ -680,6 +684,18 @@ def _create_bridge():
         return None
     logger.info("secretary bridge on for %d Slack user(s) → %s", len(config.users), config.url)
     return SecretaryBridge(config)
+
+
+def _create_archive(baryon: BaryonClient, bot_user_id: str):
+    """Slack conversations as documents (conversation_archive.py): on when SLACK_ARCHIVE_CHANNELS is set."""
+    from conversation_archive import ArchiveConfig, ConversationArchive
+
+    config = ArchiveConfig.from_env()
+    if not config.enabled:
+        return None
+    logger.info("archiving Slack conversations of %s after %.0f quiet minutes",
+                "every channel the bot is in" if config.every_channel else f"{len(config.channels)} channel(s)", config.idle_minutes)
+    return ConversationArchive(config, baryon, bot_user_id)
 
 
 def _create_loop_desk(baryon: BaryonClient, bot_user_id: str):
@@ -723,6 +739,10 @@ def main() -> None:
         start_scheduler(app.desk, app.client)
         logger.info("proactive mode on: asking about knowledge gaps in %s every %.0f min",
                     app.desk.config.channel, app.desk.config.interval_minutes)
+    if app.archive:
+        from conversation_archive import start_archive_scheduler
+
+        start_archive_scheduler(app.archive, app.client)
     if app.loop_desk and app.loop_desk.config.records:
         from loop_desk import start_loop_scheduler
 
