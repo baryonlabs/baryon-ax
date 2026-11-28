@@ -199,8 +199,69 @@ def test_the_rule_arm_replays_todays_failures() -> None:
     assert "1700400020.000300" in prediction["responded_ts"]  # another bot's post that mentions us gets an answer
     assert "@helper-bot" in prediction["trace"]["bot_inputs"][0]  # S1: mentions are names now, not deleted
     assert "1700400100.000400" in prediction["responded_ts"]  # but a message for another bot still gets an answer
-    assert prediction["mentions"] == {} and "self" not in prediction["authors"].values()  # no entities, no self/other split
+    # S2: the thread snapshot keeps author kinds and resolves mentions to entities ("self" for the bot itself)
+    assert {"other_bot", "human"} <= set(prediction["authors"].values())
+    assert any(m["entity"] == "self" for items in prediction["mentions"].values() for m in items)
     assert all(item["ts"] in f.by_ts for item in prediction["accounted"])
+
+
+# --------------------------------------------------------------------------- S2: thread snapshot and archive
+
+
+def _slack_bot():
+    if str(te.SLACK_BOT) not in sys.path:
+        sys.path.append(str(te.SLACK_BOT))
+    import thread_snapshot
+
+    return thread_snapshot
+
+
+def test_the_snapshot_replays_the_edit_delete_fixture_to_its_final_state() -> None:
+    ts = _slack_bot()
+    f = fixture("edit-delete")
+    store = ts.SnapshotStore(me=f.meta["bot_user_id"])
+    for event in te.events_of(f):
+        store.on_event(event)
+    thread = store.cached(f.meta["channel"], "1700200000.000100")
+    first = thread.get("1700200000.000100")
+    assert first.edited and "5층 세미나실" in first.text_plain and first.ts == "1700200000.000100"
+    gone = thread.get("1700200090.000300")
+    assert gone.deleted and gone.text_plain == "" and gone.author.id == "UTESTLIM001"
+    visible = " ".join(m.text_plain for m in thread.visible())
+    assert "3층 대회의실" not in visible and "2만원" not in visible
+    assert [m.ts for m in thread.visible()] == ["1700200000.000100", "1700200030.000200", "1700200150.000400", "1700200180.000500"]
+
+
+def test_the_archive_drops_deleted_messages_and_its_chunks_never_cross_a_thread() -> None:
+    f = fixture("edit-delete")
+    prediction = te.rule_arm(f)
+    assert "1700200090.000300" not in {item["ts"] for item in prediction["accounted"]}
+    assert "(수정됨)" in prediction["understood"]["1700200000.000100"]
+
+    import conversation_archive
+    from baryon.ingest.ir import Acl, chunk_document
+    from baryon.ingest.parsers import parse_markdown
+
+    long = "긴 설명 " * 40
+    messages = []
+    for n in range(4):  # four threads, each longer than one chunk
+        parent = f"17003{n}0000.000100"
+        messages.append({"ts": parent, "thread_ts": parent, "user": f"UTESTP{n}00001", "text": f"스레드{n} 시작: {long}"})
+        messages += [{"ts": f"17003{n}00{r:02d}.000200", "thread_ts": parent, "user": "UTESTREPLY01", "text": f"스레드{n} 답글{r}: {long}"}
+                     for r in range(1, 8)]
+    web = te.FakeWeb(te.Fixture("chunks", f.path, False, {"channel": "CTEST000001"}, messages, {}, {}, [], {}))
+    for message in messages:
+        web.visible[message["ts"]] = message
+    archiver = conversation_archive.ConversationArchive(conversation_archive.ArchiveConfig(every_channel=True), None, "UBOT")
+    day = archiver.day_of(messages[0]["ts"])
+    _, markdown = archiver.render(web, "CTEST000001", day)
+    document = parse_markdown(markdown.encode("utf-8"), "slack.md", Acl("org", "bot"), "eval://chunks")
+    chunks = chunk_document(document, max_chars=1200)
+    assert len(chunks) > 8
+    for chunk in chunks[1:]:  # the first chunk is the document's title and note
+        threads = {n for n in range(4) if f"스레드{n} " in chunk.text}
+        assert len(threads) == 1, chunk.text[:200]  # one thread per chunk, named by its section heading
+        assert chunk.heading_path.count("> 스레드 ") == 1
 
 
 @pytest.mark.skipif(not te.private_root().is_dir(), reason="no private thread fixtures ($THREAD_FIXTURES)")

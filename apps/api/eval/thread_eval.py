@@ -75,7 +75,9 @@ Arms
 ----
     rule   today's pipeline with the model off: each event replayed through the bot's dispatch (app_mention →
            Responder.answer, subscribed-thread follow-ups), loop_desk.observe recording actions, the archive
-           rendering the day's document, then a loop round (POST /v1/loop/rounds) in process. CI runs this.
+           rendering the day's document (chunked as an upload is), then a loop round (POST /v1/loop/rounds) in
+           process. The thread snapshot (S2) follows the same events: author kinds, mentions as entities, and
+           the messages held because they stopped mid-sentence come from it. CI runs this.
     model  the same with an OpenAI-compatible model for the round (--model-url): terms are read from the
            archived document, gaps judged and questions written by the model. The mention path stays canned.
     judge  optional: a model judges whether the predicted purpose means the expected one (--judge-url).
@@ -442,9 +444,14 @@ class FakeWeb:
     def _thread(self) -> list[dict]:
         return sorted((m for m in self.visible.values() if float(m["ts"]) <= self.now), key=lambda m: float(m["ts"]))
 
-    def conversations_replies(self, channel: str = "", ts: str = "", limit: int = 200, **_: Any) -> dict:
+    def conversations_replies(self, channel: str = "", ts: str = "", limit: int = 200, cursor: str = "", **_: Any) -> dict:
+        """Pages like Slack: the thread's first message on every page, then ``limit`` replies from ``cursor``."""
         messages = [m for m in self._thread() if m["ts"] == ts or m.get("thread_ts") == ts]
-        return {"ok": True, "messages": messages[:limit]}
+        parent, rest = [m for m in messages if m["ts"] == ts], [m for m in messages if m["ts"] != ts]
+        start = int(cursor or 0)
+        more = start + limit < len(rest)
+        return {"ok": True, "messages": parent + rest[start:start + limit], "has_more": more,
+                "response_metadata": {"next_cursor": str(start + limit) if more else ""}}
 
     def conversations_history(self, channel: str = "", **_: Any) -> dict:
         thread = self._thread()
@@ -494,7 +501,12 @@ class FakeDocuments:
         self.documents: dict[str, FakeDocuments.Doc] = {}
 
     def add(self, doc_id: str, title: str, markdown: str, chunk_chars: int = 1200) -> None:
-        chunks = [{"text": markdown[i:i + chunk_chars]} for i in range(0, len(markdown), chunk_chars)] or [{"text": markdown}]
+        """Chunked as an upload is (ingest.ir.chunk_document): headings start a new chunk and lead each one."""
+        from baryon.ingest.ir import Acl, chunk_document
+        from baryon.ingest.parsers import parse_markdown
+
+        document = parse_markdown(markdown.encode("utf-8"), title, Acl("org-thread-eval", "slack-bot"), f"eval://{doc_id}")
+        chunks = [{"text": chunk.text} for chunk in chunk_document(document, max_chars=chunk_chars)] or [{"text": markdown}]
         self.documents[doc_id] = FakeDocuments.Doc(markdown, chunks)
         self.listed.append({"id": doc_id, "title": title, "created_at": "2026-01-01T00:00:00+00:00",
                             "allowed_roles": ["member", "admin"], "tags": ["slack", "slack-conversation"]})
@@ -650,11 +662,25 @@ def rule_arm(fixture: Fixture, complete: Callable[[list[dict[str, str]]], Awaita
         archive = conversation_archive.ArchiveConfig(channels=frozenset({channel}), state_path=os.path.join(store_dir, "archive.json"))
         archiver = conversation_archive.ConversationArchive(archive, baryon, bot_user)
 
+        # the thread snapshot (thread_snapshot.py) kept current from the same events, and the unfinished-message hold
+        snapshots = held = None
+        try:
+            import thread_snapshot
+
+            held = []
+            hold = thread_snapshot.TruncationHold(lambda _c, message, reason: held.append((message.ts, reason)),
+                                                  thread_snapshot.HoldConfig(wait_seconds=20), timer=lambda *_: None)
+            snapshots = thread_snapshot.SnapshotStore(responder.directory, bot_user, fixture.meta.get("bot_id", ""), hold=hold)
+        except ImportError:  # before S2
+            pass
+
         responded: list[str] = []
         recorded: list[str] = []
         for event in events_of(fixture):
             web.now = float(event.get("event_ts") or event.get("ts") or (event.get("message") or {}).get("ts") or web.now)
             _apply_to_view(web, event)
+            if snapshots is not None:
+                snapshots.on_event(event)
             if event.get("type") != "message":
                 continue
             archiver.observe(event)
@@ -687,6 +713,10 @@ def rule_arm(fixture: Fixture, complete: Callable[[list[dict[str, str]]], Awaita
         round_response = api.request("POST", "/v1/loop/rounds", "slack-bot", "agent", json={"documents": 5, "chunks_per_document": 20})
         round_response.raise_for_status()
         data = api.store.load(api.organization)
+        thread = None
+        if snapshots is not None and fixture.messages:
+            thread = snapshots.get(web, channel, fixture.messages[0].get("thread_ts") or fixture.messages[0]["ts"], refresh=True)
+            held += [(ts, "waiting") for _, ts in hold.pending()]  # still waiting for an edit when the replay ended
 
     actions = sorted(data["actions"].values(), key=lambda a: a["created_at"])
     action_ts = dict(zip([a["id"] for a in actions], recorded))
@@ -710,14 +740,30 @@ def rule_arm(fixture: Fixture, complete: Callable[[list[dict[str, str]]], Awaita
         # every recorded loop action is a write nobody approved (the consent list is not an approval)
         "writes": [{"kind": "loop_action", "ts": ts, "approved": False} for ts in recorded],
         "confirmations": [],  # the secretary bridge's buttons are not replayed (bridge off)
-        "incomplete_ts": [],  # nothing checks whether a message is complete
-        "mentions": {},       # mentions are deleted, never resolved to entities
-        # today's code tells people from bots, not its own posts from other bots'
-        "authors": {m["user"]: ("bot" if m.get("bot_id") or fixture.users.get(m.get("user", ""), {}).get("is_bot") else "human")
-                    for m in fixture.messages if m.get("user")},
+        **_snapshot_view(fixture, thread, held),
         "claims": [],
         "trace": {"round": round_response.json(), "archive_chars": len(markdown), "bot_inputs": [a["question"] for a in baryon.asked]},
     }
+
+
+AUTHOR_KINDS = {"human": "human", "user_token_app": "human", "self_bot": "self", "other_bot": "other_bot"}
+
+
+def _snapshot_view(fixture: Fixture, thread, held: list | None) -> dict:
+    """What the thread snapshot knows: who wrote each message (its author kind), what each mention refers to, and
+    which messages the hold waited on because they stopped mid-sentence. Before S2: authors as people or bots only."""
+    if thread is None:
+        return {"incomplete_ts": [], "mentions": {},
+                "authors": {m["user"]: ("bot" if m.get("bot_id") or fixture.users.get(m.get("user", ""), {}).get("is_bot") else "human")
+                            for m in fixture.messages if m.get("user")}}
+    authors, mentions = {}, {}
+    for message in thread.messages:
+        if message.author.id and not message.deleted:
+            authors.setdefault(message.author.id, AUTHOR_KINDS.get(message.author.kind, message.author.kind))
+        if message.mentions:
+            mentions[message.ts] = [{"id": m.id, "entity": "self" if m.is_me else m.name} for m in message.mentions]
+    return {"incomplete_ts": sorted({ts for ts, reason in held or [] if reason != "ready"}),
+            "mentions": mentions, "authors": authors}
 
 
 def _seed_ontology(api: LoopApi, snapshot: dict) -> dict:

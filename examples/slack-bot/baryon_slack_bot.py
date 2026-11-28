@@ -26,6 +26,7 @@ import httpx
 
 from baryon_auth import ApiAuth, TokenSource
 from slack_text import Message, UserDirectory, readable
+from thread_snapshot import fetch_replies
 
 logger = logging.getLogger("baryon.slack")
 
@@ -360,7 +361,7 @@ class Responder:
             ts = thread.group(1) if thread else f"{seconds}.{micros}"
             if url not in cache:
                 try:
-                    found = web.conversations_replies(channel=channel, ts=ts, limit=50).get("messages", [])
+                    found = fetch_replies(web, channel, ts)
                     said = [Message.from_event(m, self.directory, self.bot_user_id) for m in found]
                     lines = [f"- {m.line()}" for m in said if m.text_for_me]
                     cache[url] = _clip("\n".join(lines), LINKED_CHARS)
@@ -398,7 +399,7 @@ class Responder:
 
     def _history(self, web, channel: str, thread_ts: str, fallback: str) -> list[dict]:
         try:
-            replies = web.conversations_replies(channel=channel, ts=thread_ts, limit=50).get("messages", [])
+            replies = fetch_replies(web, channel, thread_ts)  # every page: the newest turns are at the end
         except Exception as error:  # missing channels:history scope, private channel, …
             logger.info("thread history unavailable (%s); answering the single message", error)
             replies = []
@@ -490,7 +491,7 @@ class Responder:
         channel = event["channel"]
         try:
             if event.get("thread_ts"):
-                return web.conversations_replies(channel=channel, ts=event["thread_ts"], limit=200).get("messages", [])
+                return fetch_replies(web, channel, event["thread_ts"])
             if event.get("files"):
                 return []
             history = web.conversations_history(channel=channel, latest=event["ts"], inclusive=False, limit=10).get("messages", [])
@@ -605,6 +606,7 @@ def create_app(config: Config | None = None):
     for part in (loop_desk, archive, bridge):
         if part:
             part.directory = responder.directory  # one name cache for the whole bot
+    snapshots, hold = _create_snapshots(responder.directory, bot_user_id, auth.get("bot_id", ""))
 
     def loop_command(event, client) -> bool:
         """"질문 있어?" / "인증할 것": the loop's questions and certifications, on demand."""
@@ -641,6 +643,7 @@ def create_app(config: Config | None = None):
 
     @app.event("message")
     def on_message(event, client):
+        snapshots.on_event(event)  # threads already read stay current: edits, deletions (thread_snapshot.py)
         if archive:  # this channel's day changed: it is written as a document once the channel goes quiet
             archive.observe(event)
         if loop_desk:  # record a consenting person's decision or request (loop_desk.py), off the event thread
@@ -657,10 +660,15 @@ def create_app(config: Config | None = None):
         elif responder.is_direct_message(event) or responder.should_follow_up(event):
             responder.answer(event, client)
 
-    @app.event("reaction_added")
     def on_reaction(event):
-        # Subscribed (reactions:read) so the thread snapshot can read reactions; nothing acts on them yet.
-        logger.debug("reaction %s on %s", event.get("reaction"), (event.get("item") or {}).get("ts"))
+        """A reaction added or removed: the thread snapshot counts it, and the archived day is rewritten."""
+        snapshots.on_event(event)
+        if archive:
+            item = event.get("item") or {}
+            archive.observe_reaction(event, snapshots.thread_of(item.get("channel", ""), item.get("ts", "")))
+
+    app.event("reaction_added")(on_reaction)
+    app.event("reaction_removed")(on_reaction)
 
     if bridge:
         from secretary_bridge import ACTION_NO, ACTION_YES
@@ -692,6 +700,7 @@ def create_app(config: Config | None = None):
 
     app.loop_desk = loop_desk
     app.archive = archive
+    app.snapshots, app.hold = snapshots, hold
     if desk:
         from proactive import ACTION_DISCARD, ACTION_DISMISS, ACTION_PUBLISH
 
@@ -720,6 +729,19 @@ def _create_bridge():
         return None
     logger.info("secretary bridge on for %d Slack user(s) → %s", len(config.users), config.url)
     return SecretaryBridge(config)
+
+
+def _create_snapshots(directory: UserDirectory, bot_user_id: str, bot_id: str = ""):
+    """Thread snapshots kept current from events, and the hold for messages that stop mid-sentence.
+    The hold only waits and hands the message on (logged); acting on it is the thread-understanding step's job."""
+    from thread_snapshot import HoldConfig, SnapshotStore, TruncationHold
+
+    def handed_on(channel: str, message: Message, reason: str) -> None:
+        if reason != "ready":
+            logger.info("unfinished message %s/%s handed on (%s)", channel, message.ts, reason)
+
+    hold = TruncationHold(handed_on, HoldConfig.from_env())
+    return SnapshotStore(directory, bot_user_id, bot_id, hold=hold), hold
 
 
 def _create_archive(baryon: BaryonClient, bot_user_id: str):

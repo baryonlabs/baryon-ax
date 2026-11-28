@@ -38,6 +38,7 @@ import httpx
 
 from doc_intake import IntakeError, download_slack_file, expand
 from slack_text import UserDirectory, readable
+from thread_snapshot import fetch_replies
 
 logger = logging.getLogger("baryon-slack-bot.secretary")
 
@@ -341,7 +342,7 @@ class SecretaryBridge:
                  attachments: list[dict] | None = None) -> str:
         """Thread messages the secretary has not seen yet, as reference material (not instructions)."""
         try:
-            replies = web.conversations_replies(channel=channel, ts=thread_ts, limit=100).get("messages", [])
+            replies = fetch_replies(web, channel, thread_ts)
         except Exception as error:  # noqa: BLE001 - missing scope or a DM: go on with the message alone
             logger.info("thread history unavailable (%s)", error)
             return ""

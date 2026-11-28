@@ -137,8 +137,8 @@
    "confirmation_accuracy": 0.0,
    "incomplete_recall": null,
    "false_incomplete": 0,
-   "mention_entity_accuracy": 0.0,
-   "author_kind_accuracy": 0.25,
+   "mention_entity_accuracy": 1.0,
+   "author_kind_accuracy": 1.0,
    "claim_trust_recall": 0.0,
    "trusted_bot_claims": 0,
    "pass": false
