@@ -205,3 +205,17 @@ def test_a_secretary_that_is_down_is_reported_in_the_thread() -> None:
     web = FakeWeb()
     bridge(secretary).handle({"channel": "C1", "ts": "1.0", "user": OWNER, "text": "메일 초안 만들어 줘"}, web)
     assert web.calls[-1][0] == "post" and "비서가 응답하지 않아요" in web.calls[-1][1]["text"]
+
+
+def test_mentions_are_kept_as_names_not_deleted() -> None:
+    from slack_text import UserDirectory
+
+    secretary = FakeSecretary()
+    work = bridge(secretary)
+    work.bot_user_id = "U0BOT"
+    work.directory = UserDirectory({"U0BOT": {"profile": {"display_name": "baryon"}},
+                                    "U0KIM": {"profile": {"display_name": "kim"}}}.get)
+    work.handle({"channel": "C1", "ts": "1.0", "user": OWNER,
+                 "text": "<@U0BOT> <@U0KIM> 에게 보낼 메일 초안 <https://x.test/a|안내서> 참고해서 만들어 줘"}, FakeWeb())
+    first = secretary.turns[0]
+    assert "너(baryon) @kim 에게 보낼 메일 초안 안내서 (https://x.test/a) 참고해서 만들어 줘" in first

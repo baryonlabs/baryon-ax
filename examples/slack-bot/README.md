@@ -105,7 +105,7 @@ baryon-ax 문서 QA를 Slack @멘션 봇으로 연결하려고 한다. 저장소
 권한: `app_mentions:read`, `chat:write`는 필수입니다. `channels:history`/`groups:history`가 없으면 스레드 맥락과
 멘션 없는 후속 질문만 꺼지고, 멘션 질문은 그대로 동작합니다. `reactions:write`가 없으면 반응만 생략됩니다.
 `im:history`(+ `message.im` 이벤트, **App Home → Messages Tab** 켜기)는 1:1 DM 질문에, `files:read`는
-"문서로 추가"의 첨부파일 내려받기에, `files:write`는 추가한 문서 목록 엑셀을 스레드에 첨부하는 데 필요합니다. 범위를 추가했으면 앱을 다시 설치해야 토큰에 반영됩니다.
+"문서로 추가"의 첨부파일 내려받기에, `files:write`는 추가한 문서 목록 엑셀을 스레드에 첨부하는 데 필요합니다. `users:read`는 멘션(`<@U…>`)을 표시 이름으로 바꾸고 사람과 다른 봇을 구분하는 데 씁니다. 없으면 멘션이 ID(`@U…`)로 남을 뿐 질문에서 지워지지는 않습니다. `reactions:read`와 `reaction_added` 이벤트는 스레드 글의 반응을 읽기 위한 것입니다(지금은 받기만 합니다). 범위를 추가했으면 앱을 다시 설치해야 토큰에 반영됩니다.
 비공개 채널은 `/invite @baryon`으로 초대하면 공개 채널과 똑같이 동작합니다.
 
 ## 2. 실행
