@@ -1,0 +1,8 @@
+{
+ "channel": "CTEST000001",
+ "channel_name": "support",
+ "channel_type": "channel",
+ "bot_user_id": "UBARYON0001",
+ "bot_id": "BBARYON0001",
+ "description": "봇 셋이 있는 스레드. 두 봇의 주장이 엇갈리고(지원 담당, 환불 승인), 다른 봇에게 한 말이 섞여 있다."
+}

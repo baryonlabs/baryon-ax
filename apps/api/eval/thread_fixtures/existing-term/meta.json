@@ -1,0 +1,8 @@
+{
+ "channel": "CTEST000001",
+ "channel_name": "sales",
+ "channel_type": "channel",
+ "bot_user_id": "UBARYON0001",
+ "bot_id": "BBARYON0001",
+ "description": "기존 용어(견적서·납기)를 다른 말(견적, quote)로 부르는 스레드. 새 용어가 아니라 기존 용어에 붙어야 한다."
+}

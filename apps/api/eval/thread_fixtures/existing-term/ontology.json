@@ -1,0 +1,39 @@
+{
+ "terms": [
+  {
+   "id": "t_견적서",
+   "label": "견적서",
+   "definition": "고객에게 보내는 가격 제안 문서. 유효기간은 30일이다.",
+   "kind": "term",
+   "status": "certified",
+   "sources": [
+    {
+     "type": "document",
+     "document_id": "doc-sales-policy",
+     "title": "영업 규정",
+     "chunk": 1,
+     "quote": "견적서의 유효기간은 30일이다.",
+     "matched": true
+    }
+   ]
+  },
+  {
+   "id": "t_납기",
+   "label": "납기",
+   "definition": "주문 확정 후 납품까지 걸리는 기간",
+   "kind": "term",
+   "status": "verified",
+   "sources": [
+    {
+     "type": "document",
+     "document_id": "doc-sales-policy",
+     "title": "영업 규정",
+     "chunk": 2,
+     "quote": "납기는 주문 확정일부터 센다.",
+     "matched": true
+    }
+   ]
+  }
+ ],
+ "relations": []
+}

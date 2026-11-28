@@ -1,0 +1,18 @@
+{
+ "UBARYON0001": {
+  "name": "baryon",
+  "is_bot": true
+ },
+ "UTESTYOON01": {
+  "name": "yoon",
+  "is_bot": false
+ },
+ "UTESTSEO001": {
+  "name": "seo",
+  "is_bot": false
+ },
+ "UTESTLIM001": {
+  "name": "lim",
+  "is_bot": false
+ }
+}

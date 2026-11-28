@@ -1,0 +1,38 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "type": "message",
+   "user": "UTESTKANG01",
+   "ts": "1700300000.000100",
+   "text": "<@UBARYON0001> 견적 보낼 때 납기일도 같이 적어야 해?",
+   "thread_ts": "1700300000.000100",
+   "reply_count": 3
+  },
+  {
+   "type": "message",
+   "subtype": "bot_message",
+   "user": "UBARYON0001",
+   "bot_id": "BBARYON0001",
+   "username": "baryon",
+   "ts": "1700300004.000200",
+   "text": "견적서의 유효기간이 30일이라는 문서는 있지만, 납기를 적는지는 찾지 못했습니다.",
+   "thread_ts": "1700300000.000100"
+  },
+  {
+   "type": "message",
+   "user": "UTESTOH0001",
+   "ts": "1700300060.000300",
+   "text": "네, 견적에는 납기를 꼭 적어요. 단 맞춤 제작품은 납기를 '협의'로 적습니다.",
+   "thread_ts": "1700300000.000100"
+  },
+  {
+   "type": "message",
+   "user": "UTESTKANG01",
+   "ts": "1700300120.000400",
+   "text": "quote 양식에 납기 칸이 없던데 추가해야겠네요",
+   "thread_ts": "1700300000.000100"
+  }
+ ],
+ "has_more": false
+}

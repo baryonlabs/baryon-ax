@@ -1,0 +1,45 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "type": "message",
+   "user": "UTESTCHOI01",
+   "ts": "1700100000.000100",
+   "text": "배포를 매주 목요일 오후 4시로 고정하면 어떨까요? 금요일 배포는 장애가 나면 주말에 대응하기 어려워서요.",
+   "reactions": [
+    {
+     "name": "+1",
+     "users": [
+      "UTESTJUNG01",
+      "UTESTHAN001"
+     ],
+     "count": 2
+    },
+    {
+     "name": "white_check_mark",
+     "users": [
+      "UTESTHAN001"
+     ],
+     "count": 1
+    }
+   ],
+   "thread_ts": "1700100000.000100",
+   "reply_count": 2
+  },
+  {
+   "type": "message",
+   "user": "UTESTHAN001",
+   "ts": "1700100300.000200",
+   "text": "그럼 QA는 수요일까지 끝내야겠네요",
+   "thread_ts": "1700100000.000100"
+  },
+  {
+   "type": "message",
+   "user": "UTESTCHOI01",
+   "ts": "1700100600.000300",
+   "text": "<@UBARYON0001> 이 스레드 내용 정리해서 남겨 둬",
+   "thread_ts": "1700100000.000100"
+  }
+ ],
+ "has_more": false
+}

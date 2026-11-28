@@ -1,0 +1,8 @@
+{
+ "channel": "CTEST000001",
+ "channel_name": "admin",
+ "channel_type": "channel",
+ "bot_user_id": "UBARYON0001",
+ "bot_id": "BBARYON0001",
+ "description": "다중 봇 스레드에서 확인 버튼(응)과 다른 봇의 새 글이 같은 순간에 겹친다. 버튼은 그 카드에만 답한 것이고, 다른 봇의 글은 확인되지 않은 주장이다."
+}

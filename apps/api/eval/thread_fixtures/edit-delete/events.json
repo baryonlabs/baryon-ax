@@ -1,0 +1,69 @@
+[
+ {
+  "type": "message",
+  "user": "UTESTYOON01",
+  "ts": "1700200000.000100",
+  "text": "다음 주 워크숍 장소는 3층 대회의실로 하자"
+ },
+ {
+  "type": "message",
+  "user": "UTESTSEO001",
+  "ts": "1700200030.000200",
+  "thread_ts": "1700200000.000100",
+  "text": "3층은 그날 공사라서 안 될 것 같아요"
+ },
+ {
+  "type": "message",
+  "subtype": "message_changed",
+  "ts": "1700200060.000000",
+  "event_ts": "1700200060.000000",
+  "message": {
+   "user": "UTESTYOON01",
+   "ts": "1700200000.000100",
+   "text": "다음 주 워크숍 장소는 5층 세미나실로 하자 (수정: 3층은 공사 중)",
+   "edited": {
+    "user": "UTESTYOON01",
+    "ts": "1700200060.000000"
+   }
+  },
+  "previous_message": {
+   "user": "UTESTYOON01",
+   "ts": "1700200000.000100",
+   "text": "다음 주 워크숍 장소는 3층 대회의실로 하자"
+  }
+ },
+ {
+  "type": "message",
+  "user": "UTESTLIM001",
+  "ts": "1700200090.000300",
+  "thread_ts": "1700200000.000100",
+  "text": "예산은 1인당 2만원으로 정했어요"
+ },
+ {
+  "type": "message",
+  "subtype": "message_deleted",
+  "ts": "1700200120.000000",
+  "event_ts": "1700200120.000000",
+  "deleted_ts": "1700200090.000300",
+  "thread_ts": "1700200000.000100",
+  "previous_message": {
+   "user": "UTESTLIM001",
+   "ts": "1700200090.000300",
+   "text": "예산은 1인당 2만원으로 정했어요"
+  }
+ },
+ {
+  "type": "message",
+  "user": "UTESTLIM001",
+  "ts": "1700200150.000400",
+  "thread_ts": "1700200000.000100",
+  "text": "예산 얘기는 다음 회의에서 정하겠습니다"
+ },
+ {
+  "type": "message",
+  "user": "UTESTYOON01",
+  "ts": "1700200180.000500",
+  "thread_ts": "1700200000.000100",
+  "text": "<@UBARYON0001> 워크숍 결정 사항 정리해 줘"
+ }
+]

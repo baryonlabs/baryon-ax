@@ -1,0 +1,132 @@
+{
+ "purpose": {
+  "keyphrases": [
+   [
+    "배포"
+   ],
+   [
+    "목요일",
+    "요일",
+    "일정"
+   ]
+  ],
+  "description": "정기 배포 요일과 시간을 정한다"
+ },
+ "decisions": [
+  {
+   "statement": [
+    [
+     "배포"
+    ],
+    [
+     "목요일"
+    ],
+    [
+     "4시",
+     "16시"
+    ]
+   ],
+   "decided_by": [
+    "choi",
+    "jung",
+    "han"
+   ],
+   "kind": "implicit",
+   "evidence_ts": [
+    "1700100000.000100"
+   ]
+  }
+ ],
+ "tacit": [
+  {
+   "statement": [
+    [
+     "금요일"
+    ],
+    [
+     "장애",
+     "주말"
+    ]
+   ],
+   "evidence_ts": [
+    "1700100000.000100"
+   ]
+  },
+  {
+   "statement": [
+    [
+     "QA"
+    ],
+    [
+     "수요일"
+    ]
+   ],
+   "evidence_ts": [
+    "1700100300.000200"
+   ]
+  }
+ ],
+ "ontology_change": {
+  "must_add": [
+   {
+    "label": [
+     "배포 일정",
+     "정기 배포",
+     "배포"
+    ],
+    "definition": [
+     [
+      "목요일"
+     ]
+    ]
+   }
+  ],
+  "must_not_contest": [
+   [
+    "배포"
+   ]
+  ]
+ },
+ "questions": {
+  "max_count": 1,
+  "must_cover_links": [],
+  "forbidden": [
+   [
+    [
+     "목요일"
+    ],
+    [
+     "왜",
+     "이유",
+     "기준"
+    ]
+   ]
+  ]
+ },
+ "addressed_to_bot": {
+  "respond": [
+   "1700100600.000300"
+  ],
+  "silent": [
+   "1700100300.000200"
+  ]
+ },
+ "message_accounting": {
+  "min_attribution": 0.9,
+  "mentions": {
+   "1700100600.000300": [
+    "baryon"
+   ]
+  }
+ },
+ "must_not_state": [
+  [
+   [
+    "금요일"
+   ],
+   [
+    "배포하"
+   ]
+  ]
+ ]
+}
