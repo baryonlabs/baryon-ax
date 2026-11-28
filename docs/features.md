@@ -168,6 +168,10 @@
 | 승인 워크플로 | ✅ | 초안 → 검토됨 → 활성. 승인·재검증 모두 감사 이벤트 기록 |
 | 자동 재검증 | ✅ | 소스 업로드/DB 동기화 시 `reviewed` 꾸러미 재검증 + 미해결 공백 재평가 |
 | 커버리지 | ✅ | passed/total·비율·부족 용어를 꾸러미에 저장, 관리자 화면 표시 |
+| 스타터 꾸러미 | ✅ | merge v2(schema 2) 타입 엔티티·관계·슬롯. `examples/ontology/starter-pack.ko.json`(가상 회사, 개념 15·관계 12·슬롯 5) |
+| 꾸러미 가져오기 | ✅ | `python -m baryon.ontology_pack import --pack <file> --org <id> [--dry-run]`, 멱등·조직 스코프. pooled는 등록된 활성 테넌트만 |
+| 꾸러미 strict schema | ✅ | 닫힌 타입 목록, 어미·조사·`related_to` 거부, 스키마 이탈 시 파일 전체 거부(부분 수용 없음) |
+| 꾸러미 품질 게이트 | ✅ | 어미·조사 엔티티 0, `related_to` 0, 슬롯 채움률 1.0, 관계 타입 7/7. 임계값은 `tests/test_ontology_pack.py`에 고정 |
 | 초안 편집 | ⛔ | 엔티티·관계 직접 수정 UI는 미구현 |
 | 자동 데이터 요구 | 🔶 | 소스 힌트는 규칙 기반(ERP/HR/법규 등). 실제 스키마 매핑은 미구현 |
 
