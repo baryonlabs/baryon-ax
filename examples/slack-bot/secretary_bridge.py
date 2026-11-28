@@ -7,9 +7,12 @@ sends or changes. This bridge gives the owner the secretary in Slack:
 
 * only Slack users listed in SECRETARY_SLACK_USERS are bridged (the secretary acts with the owner's own
   accounts); everyone else keeps the document bot;
-* a message is bridged when it asks for an action (초안, 메일, 보내, 연락, 일정, 만들어, 해 봐 …), starts with
-  "비서" or "/비서", or continues a thread the secretary is already working in;
+* which messages come here is decided by the bot's one router (router.py): a request for work by the owner
+  ("메일 초안 만들어 줘", "비서 …"), or the owner's reply in a thread the secretary is already working in. A word
+  used as a description ("슬랙에 작성된 것") is not a request;
 * one secretary session per Slack thread, so "응" or "그 메일 제목 바꿔" later in the thread continues it;
+* the thread's work state (thread_state.py: 확인 대기 → 저장됨 | 거부됨) follows the secretary's own confirm and
+  confirmed events, and every status word posted here ("진행됨", "끝났어요") must be backed by it;
 * progress shows on a placeholder message; the reply, any cards (lists, tables, a drafted mail) and a
   confirmation with 보내기/취소 buttons follow in the thread. A thread reply "응"/"아니" works too;
 * files attached to the request or earlier in the thread go along: photos and screenshots as images (the
@@ -37,6 +40,8 @@ from typing import Any
 import httpx
 
 from doc_intake import IntakeError, download_slack_file, expand
+import thread_state
+from router import ACTION_WORDS  # noqa: F401 - one action pattern for the router and this bridge (router.py)
 from slack_text import UserDirectory, readable
 from thread_snapshot import fetch_replies
 
@@ -44,9 +49,6 @@ logger = logging.getLogger("baryon-slack-bot.secretary")
 
 ACTION_YES = "secretary_yes"
 ACTION_NO = "secretary_no"
-ACTION_WORDS = re.compile(
-    r"초안|메일|이메일|보내|발송|연락|일정|예약|등록|만들어|작성|올려|맡겨|해\s*봐|해봐|실행|처리해|전략|시나리오|"
-    r"할\s*일로|리마인드|알려\s*줘\s*(?:몇|내일|오늘)|^\s*/?비서", re.I)
 START = ("[슬랙 메시지로 받은 요청이다. 답은 슬랙에 글로 올라간다. 본문은 핵심만 짧게 쓰고, 제안·초안·표처럼 자세한 내용은 "
          "show 카드로 남겨라. 메일 초안은 받는 사람·제목·본문을 text 카드로 보여 준다. 보내거나 바꾸는 일은 평소처럼 확인을 받는다.]\n")
 CONTEXT_CHARS = 12000
@@ -221,12 +223,15 @@ class SecretaryBridge:
     def __init__(self, config: BridgeConfig, http: httpx.Client | None = None, fetch=None) -> None:
         self.config = config
         self.http = http or httpx.Client(timeout=httpx.Timeout(30.0, read=config.timeout))
-        downloads = httpx.Client(timeout=120, follow_redirects=True)
-        self.fetch = fetch or (lambda item: download_slack_file(downloads, config.slack_token, item))
+        if fetch is None:
+            downloads = httpx.Client(timeout=120, follow_redirects=True)
+            fetch = lambda item: download_slack_file(downloads, config.slack_token, item)  # noqa: E731
+        self.fetch = fetch
         self.threads: dict[tuple[str, str], Thread] = {}
         self.guard = threading.Lock()
         self.bot_user_id = ""  # set by create_app: the bot's own mention reads as "너(이름)"
         self.directory: UserDirectory | None = None  # user names (slack_text); create_app shares the bot's
+        self.states = thread_state.ThreadStateStore()  # create_app shares the bot's: status words come from here
 
     def read(self, text: str | None) -> str:
         """Slack mrkdwn → readable text: mentions kept as "@이름" / "너(이름)", links as "label (url)"."""
@@ -239,11 +244,20 @@ class SecretaryBridge:
     # --- routing ----------------------------------------------------------------------------
 
     def wants(self, event: dict, text: str) -> bool:
-        """Bridge this message? Only the owner's, and only work requests or replies in a secretary thread."""
+        """Bridge this message? Only the owner's, and only work requests or replies in a secretary thread.
+        The bot itself routes with router.py; this is the same rule for callers that only have the bridge."""
+        from router import wants_action
+
         if not self._from_owner(event):
             return False
-        key = (event.get("channel", ""), event.get("thread_ts") or event.get("ts", ""))
-        return self.config.bridge_all or key in self.threads or bool(ACTION_WORDS.search(text))
+        return self.config.bridge_all or self.working_in(event) or wants_action(text)
+
+    def working_in(self, event: dict) -> bool:
+        """The secretary already has a session for this message's thread."""
+        return (event.get("channel", ""), event.get("thread_ts") or event.get("ts", "")) in self.threads
+
+    def from_owner(self, event: dict) -> bool:
+        return self._from_owner(event)
 
     def follows(self, event: dict) -> bool:
         """A plain reply (no mention) by the owner in a thread the secretary is working in."""
@@ -333,10 +347,19 @@ class SecretaryBridge:
         confirm_ts, prompt = thread.confirm_ts, thread.confirm_prompt
         thread.waiting = False
         outcome = self._run(thread, channel, thread_ts, word, web, answering=True, source=source)
-        if confirm_ts:
+        if confirm_ts:  # the outcome is in the thread's work state (_record_outcome) before it is shown here
             done = {True: f"✅ 진행됨 — {prompt}", False: f"✋ 거부됨 — {prompt}"}.get(
                 outcome, "⚠️ 확인 결과를 받지 못했어요. 비서의 답을 확인해 주세요.")
             web.chat_update(channel=channel, ts=confirm_ts, text=done, blocks=[])
+
+    def _record_outcome(self, channel: str, thread_ts: str, thread: Thread, allow: bool) -> None:
+        """The secretary applied a confirmation: the work state moves to saved (진행됨) or rejected (거부됨).
+        The secretary's ``confirmed`` event is the approval itself, so a pending state lost to a restart is restored."""
+        state = self.states.get(channel, thread_ts)
+        if state.status != thread_state.PENDING:
+            self.states.set_status(channel, thread_ts, thread_state.PENDING, what=thread.confirm_prompt)
+        self.states.set_status(channel, thread_ts, thread_state.SAVED if allow else thread_state.REJECTED,
+                               what=thread.confirm_prompt, by="주인")
 
     def _context(self, web, channel: str, thread_ts: str, thread: Thread, current_ts: str,
                  attachments: list[dict] | None = None) -> str:
@@ -435,6 +458,7 @@ class SecretaryBridge:
                     elif kind == "confirmed":
                         outcome = bool(event.get("allow"))
                         logger.info("confirmed id=%s allow=%s", event.get("id", ""), outcome)
+                        self._record_outcome(channel, thread_ts, thread, outcome)
                     elif kind == "confirm":
                         confirm = event.get("prompt", "")
                         thread.confirm_id = str(event.get("id", ""))
@@ -462,7 +486,9 @@ class SecretaryBridge:
         elif confirm:
             text_out = "확인이 필요해요."
         else:  # say what was done, not a bare "끝났어요."
-            text_out = (f"마쳤어요. 마지막으로 한 일: {steps[-1]}" if steps else "비서가 답 없이 끝냈어요. 실행된 작업은 없어요.")
+            text_out = (f"비서가 글로 답하지 않았어요. 마지막 단계: {steps[-1]}" if steps else "비서가 글로 답하지 않았어요. 실행된 작업은 없어요.")
+        # status words ("저장했어요", "진행할게요") only when the thread's work state backs them
+        text_out = thread_state.guard(text_out, self.states.get(channel, thread_ts))
         blocks: list[dict] = [{"type": "section", "text": {"type": "mrkdwn", "text": text_out[:2900]}}]
         for card in cards:
             blocks.append({"type": "divider"})
@@ -475,6 +501,7 @@ class SecretaryBridge:
         if confirm:
             thread.waiting = True
             thread.confirm_prompt = confirm
+            self.states.set_status(channel, thread_ts, thread_state.PENDING, what=confirm)
             posted = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=f"확인: {confirm}", blocks=[
                 {"type": "section", "text": {"type": "mrkdwn", "text": f":raised_hand: *확인이 필요해요*\n{confirm}"}},
                 {"type": "actions", "elements": [

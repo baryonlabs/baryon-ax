@@ -1,6 +1,7 @@
 """HTTP API of the question–certification loop (loop.py). main.py builds it with its services.
 
     POST /v1/loop/actions                 record a decision or request (who, what, situation) — the asker's own
+    POST /v1/loop/actions/retract         take back the actions recorded from one message (edited or deleted)
     POST /v1/loop/threads/understand      read one Slack thread snapshot: purpose, requests, decisions, claims, contests
                                           (thread_understanding.py). Nothing is stored.
     POST /v1/loop/threads/merge           merge a thread reading into the ontology (ontology_merge): one change set
@@ -52,7 +53,16 @@ class ActionBody(BaseModel):
     context: str = Field("", max_length=4000)
     source: str = Field("api", max_length=40)       # slack | secretary | web | api
     source_ref: str = Field("", max_length=300)     # e.g. slack:C1:1712.33 (where to ask back)
+    message_ref: str = Field("", max_length=300)    # the message it was read from (slack:C1:1712.40), to retract it
     judge: bool = False                              # judge now instead of at the next round
+
+
+class RetractBody(BaseModel):
+    """The message was edited or deleted: what it stated is no longer true (its actions are retracted, their open
+    questions withdrawn). ``keep_texts``: what the edited message still states (action text, spaces removed)."""
+    message_ref: str = Field(min_length=3, max_length=300)
+    keep_texts: list[str] = Field(default_factory=list, max_length=50)
+    reason: str = Field("edited", max_length=40)
 
 
 class ThreadBody(BaseModel):
@@ -129,7 +139,8 @@ def build_router(deps: LoopDeps, store: LoopStore | None = None) -> APIRouter:
                             x_roles: str | None = Header(None)) -> dict:
         principal = who(x_user_id, x_organization_id, x_roles)
         action = {"id": loop._id("a"), "text": body.text.strip(), "context": body.context.strip(), "actor": principal.user_id,
-                  "source": body.source, "source_ref": body.source_ref, "status": "new", "created_at": loop.now()}
+                  "source": body.source, "source_ref": body.source_ref, "status": "new", "created_at": loop.now(),
+                  **({"message_ref": body.message_ref} if body.message_ref else {})}
         store.update(principal.organization_id, lambda data: data["actions"].__setitem__(action["id"], action))
         deps.audit.emit("loop.action_recorded", principal, str(uuid.uuid4()), action_id=action["id"], source=body.source)
         if body.judge:
@@ -138,6 +149,36 @@ def build_router(deps: LoopDeps, store: LoopStore | None = None) -> APIRouter:
             question = next((q for q in store.load(principal.organization_id)["questions"].values() if q["action_id"] == action["id"]), None)
             return {**action, "question": question}
         return action
+
+    @router.post("/actions/retract")
+    async def retract_actions(body: RetractBody, x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None),
+                              x_roles: str | None = Header(None)) -> dict:
+        """Retract the actions recorded from one message: an admin or agent (the Slack bot) for anyone's, a person
+        for their own. Questions still open on them are withdrawn; answered ones and certified items stay."""
+        principal = who(x_user_id, x_organization_id, x_roles)
+        anyone = "admin" in principal.roles or bool(principal.roles & AGENT_ROLES)
+        keep = {re.sub(r"\s+", "", text) for text in body.keep_texts}
+
+        def change(data: dict) -> list[str]:
+            ids = []
+            for action in data["actions"].values():
+                if action.get("message_ref") != body.message_ref or action.get("status") == "retracted":
+                    continue
+                if not anyone and action.get("actor") != principal.user_id:
+                    continue
+                if re.sub(r"\s+", "", action.get("text", "")) in keep:
+                    continue
+                action.update(status="retracted", retracted_at=loop.now(), retracted_reason=body.reason)
+                ids.append(action["id"])
+            for question in data["questions"].values():
+                if question.get("action_id") in ids and question.get("status") == "open":
+                    question["status"] = "withdrawn"
+            return ids
+
+        ids = store.update(principal.organization_id, change)
+        if ids:
+            deps.audit.emit("loop.actions_retracted", principal, str(uuid.uuid4()), action_ids=ids, reason=body.reason)
+        return {"retracted": len(ids), "ids": ids}
 
     @router.post("/threads/understand")
     async def understand_thread(body: ThreadBody, x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None),

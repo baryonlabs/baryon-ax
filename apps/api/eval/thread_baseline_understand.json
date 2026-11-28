@@ -188,6 +188,37 @@
    "mention_resolution": 1.0,
    "stale_statements": 0,
    "pass": true
+  },
+  "route-target": {
+   "decisions_expected": 2,
+   "decisions_predicted": 2,
+   "decision_precision": 1.0,
+   "decision_recall": 1.0,
+   "decided_by_accuracy": 1.0,
+   "decision_kind_accuracy": 1.0,
+   "decision_evidence_hit": 1.0,
+   "tacit_recall": null,
+   "tacit_precision": 0.0,
+   "evidence_refs": 6,
+   "evidence_validity": 1.0,
+   "quote_validity": 1.0,
+   "ontology_added": 4,
+   "rerun_changes": 0,
+   "question_count": 1,
+   "respond_recall": 1.0,
+   "wrong_replies": 0,
+   "silent_accuracy": 1.0,
+   "attribution": 1.0,
+   "mention_resolution": 1.0,
+   "stale_statements": 0,
+   "owner_confirmed_count": 0,
+   "owner_confirmed_ok": 1,
+   "unapproved_writes": 0,
+   "incomplete_recall": 1.0,
+   "false_incomplete": 0,
+   "mention_entity_accuracy": 1.0,
+   "author_kind_accuracy": 1.0,
+   "pass": true
   }
  }
 }

@@ -52,6 +52,8 @@ expected.json::
       "mention_entities": {ts: [{"id": "U…", "entity": group}]},  # "self" for the bot under test
       "authors": {"U…": "human" | "self" | "other_bot"},
       "source_trust": {"other_bot_default": "needs_verification", "claims": [{"statement": phrase, "evidence_ts": [ts]}]},
+      "routing": {"intents": {ts: intent}, "handlers": {ts: "responder" | "secretary" | "loop" | "silent"},
+                  "max_gaps": 0},                              # the bot's router (examples/slack-bot/router.py)
       "pass": {"decision_precision": 0.8, ...}                 # optional threshold overrides
     }
 
@@ -64,7 +66,13 @@ A prediction (what an arm produced) is::
      "responded_ts": [ts], "accounted": [{"ts", "speaker", "text"}], "understood": {ts: text},
      "quotes": [{"ts", "text"}],
      "writes": [{"kind", "ts", "approved"}], "confirmations": [{"card_ts", "by", "result"}], "incomplete_ts": [ts],
-     "mentions": {ts: [{"id", "entity"}]}, "authors": {uid: kind}, "claims": [{"statement", "evidence_ts", "status"}]}
+     "mentions": {ts: [{"id", "entity"}]}, "authors": {uid: kind}, "claims": [{"statement", "evidence_ts", "status"}],
+     "routes": {ts: {"intent", "handler"}}, "gaps_recorded": int, "state_contradictions": int}
+
+Routing metrics (rule arm): ``intent_accuracy`` and ``misroutes`` (a message sent to the wrong handler: the secretary
+instead of the document bot, or an answer where silence was expected) against ``routing``; ``gaps_recorded`` counts
+unanswered document searches that would become knowledge gaps; ``state_contradictions`` counts the bot's posts whose
+status words ("저장했어요", "진행할게요", "끝났어요") the thread's work state does not back (thread_state.py).
 
 ``decisions[].confirmed`` (true when the owner confirmed it) feeds ``owner_confirmed``; ``contested`` entries may be
 labels or {"label", "evidence_ts"}.
@@ -126,11 +134,13 @@ DEFAULT_PASS = {
     "attribution": 0.9, "mention_resolution": 1.0, "ontology_add_recall": 1.0, "ontology_merge_recall": 1.0,
     "ontology_contest_recall": 1.0, "false_contests": 0, "relation_recall": 1.0, "questions_within_budget": 1,
     "question_coverage": 1.0, "forbidden_questions": 0, "respond_recall": 1.0, "wrong_replies": 0, "stale_statements": 0,
+    "intent_accuracy": 0.9, "misroutes": 0, "state_contradictions": 0,
     "owner_confirmed_ok": 1, "unapproved_writes": 0, "confirmation_accuracy": 1.0, "contest_evidence_hit": 1.0, "contest_count_ok": 1,
     "incomplete_recall": 1.0, "false_incomplete": 0, "mention_entity_accuracy": 1.0, "author_kind_accuracy": 1.0,
     "claim_trust_recall": 1.0, "trusted_bot_claims": 0, "rerun_changes": 0,
 }
 LOWER_IS_BETTER = {"false_contests", "forbidden_questions", "wrong_replies", "stale_statements", "question_count",
+                   "misroutes", "gaps_recorded", "state_contradictions",
                    "unapproved_writes", "false_incomplete", "trusted_bot_claims", "rerun_changes"}
 TRUSTED = {"verified", "certified", "confirmed", "trusted"}
 
@@ -427,8 +437,22 @@ def score(fixture: Fixture, prediction: dict, judge: dict | None = None) -> dict
             m["claim_trust_recall"] = _ratio(hits, len(trust["claims"]))
         m["trusted_bot_claims"] = sum(1 for c in claims if c.get("status") in TRUSTED and set(c.get("evidence_ts") or []) & bot_ts)
 
+    # the router: intents, handlers, gaps, and status words without a state behind them
+    rx, routes = exp.get("routing") or {}, prediction.get("routes")
+    if routes is not None:
+        if rx.get("intents"):
+            m["intent_accuracy"] = _ratio(sum((routes.get(ts) or {}).get("intent", "silent") == want for ts, want in rx["intents"].items()),
+                                          len(rx["intents"]))
+        if rx.get("handlers"):
+            m["misroutes"] = sum((routes.get(ts) or {}).get("handler", "silent") != want for ts, want in rx["handlers"].items())
+        if "max_gaps" in rx:
+            m["gaps_recorded"] = int(prediction.get("gaps_recorded") or 0)
+    if prediction.get("state_contradictions") is not None:
+        m["state_contradictions"] = int(prediction["state_contradictions"])
+
     # pass/fail against thresholds (only metrics this fixture defines)
-    limits = {**DEFAULT_PASS, **({"unapproved_writes": (exp.get("writes") or {}).get("max_unapproved", 0)}), **(exp.get("pass") or {})}
+    limits = {**DEFAULT_PASS, **({"unapproved_writes": (exp.get("writes") or {}).get("max_unapproved", 0)}),
+              **({"gaps_recorded": rx["max_gaps"]} if "max_gaps" in rx else {}), **(exp.get("pass") or {})}
     failing = []
     for key, limit in limits.items():
         value = m.get(key)
@@ -593,11 +617,23 @@ class FakeBaryon:
             return self.api.request(method, path, "slack-bot", "agent", **kwargs)
         raise RuntimeError(f"not available in the rule arm: {method} {path}")
 
-    def ask(self, messages: list[dict], slack_user: str, thread_id: str, use_retrieval: bool = True):
-        from baryon_slack_bot import Answer
+    def ask(self, messages: list[dict], slack_user: str, thread_id: str, use_retrieval: bool = True, record_gap: bool = True):
+        from baryon_slack_bot import NO_THREAD_ANSWER, Answer
 
-        self.asked.append({"ts": self.current_ts, "question": (messages[-1]["content"] if messages else ""), "messages": messages})
+        self.asked.append({"ts": self.current_ts, "question": (messages[-1]["content"] if messages else ""), "messages": messages,
+                           "use_retrieval": use_retrieval, "record_gap": record_gap})
+        if not use_retrieval and NO_THREAD_ANSWER in (messages[-1]["content"] if messages else ""):
+            return Answer(text=NO_THREAD_ANSWER, answered=False)  # the thread-first call: pessimistic, the thread never answers
         return Answer(text=self.ANSWER, citations=[], answered=False)
+
+    @property
+    def gaps(self) -> int:
+        """Unanswered document searches the API would record as knowledge gaps (every search is unanswered here)."""
+        return sum(1 for a in self.asked if a["use_retrieval"] and a["record_gap"])
+
+    def understand(self, payload: dict, slack_user: str) -> dict | None:
+        response = self.as_user("POST", "/v1/loop/threads/understand", slack_user, json=payload)
+        return response.json() if response.status_code == 200 else None
 
     def snippets(self, *args: Any, **kwargs: Any) -> dict:
         return {}
@@ -687,36 +723,59 @@ def rule_arm(fixture: Fixture, complete: Callable[[list[dict[str, str]]], Awaita
         except ImportError:  # before S2
             pass
 
+        # the bot's one router (router.py) decides every message, as in create_app; the secretary is not called, only
+        # what would have gone to it is recorded (meta "secretary_users": who owns the secretary)
+        import router as routing
+        import thread_state
+        from secretary_bridge import BridgeConfig, SecretaryBridge
+
+        responder.read_threads = True
+        desk.states = responder.states
+        bridge = None
+        if fixture.meta.get("secretary_users"):
+            bridge = SecretaryBridge(BridgeConfig(url="http://secretary.invalid", key="eval", users=frozenset(fixture.meta["secretary_users"])),
+                                     http=object(), fetch=lambda item: b"")
+            bridge.bot_user_id, bridge.directory, bridge.states = bot_user, responder.directory, responder.states
+            bridge.handle = lambda event, client, text=None: secretary.append(event.get("ts", ""))
+        secretary: list[str] = []
+        dispatcher = bot.Dispatcher(responder, routing.Router(), bridge=bridge, loop_desk=desk, snapshots=snapshots, hold=hold,
+                                    archive=archiver, background=False)
+        dispatcher.my_bot_id = fixture.meta.get("bot_id", "")
+        responder.snapshots = snapshots
+        if held is not None:  # an edit releases a held message: it is routed again (the wait itself never ends here)
+            hold.handler = lambda c, message, reason: (held.append((message.ts, reason)), dispatcher.release(c, message, reason))
+
         responded: list[str] = []
         recorded: list[str] = []
         for event in events_of(fixture):
             web.now = float(event.get("event_ts") or event.get("ts") or (event.get("message") or {}).get("ts") or web.now)
             _apply_to_view(web, event)
-            if snapshots is not None:
-                snapshots.on_event(event)
             if event.get("type") != "message":
+                if snapshots is not None:
+                    snapshots.on_event(event)
                 continue
-            archiver.observe(event)
             baryon.current_ts = event.get("ts", "")
             actions_before = len(api.store.load(api.organization)["actions"])
-            desk.observe(event, web)
+            posts_before = len(web.posts)
+            dispatcher.on_message(event, web)  # snapshot, archive, edits/deletions, the loop, and plain thread replies
             # one entry per action recorded at this event (the loop may record several decisions of one message)
             target_ts = (event.get("message") or {}).get("ts", "") if event.get("subtype") == "message_changed" else event.get("ts", "")
             recorded += [target_ts] * (len(api.store.load(api.organization)["actions"]) - actions_before)
-            if event.get("user") == bot_user or event.get("subtype") in ("message_changed", "message_deleted"):
-                continue
-            posts_before = len(web.posts)
             text = event.get("text") or ""
-            if f"<@{bot_user}" in text:  # Slack sends app_mention (from people and from other bots alike)
-                command = bot.strip_mentions(text)
-                if loop_desk.wants_questions(command) or loop_desk.wants_certify_list(command):
-                    web.chat_postMessage(channel=channel, thread_ts=event.get("thread_ts") or event["ts"], text="(loop command)")
-                else:
-                    responder.answer(event, web)
-            elif responder.should_follow_up(event):
-                responder.answer(event, web)
+            if f"<@{bot_user}" in text and event.get("subtype") not in ("message_changed", "message_deleted"):
+                dispatcher.on_mention({**event, "type": "app_mention"}, web)  # Slack sends app_mention (people and bots alike)
             if any(post["kind"] == "post" for post in web.posts[posts_before:]):
                 responded.append(event["ts"])
+        routes: dict[str, dict] = {}
+        for ts, route in dispatcher.log:  # the last decision per message (a mention is seen as message and app_mention)
+            routes[ts] = {"intent": route.intent, "handler": route.handler, "reason": route.reason}
+        for ts in secretary:
+            routes.setdefault(ts, {})["handler"] = routing.SECRETARY
+        own_posts = [post for post in web.posts if post["kind"] in ("post", "update") and post.get("text")]
+        contradictions = sum(bool(thread_state.unbacked_claims(post["text"], responder.states.known(channel, post.get("thread_ts") or "")))
+                             for post in own_posts)
+        recorded_contradictions = sum(bool(thread_state.unbacked_claims(m.get("text", ""), None)) for m in fixture.messages
+                                      if m.get("user") == bot_user)
 
         # the day's document, as the archive would write it, then one loop round
         web.now = float("inf")
@@ -733,15 +792,16 @@ def rule_arm(fixture: Fixture, complete: Callable[[list[dict[str, str]]], Awaita
             held += [(ts, "waiting") for _, ts in hold.pending()]  # still waiting for an edit when the replay ended
 
     actions = sorted(data["actions"].values(), key=lambda a: a["created_at"])
+    live = [a for a in actions if a.get("status") != "retracted"]  # an edited or deleted message took these back
     action_ts = dict(zip([a["id"] for a in actions], recorded))
     # since S3 the loop records only decisions a person confirmed in words (loop_desk: "…님이 슬랙에서 확정한 결정: …")
     confirmed = {a["id"] for a in actions if CONFIRMED_ACTION in a["text"]}
     # (the other kind of action it records, "…님이 아직 정하지 않았다고 한 것", is a gap to ask about, not a decision)
     decisions = [{"statement": a["text"], "decided_by": a["actor"], "kind": "explicit", "confirmed": True,
-                  "evidence_ts": [action_ts[a["id"]]] if a["id"] in action_ts else []} for a in actions
+                  "evidence_ts": [action_ts[a["id"]]] if a["id"] in action_ts else []} for a in live
                  if a["id"] in confirmed or OPEN_ACTION not in a["text"]]
     questions = [{"text": q["question"], "evidence_ts": [action_ts[q["action_id"]]] if q["action_id"] in action_ts else []}
-                 for q in sorted(data["questions"].values(), key=lambda q: q["created_at"])]
+                 for q in sorted(data["questions"].values(), key=lambda q: q["created_at"]) if q.get("status") != "withdrawn"]
     accounted, understood = _archive_lines(markdown, fixture)
     for item in baryon.asked:  # what the mention path read as the question
         understood[item["ts"]] = (understood.get(item["ts"], "") + "\n" + item["question"]).strip()
@@ -761,7 +821,12 @@ def rule_arm(fixture: Fixture, complete: Callable[[list[dict[str, str]]], Awaita
         "confirmations": [],  # the secretary bridge's buttons are not replayed (bridge off)
         **_snapshot_view(fixture, thread, held),
         "claims": [],
-        "trace": {"round": round_response.json(), "archive_chars": len(markdown), "bot_inputs": [a["question"] for a in baryon.asked]},
+        "routes": routes,
+        "gaps_recorded": baryon.gaps,
+        "state_contradictions": contradictions,
+        "trace": {"round": round_response.json(), "archive_chars": len(markdown), "bot_inputs": [a["question"] for a in baryon.asked],
+                  "recorded_state_contradictions": recorded_contradictions,  # the fixture's own (old) bot posts, for reference
+                  "retracted_actions": len(actions) - len(live)},
     }
 
 
@@ -987,7 +1052,7 @@ TABLE_KEYS = ["pass", "purpose", "decision_precision", "decision_recall", "decid
               "ontology_contest_recall", "false_contests", "relation_recall", "question_count", "questions_within_budget", "question_coverage",
               "forbidden_questions", "respond_recall", "wrong_replies", "stale_statements", "contest_evidence_hit", "contest_count_ok",
               "incomplete_recall", "mention_entity_accuracy", "author_kind_accuracy", "claim_trust_recall", "trusted_bot_claims",
-              "rerun_changes"]
+              "intent_accuracy", "misroutes", "gaps_recorded", "state_contradictions", "rerun_changes"]
 
 
 def _cell(value: Any) -> str:

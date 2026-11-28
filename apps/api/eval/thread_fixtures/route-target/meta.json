@@ -1,0 +1,14 @@
+{
+ "channel": "CTEST000002",
+ "channel_name": "social",
+ "channel_type": "channel",
+ "bot_user_id": "UBARYON0001",
+ "bot_id": "BBARYON0001",
+ "owners": [
+  "UTESTOWNER1"
+ ],
+ "secretary_users": [
+  "UTESTOWNER1"
+ ],
+ "description": "한 스레드에서 봇이 어디로 보내야 하는지: 다른 봇에 관한 첫 질문, \"작성\"이 든 끊긴 오너 글, 다른 봇에게 한 \"여기 내용이다\", 다른 봇들의 정리·상태 글(초안으로 남겨 둘게요·진행할게요·끝났어요). 익명화해 다시 쓴 스레드다."
+}
