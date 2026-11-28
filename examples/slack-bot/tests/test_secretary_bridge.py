@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import json
+import zipfile
 
 import httpx
 
-from secretary_bridge import ACTION_YES, BridgeConfig, SecretaryBridge, card_mrkdwn
+from doc_intake import NO_FILES_READ, IntakeError, download_slack_file
+from secretary_bridge import ACTION_YES, BridgeConfig, SecretaryBridge, card_mrkdwn, read_files
 
 OWNER = "U0OWNER"
 REQUEST = ("<@U0BOT> <https://www.gonggong.ai/#aroom|gonggong.ai/#…> 이런업체와 우리가 협력을 한다면? 어떤제안을 가능하고 연락해서 "
@@ -18,14 +22,20 @@ MAIL_CARD = {"kind": "text", "title": "메일 초안: 공공에이아이 협력 
 class FakeSecretary:
     def __init__(self) -> None:
         self.turns: list[str] = []
+        self.images: list[list[dict]] = []
         self.sessions = 0
+        self.down = False
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         if request.url.path == "/v1/sessions":
+            if self.down:
+                return httpx.Response(500, text="Internal Server Error")
             self.sessions += 1
             return httpx.Response(200, json={"id": f"s{self.sessions}"})
         if request.url.path.endswith("/turn"):
-            self.turns.append(json.loads(request.content)["text"])
+            body = json.loads(request.content)
+            self.turns.append(body["text"])
+            self.images.append(body.get("images", []))
             return httpx.Response(200, json={"used": "answer"})
         if request.url.path.endswith("/events"):
             if len(self.turns) == 1:
@@ -61,9 +71,26 @@ class FakeWeb:
         return {"ok": True}
 
 
-def bridge(secretary: FakeSecretary, **overrides) -> SecretaryBridge:
+def bridge(secretary: FakeSecretary, files: dict[str, bytes] | None = None, **overrides) -> SecretaryBridge:
     config = BridgeConfig(url="http://secretary", key="k", users=frozenset({OWNER}), **overrides)
-    return SecretaryBridge(config, http=httpx.Client(transport=httpx.MockTransport(secretary.handler)))
+
+    def fetch(item: dict) -> bytes:
+        if item["name"] not in (files or {}):
+            raise IntakeError(NO_FILES_READ)
+        return (files or {})[item["name"]]
+
+    return SecretaryBridge(config, http=httpx.Client(transport=httpx.MockTransport(secretary.handler)), fetch=fetch)
+
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 64
+
+
+def archive(members: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as handle:
+        for name, data in members.items():
+            handle.writestr(name, data)
+    return buffer.getvalue()
 
 
 def test_only_the_owners_work_requests_are_bridged() -> None:
@@ -133,3 +160,48 @@ def test_the_thread_before_the_request_goes_with_it() -> None:
     second = secretary.turns[1]
     assert "partner@gonggong.ai" in second and "제안 1" not in second and "비서가 일하고" not in second
 
+
+
+def test_attached_photos_zips_and_text_go_to_the_secretary() -> None:
+    secretary = FakeSecretary()
+    files = {"영수증.png": PNG, "회의록.zip": archive({"회의록/요약.md": "# 결정\n다음 주 미팅".encode(), "회의록/화이트보드.jpg": PNG,
+                                                       "__MACOSX/._x": b"x"}),
+             "계약서.pdf": b"%PDF-1.7"}
+    work = bridge(secretary, files=files)
+    thread = [{"ts": "10.0", "user": "U0COLLEAGUE", "text": "자료 올려요", "files": [{"id": "F2", "name": "회의록.zip"}]}]
+    event = {"channel": "C1", "ts": "11.0", "thread_ts": "10.0", "user": OWNER, "text": "<@U0BOT> 이거 보고 메일 초안 만들어 줘",
+             "files": [{"id": "F1", "name": "영수증.png"}, {"id": "F3", "name": "계약서.pdf"}]}
+    work.handle(event, FakeWeb(replies=thread + [event]))
+    first, images = secretary.turns[0], secretary.images[0]
+    assert "[첨부 파일." in first and "영수증.png: 사진 2번" in first and "회의록.zip: 압축 파일, 2개 파일을 풀었다" in first
+    assert "--- 회의록.zip/회의록/요약.md ---\n# 결정\n다음 주 미팅" in first and "회의록.zip/회의록/화이트보드.jpg: 사진 1번" in first
+    assert "계약서.pdf: .pdf 파일" in first and "문서로 추가" in first and "__MACOSX" not in first
+    assert [image["media_type"] for image in images] == ["image/jpeg", "image/png"]
+    assert base64.b64decode(images[1]["data"]) == PNG
+    # The same files are not sent again on the next turn.
+    work.handle({"channel": "C1", "ts": "12.0", "thread_ts": "10.0", "user": OWNER, "text": "응"}, FakeWeb(replies=thread + [event]))
+    assert secretary.images[1] == [] and "[첨부 파일." not in secretary.turns[1]
+
+
+def test_missing_files_read_is_said_not_swallowed() -> None:
+    block, images = read_files([{"name": "사진.png"}], lambda item: (_ for _ in ()).throw(IntakeError(NO_FILES_READ)))
+    assert "사진.png: 받지 못했다" in block and "files:read" in block and images == []
+    # Slack's answer without the scope: a redirect to the sign-in page, then 403.
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "files.slack.test":
+            return httpx.Response(302, headers={"location": "https://team.slack.test/?redir=%2Ffiles-pri%2Fx"})
+        return httpx.Response(403, headers={"content-type": "text/html"}, text="<html>sign in</html>")
+    http = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+    try:
+        download_slack_file(http, "xoxb", {"name": "a.md", "url_private": "https://files.slack.test/files-pri/x/a.md"})
+        raise AssertionError("should have refused")
+    except IntakeError as error:
+        assert "files:read" in str(error) and "다시 설치" in str(error)
+
+
+def test_a_secretary_that_is_down_is_reported_in_the_thread() -> None:
+    secretary = FakeSecretary()
+    secretary.down = True
+    web = FakeWeb()
+    bridge(secretary).handle({"channel": "C1", "ts": "1.0", "user": OWNER, "text": "메일 초안 만들어 줘"}, web)
+    assert web.calls[-1][0] == "post" and "비서가 응답하지 않아요" in web.calls[-1][1]["text"]

@@ -42,19 +42,23 @@ curl -F "file=@sample.pdf" http://127.0.0.1:18000/parse
 ```
 
 * Python 3.12 + `docling`, Markdown output (headings and GFM tables preserved).
-* `DOCLING_ARTIFACTS_PATH=/models` makes docling use only local artifacts. When
-  the volume is empty, prefetch once (network required):
+* `DOCLING_ARTIFACTS_PATH=/models` makes docling use only local artifacts. The first
+  conversion downloads the layout, table and OCR models into the volume (network
+  required once); air-gapped installs set `DOCLING_DOWNLOAD_MODELS=0` and prefetch:
 
   ```bash
   docker exec baryon-ax-docling-1 docling-tools models download \
-    layout tableformer rapidocr \
-    --rapidocr-backend-lang torch:ch --rapidocr-backend-lang torch:iso:ko \
-    -o /models
-  docker compose -f docker-compose.yml -f docker-compose.parsers.yml restart docling
+    layout tableformer rapidocr --rapidocr-backend-lang torch:korean -o /models
   ```
+* **OCR is Korean by default** (scanned PDFs, photos, screenshots: `.png`, `.jpg`, `.tif` …).
+  The stock RapidOCR recognizer is Chinese/English and drops Hangul entirely; the sidecar uses
+  the PP-OCRv5 Korean recognizer, which also reads Latin letters and digits.
 
-  `torch:ch` / `torch:iso:ko` add Chinese and Korean OCR checkpoints. Without
-  prefetch, the first PDF conversion fails with `RapidOCR artifacts not found`.
+  | Variable | Default | |
+  | --- | --- | --- |
+  | `DOCLING_OCR_LANG` | `korean` | another PP-OCR language: `english`, `chinese`, `japan`, `latin` … |
+  | `DOCLING_OCR_BACKEND` | `torch` | `onnxruntime` needs that package in the image |
+  | `DOCLING_OCR_ORIENTATION` | `0` | `1` turns the 180° text classifier on (for upside-down scans; it misread upright receipts) |
 * The prefetched volume makes later conversions offline and removes first-request
   latency (≈10-30 s per document on CPU).
 * Conversion is CPU-heavy: keep `OMP_NUM_THREADS` at or below the container CPU
