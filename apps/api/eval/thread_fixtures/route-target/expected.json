@@ -1,0 +1,115 @@
+{
+ "addressed_to_bot": {
+  "respond": [
+   "1700600000.000100"
+  ],
+  "silent": [
+   "1700600043.000400",
+   "1700600099.001200",
+   "1700600022.000300",
+   "1700600056.000600",
+   "1700600072.000700",
+   "1700600095.001000",
+   "1700600120.001300"
+  ]
+ },
+ "routing": {
+  "intents": {
+   "1700600000.000100": "thread_question",
+   "1700600043.000400": "silent",
+   "1700600099.001200": "silent",
+   "1700600072.000700": "silent"
+  },
+  "handlers": {
+   "1700600000.000100": "responder",
+   "1700600043.000400": "silent",
+   "1700600099.001200": "silent",
+   "1700600072.000700": "silent"
+  },
+  "max_gaps": 0
+ },
+ "incomplete_ts": [
+  "1700600043.000400"
+ ],
+ "message_accounting": {
+  "min_attribution": 0.9,
+  "mentions": {
+   "1700600000.000100": [
+    "baryon",
+    "orca-bot"
+   ],
+   "1700600099.001200": [
+    "dev-bot"
+   ]
+  }
+ },
+ "mention_entities": {
+  "1700600000.000100": [
+   {
+    "id": "UBARYON0001",
+    "entity": [
+     "self"
+    ]
+   },
+   {
+    "id": "UTESTORCA01",
+    "entity": [
+     "orca-bot"
+    ]
+   }
+  ]
+ },
+ "authors": {
+  "UTESTOWNER1": "human",
+  "UBARYON0001": "self",
+  "UTESTORCA01": "other_bot",
+  "UTESTADO001": "other_bot"
+ },
+ "owner_confirmed": {
+  "count": 0,
+  "statements": []
+ },
+ "writes": {
+  "max_unapproved": 0
+ },
+ "must_not_state": [],
+ "decisions": [
+  {
+   "statement": [
+    [
+     "이해",
+     "읽"
+    ],
+    [
+     "암묵지",
+     "질문"
+    ]
+   ],
+   "decided_by": [
+    "owner"
+   ],
+   "kind": "explicit",
+   "evidence_ts": [
+    "1700600043.000400"
+   ]
+  },
+  {
+   "statement": [
+    [
+     "dev-bot"
+    ],
+    [
+     "넘",
+     "여기 내용"
+    ]
+   ],
+   "decided_by": [
+    "owner"
+   ],
+   "kind": "implicit",
+   "evidence_ts": [
+    "1700600099.001200"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,133 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "user": "UTESTOWNER1",
+   "ts": "1700600000.000100",
+   "thread_ts": "1700600000.000100",
+   "text": "<@UBARYON0001> 는 <@UTESTORCA01> 이 어떤일을 하고 있는지 알 알고 있나?"
+  },
+  {
+   "user": "UBARYON0001",
+   "ts": "1700600001.000200",
+   "thread_ts": "1700600000.000100",
+   "text": "제공된 문서에서 해당 정보를 찾지 못했습니다. 질문하신 \"는 이\"가 누구인지 명확하지 않습니다.",
+   "bot_id": "BBARYON0001",
+   "subtype": "bot_message",
+   "bot_profile": {
+    "name": "baryon"
+   }
+  },
+  {
+   "user": "UTESTORCA01",
+   "ts": "1700600022.000300",
+   "thread_ts": "1700600000.000100",
+   "text": "baryon이 답하기 전에 제가 하는 일을 정리해 둡니다. 열린 일은 3건입니다: 출시 마무리, 사이트 개선, 협력안.",
+   "bot_id": "BTESTORCA01",
+   "subtype": "bot_message",
+   "bot_profile": {
+    "name": "orca-bot"
+   }
+  },
+  {
+   "user": "UTESTOWNER1",
+   "ts": "1700600043.000400",
+   "thread_ts": "1700600000.000100",
+   "text": "적어도 슬랙에 작성된것을 보고 이해는 해야하는데 그런다음에 질문을 먼저 암묵지를 질문하고 <@UBARYON0001> 가"
+  },
+  {
+   "user": "UBARYON0001",
+   "ts": "1700600046.000500",
+   "thread_ts": "1700600000.000100",
+   "text": "스레드에 적힌 내용부터 읽어 볼게요. 문서에는 없는 내용이라 먼저 두 가지만 여쭐게요. 1. 이 봇이 맡은 범위는 어디까지인가요?",
+   "bot_id": "BBARYON0001",
+   "subtype": "bot_message",
+   "bot_profile": {
+    "name": "baryon"
+   }
+  },
+  {
+   "user": "UTESTORCA01",
+   "ts": "1700600056.000600",
+   "thread_ts": "1700600000.000100",
+   "text": "말씀을 이렇게 이해했습니다: baryon은 먼저 슬랙 글을 읽고 그다음 암묵지를 질문해야 한다는 것. 다만 문장이 \"baryon 가\"에서 끊겼습니다.",
+   "bot_id": "BTESTORCA01",
+   "subtype": "bot_message",
+   "bot_profile": {
+    "name": "orca-bot"
+   }
+  },
+  {
+   "user": "UTESTADO001",
+   "ts": "1700600072.000700",
+   "thread_ts": "1700600000.000100",
+   "text": "[정보 전달] 역할 보충: baryon은 사내 문서·지식 담당, orca-bot은 실행 담당입니다. 외부 발송은 owner 님 확인 후에만 진행합니다. <@UBARYON0001>",
+   "bot_id": "BTESTADO001",
+   "subtype": "bot_message",
+   "bot_profile": {
+    "name": "ado"
+   }
+  },
+  {
+   "user": "UBARYON0001",
+   "ts": "1700600073.000800",
+   "thread_ts": "1700600000.000100",
+   "text": "아도가 정리해 준 역할과 관계를 지식 베이스에 초안으로 남겨 둘게요.",
+   "bot_id": "BBARYON0001",
+   "subtype": "bot_message",
+   "bot_profile": {
+    "name": "baryon"
+   }
+  },
+  {
+   "user": "UBARYON0001",
+   "ts": "1700600084.000900",
+   "thread_ts": "1700600000.000100",
+   "text": ":white_check_mark: 진행할게요.",
+   "bot_id": "BBARYON0001",
+   "subtype": "bot_message",
+   "bot_profile": {
+    "name": "baryon"
+   }
+  },
+  {
+   "user": "UTESTORCA01",
+   "ts": "1700600095.001000",
+   "thread_ts": "1700600000.000100",
+   "text": "저장할지는 오너가 정할 일이라 제가 답하지 않습니다. 피클은 아이디어 정리 담당입니다.",
+   "bot_id": "BTESTORCA01",
+   "subtype": "bot_message",
+   "bot_profile": {
+    "name": "orca-bot"
+   }
+  },
+  {
+   "user": "UBARYON0001",
+   "ts": "1700600096.001100",
+   "thread_ts": "1700600000.000100",
+   "text": "끝났어요.",
+   "bot_id": "BBARYON0001",
+   "subtype": "bot_message",
+   "bot_profile": {
+    "name": "baryon"
+   }
+  },
+  {
+   "user": "UTESTOWNER1",
+   "ts": "1700600099.001200",
+   "thread_ts": "1700600000.000100",
+   "text": "<@UTESTDEV001> 여기 내용이다"
+  },
+  {
+   "user": "UTESTORCA01",
+   "ts": "1700600120.001300",
+   "thread_ts": "1700600000.000100",
+   "text": "결론: owner 님이 이 스레드를 dev-bot에게 넘기신 것으로 이해했습니다.",
+   "bot_id": "BTESTORCA01",
+   "subtype": "bot_message",
+   "bot_profile": {
+    "name": "orca-bot"
+   }
+  }
+ ]
+}

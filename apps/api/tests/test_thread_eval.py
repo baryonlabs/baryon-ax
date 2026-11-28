@@ -46,18 +46,24 @@ def test_keyphrases_are_groups_of_alternatives() -> None:
 
 
 def perfect(f) -> dict:
-    """A prediction written from the expectation itself: the scorer must pass it."""
+    """A prediction written from the expectation itself: the scorer must pass it. Every section is optional: a
+    fixture that only checks routing (route-target) has no purpose or questions."""
     exp = f.expected
     first = lambda spec: [group[0] for group in te.as_phrase(spec)]  # noqa: E731
     oc = exp.get("ontology_change") or {}
+    rx = exp.get("routing") or {}
+    routes = {ts: {"intent": intent, "handler": (rx.get("handlers") or {}).get(ts, "responder")}
+              for ts, intent in (rx.get("intents") or {}).items()}
+    routes.update({ts: {"intent": "silent", "handler": handler}
+                   for ts, handler in (rx.get("handlers") or {}).items() if ts not in routes})
     return {
-        "purpose": " ".join(first(exp["purpose"]["keyphrases"])),
+        "purpose": " ".join(first(exp["purpose"]["keyphrases"])) if exp.get("purpose") else "",
         "decisions": [{"statement": " ".join(first(d["statement"])), "decided_by": d["decided_by"][0], "kind": d["kind"],
                        "evidence_ts": d["evidence_ts"],
                        "confirmed": any(te.phrase_hit(" ".join(first(d["statement"])), c)
                                         for c in (exp.get("owner_confirmed") or {}).get("statements", []))} for d in exp["decisions"]],
         "tacit": [{"statement": " ".join(first(t["statement"])), "evidence_ts": t["evidence_ts"]} for t in exp.get("tacit", [])],
-        "questions": [{"text": " ".join(first(link))} for link in exp["questions"].get("must_cover_links", [])],
+        "questions": [{"text": " ".join(first(link))} for link in (exp.get("questions") or {}).get("must_cover_links", [])],
         "ontology_change": {
             "added": [{"label": te.as_group(w["label"])[0], "definition": " ".join(first(w.get("definition")))} for w in oc.get("must_add", [])],
             "merged": [{"from": te.as_group(w["label"])[0], "into": te.as_group(w["into"])[0]} for w in oc.get("must_merge_into", [])],
@@ -74,6 +80,7 @@ def perfect(f) -> dict:
         "authors": exp.get("authors", {}),
         "claims": [{"statement": " ".join(first(c["statement"])), "evidence_ts": c["evidence_ts"], "status": "needs_verification"}
                    for c in (exp.get("source_trust") or {}).get("claims", [])],
+        "routes": routes, "gaps_recorded": 0, "state_contradictions": 0,
     }
 
 
@@ -196,9 +203,12 @@ def test_the_rule_arm_replays_todays_failures() -> None:
     """The gaps item 65 found, visible in the synthetic threads (these change as S1–S7 land)."""
     f = fixture("multi-bot")
     prediction = te.rule_arm(f)
-    assert "1700400020.000300" in prediction["responded_ts"]  # another bot's post that mentions us gets an answer
     assert "@helper-bot" in prediction["trace"]["bot_inputs"][0]  # S1: mentions are names now, not deleted
-    assert "1700400100.000400" in prediction["responded_ts"]  # but a message for another bot still gets an answer
+    # S6: one router — another bot's post that mentions us, and a message for another bot, get no answer
+    assert "1700400020.000300" not in prediction["responded_ts"] and "1700400100.000400" not in prediction["responded_ts"]
+    assert prediction["routes"]["1700400020.000300"]["handler"] == "silent"
+    assert prediction["routes"]["1700400000.000100"]["intent"] == "thread_question"  # "담당이 누구인지 알아?" about people
+    assert prediction["gaps_recorded"] == 0
     # S2: the thread snapshot keeps author kinds and resolves mentions to entities ("self" for the bot itself)
     assert {"other_bot", "human"} <= set(prediction["authors"].values())
     assert any(m["entity"] == "self" for items in prediction["mentions"].values() for m in items)
@@ -276,12 +286,14 @@ def test_private_fixtures_are_scored() -> None:
 # --------------------------------------------------------------------------- the understand arm (S3: thread understanding)
 
 
-def _worse(before: dict, now: dict) -> list[str]:
+def _worse(before: dict, now: dict, shared_only: bool = False) -> list[str]:
+    """Metrics that got worse. ``shared_only``: skip the metrics only the rule arm computes (the router's: the
+    understand arm answers no messages, so it has no intents or handlers)."""
     out = []
     for name, old_scores in before.items():
         for key in [*te.DEFAULT_PASS, "pass"]:
             old, new = old_scores.get(key), now[name].get(key)
-            if old is None:
+            if old is None or (shared_only and new is None):
                 continue
             if new is None or ((new > old) if key in te.LOWER_IS_BETTER else (new < old)):
                 out.append(f"{name}.{key}: {old} → {new}")
@@ -295,11 +307,12 @@ def test_the_understand_arm_does_not_get_worse_than_its_baseline_or_the_rule_arm
     rule = json.loads(te.BASELINE.read_text(encoding="utf-8"))["fixtures"]
     assert {f.name for f in fixtures} == set(own), "new or removed fixture: refresh eval/thread_baseline_understand.json"
     assert not _worse(own, scores), "understand arm got worse:\n" + "\n".join(_worse(own, scores))
-    assert not _worse(rule, scores), "understand arm is worse than the rule arm:\n" + "\n".join(_worse(rule, scores))
+    worse = _worse(rule, scores, shared_only=True)
+    assert not worse, "understand arm is worse than the rule arm:\n" + "\n".join(worse)
     for name, result in scores.items():  # the targets of S3 on every synthetic thread
         assert result["decision_precision"] == 1.0 and result["decision_recall"] == 1.0, name
         assert result["evidence_validity"] in (None, 1.0) and result["quote_validity"] in (None, 1.0), name
-        assert result["wrong_replies"] == 0 and result["attribution"] >= 0.9 and result["false_contests"] == 0, name
+        assert result["wrong_replies"] == 0 and result["attribution"] >= 0.9 and result.get("false_contests", 0) == 0, name
 
 
 def test_the_understand_arm_skips_other_bots_and_keeps_their_claims_unverified() -> None:
