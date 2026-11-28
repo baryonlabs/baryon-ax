@@ -161,6 +161,7 @@
 - 근거 없는 질문을 지식 공백으로 기록 · 클러스터링
 - 유휴 시간에 전문가 질문 큐 생성, 답변 → 게시 → 검증
 - 온톨로지 팩 초안, Ossie 초안 내려받기
+- **질문–인증 루프**: 문서에서 용어·관계를 뽑아 온톨로지로 두고, 사람의 결정 가운데 문서로 설명되지 않는 것만 골라 예상 답 3개와 함께 먼저 묻고, 답을 원문 대조 후 사람만 인증 ([문서](docs/certification-loop.md), 논문 HCI KOREA 2027)
 - Slack에서 담당자에게 먼저 묻는 proactive 모드
 
 </td>
@@ -816,6 +817,7 @@ claude mcp add --transport http baryon http://127.0.0.1:8000/mcp \
 | 암묵지 | `GET /v1/tacit/questions` · `POST /v1/tacit/entries` · `POST /v1/tacit/entries/{id}/publish` | 질문 큐, 답변 저장, 게시 |
 | 공백 | `GET /v1/admin/gaps` · `GET /v1/admin/gaps/clusters` · `POST /v1/admin/gaps/{id}/dismiss` | 지식 공백, 클러스터, 종료 (관리자) |
 | 온톨로지 | `POST` · `GET /v1/admin/ontology-packs` · `GET /v1/admin/ontology-packs/{id}/ossie` | 팩 초안, Ossie 초안 (관리자) |
+| 질문–인증 루프 | `POST /v1/loop/actions` · `POST /v1/loop/rounds` · `GET /v1/loop/questions` · `POST /v1/loop/questions/{id}/answer` · `POST /v1/loop/items/{id}/decision` · `GET /v1/loop/ontology` · `GET /v1/loop/ossie` | 행동 기록, 라운드, 먼저 묻기, 인증(사람만), ontology.json·Ossie 내보내기 |
 | 도구 | `GET /v1/connectors` · `GET /v1/tools/search` · `POST /v1/tools/{id}/call` | MCP 커넥터 카탈로그, 도구 검색·호출 |
 | MCP | `POST /mcp` | MCP 서버(Streamable HTTP, JSON) |
 | 관리 | `GET /v1/audit-events` · `GET /v1/admin/settings` · `POST /v1/admin/reindex` | 감사 이벤트, 실행 설정, 재색인 (관리자) |
