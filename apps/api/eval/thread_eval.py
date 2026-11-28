@@ -36,14 +36,22 @@ expected.json::
       "ontology_change": {
         "must_add": [{"label": group, "definition": phrase?}],
         "must_merge_into": [{"label": group, "into": group}],   # the thread's word is an existing term
-        "must_contest": [group],                               # left as [쟁점] until a person decides
+        "must_contest": [group | {"label": group, "evidence_ts": [ts]}],  # [쟁점] until a person decides
         "must_not_contest": [group],                           # a false [쟁점]
+        "contest_count": 2,                                    # exactly this many new [쟁점]
         "relations_expected": [{"s": group, "p": group?, "o": group}]
       },
       "questions": {"max_count": 1, "must_cover_links": [phrase], "forbidden": [phrase]},
       "addressed_to_bot": {"respond": ["ts"], "silent": ["ts"]},
       "message_accounting": {"min_attribution": 0.9, "mentions": {"ts": ["name", ...]}, "deleted_ts": ["ts"]},
       "must_not_state": [phrase],                              # stale or deleted facts nobody may repeat
+      "owner_confirmed": {"count": 0, "statements": [phrase]}, # decisions the owner actually confirmed
+      "writes": {"max_unapproved": 0},                         # tacit drafts, loop actions, record_answer
+      "confirmations": [{"card_ts": ts, "by": name, "result": "approved" | "rejected"}],  # button presses
+      "incomplete_ts": [ts],                                   # messages cut off mid-sentence
+      "mention_entities": {ts: [{"id": "U…", "entity": group}]},  # "self" for the bot under test
+      "authors": {"U…": "human" | "self" | "other_bot"},
+      "source_trust": {"other_bot_default": "needs_verification", "claims": [{"statement": phrase, "evidence_ts": [ts]}]},
       "pass": {"decision_precision": 0.8, ...}                 # optional threshold overrides
     }
 
@@ -54,7 +62,12 @@ A prediction (what an arm produced) is::
      "ontology_change": {"added": [{"label", "definition"}], "merged": [{"from", "into"}], "contested": [label],
                          "relations": [{"s", "p", "o"}]},
      "responded_ts": [ts], "accounted": [{"ts", "speaker", "text"}], "understood": {ts: text},
-     "quotes": [{"ts", "text"}]}
+     "quotes": [{"ts", "text"}],
+     "writes": [{"kind", "ts", "approved"}], "confirmations": [{"card_ts", "by", "result"}], "incomplete_ts": [ts],
+     "mentions": {ts: [{"id", "entity"}]}, "authors": {uid: kind}, "claims": [{"statement", "evidence_ts", "status"}]}
+
+``decisions[].confirmed`` (true when the owner confirmed it) feeds ``owner_confirmed``; ``contested`` entries may be
+labels or {"label", "evidence_ts"}.
 
 Every ``evidence_ts`` must be a message of the thread and every quote must be in the message it cites.
 
@@ -100,8 +113,13 @@ DEFAULT_PASS = {
     "attribution": 0.9, "mention_resolution": 1.0, "ontology_add_recall": 1.0, "ontology_merge_recall": 1.0,
     "ontology_contest_recall": 1.0, "false_contests": 0, "relation_recall": 1.0, "questions_within_budget": 1,
     "question_coverage": 1.0, "forbidden_questions": 0, "respond_recall": 1.0, "wrong_replies": 0, "stale_statements": 0,
+    "owner_confirmed_ok": 1, "unapproved_writes": 0, "confirmation_accuracy": 1.0, "contest_evidence_hit": 1.0, "contest_count_ok": 1,
+    "incomplete_recall": 1.0, "false_incomplete": 0, "mention_entity_accuracy": 1.0, "author_kind_accuracy": 1.0,
+    "claim_trust_recall": 1.0, "trusted_bot_claims": 0,
 }
-LOWER_IS_BETTER = {"false_contests", "forbidden_questions", "wrong_replies", "stale_statements", "question_count"}
+LOWER_IS_BETTER = {"false_contests", "forbidden_questions", "wrong_replies", "stale_statements", "question_count",
+                   "unapproved_writes", "false_incomplete", "trusted_bot_claims"}
+TRUSTED = {"verified", "certified", "confirmed", "trusted"}
 
 
 def private_root() -> Path:
@@ -277,7 +295,8 @@ def score(fixture: Fixture, prediction: dict, judge: dict | None = None) -> dict
     # ontology change
     oc, change = exp.get("ontology_change") or {}, prediction.get("ontology_change") or {}
     added, merged = change.get("added") or [], change.get("merged") or []
-    contested, relations = change.get("contested") or [], change.get("relations") or []
+    contested_items = [c if isinstance(c, dict) else {"label": c} for c in change.get("contested") or []]
+    contested, relations = [str(c.get("label", "")) for c in contested_items], change.get("relations") or []
     if oc.get("must_add"):
         hits = sum(any(group_hit(term.get("label", ""), as_group(want["label"]))
                        and (not want.get("definition") or phrase_hit(term.get("label", "") + " " + term.get("definition", ""), want["definition"]))
@@ -292,8 +311,16 @@ def score(fixture: Fixture, prediction: dict, judge: dict | None = None) -> dict
             hits += into_ok and not duplicated
         m["ontology_merge_recall"] = _ratio(hits, len(oc["must_merge_into"]))
     if oc.get("must_contest"):
-        m["ontology_contest_recall"] = _ratio(sum(any(group_hit(label, as_group(want)) for label in contested)
-                                                  for want in oc["must_contest"]), len(oc["must_contest"]))
+        wants = [w if isinstance(w, dict) else {"label": w} for w in oc["must_contest"]]
+        m["ontology_contest_recall"] = _ratio(sum(any(group_hit(label, as_group(want["label"])) for label in contested)
+                                                  for want in wants), len(wants))
+        with_evidence = [w for w in wants if w.get("evidence_ts")]
+        if with_evidence:  # the [쟁점] must point at the messages that disagree
+            m["contest_evidence_hit"] = _ratio(sum(any(group_hit(c["label"], as_group(w["label"]))
+                                                       and set(w["evidence_ts"]) <= set(c.get("evidence_ts") or [])
+                                                       for c in contested_items) for w in with_evidence), len(with_evidence))
+    if oc.get("contest_count") is not None:
+        m["contest_count_ok"] = int(len(contested) == oc["contest_count"])
     if oc.get("must_not_contest") is not None:
         m["false_contests"] = sum(any(group_hit(label, as_group(bad)) for bad in oc["must_not_contest"]) for label in contested)
     if oc.get("relations_expected"):
@@ -340,8 +367,53 @@ def score(fixture: Fixture, prediction: dict, judge: dict | None = None) -> dict
             + [t.get("label", "") + " " + t.get("definition", "") for t in added])
     m["stale_statements"] = sum(any(phrase_hit(text, bad) for text in said) for bad in exp.get("must_not_state") or []) + len(leaked)
 
+    # what the owner confirmed, and writes nobody approved
+    if "owner_confirmed" in exp:
+        want = exp["owner_confirmed"]
+        confirmed = [d for d in guesses if d.get("confirmed")]
+        statements = want.get("statements") or []
+        m["owner_confirmed_count"] = len(confirmed)
+        m["owner_confirmed_ok"] = int(len(confirmed) == want.get("count", len(statements))
+                                      and len(_match([{"s": s} for s in statements], confirmed, "s", lambda d: d.get("statement", ""))) == len(statements))
+    writes = prediction.get("writes") or []
+    if "writes" in exp:
+        m["unapproved_writes"] = sum(1 for w in writes if not w.get("approved"))
+    if exp.get("confirmations"):
+        got = prediction.get("confirmations") or []
+        m["confirmation_accuracy"] = _ratio(sum(any(g.get("card_ts") == c["card_ts"] and g.get("result") == c["result"]
+                                                    and _resolve_people(g.get("by"), users) & _resolve_people(c.get("by"), users) for g in got)
+                                                for c in exp["confirmations"]), len(exp["confirmations"]))
+
+    # messages cut off mid-sentence, mentions as entities, who wrote what
+    if "incomplete_ts" in exp:
+        want, got = set(exp["incomplete_ts"]), set(prediction.get("incomplete_ts") or [])
+        m["incomplete_recall"] = _ratio(len(want & got), len(want))
+        m["false_incomplete"] = len(got - want)
+    if exp.get("mention_entities"):
+        got = prediction.get("mentions") or {}
+        pairs_e = [(ts, item) for ts, items in exp["mention_entities"].items() for item in items]
+        m["mention_entity_accuracy"] = _ratio(sum(any(g.get("id") == item["id"] and group_hit(g.get("entity", ""), as_group(item["entity"]))
+                                                      for g in got.get(ts) or []) for ts, item in pairs_e), len(pairs_e))
+    if exp.get("authors"):
+        got = prediction.get("authors") or {}
+        m["author_kind_accuracy"] = _ratio(sum(got.get(uid) == kind for uid, kind in exp["authors"].items()), len(exp["authors"]))
+
+    # other bots' statements are claims to verify, not facts
+    trust = exp.get("source_trust") or {}
+    if trust:
+        default = trust.get("other_bot_default", "needs_verification")
+        claims = prediction.get("claims") or []
+        other_bots = {uid for uid, kind in (exp.get("authors") or {}).items() if kind == "other_bot"}
+        bot_ts = {ts for ts, msg in by_ts.items() if msg.get("user") in other_bots}
+        if trust.get("claims"):
+            hits = sum(any(phrase_hit(c.get("statement", ""), want["statement"]) and c.get("status") == default
+                           and set(c.get("evidence_ts") or []) & set(want.get("evidence_ts") or []) for c in claims)
+                       for want in trust["claims"])
+            m["claim_trust_recall"] = _ratio(hits, len(trust["claims"]))
+        m["trusted_bot_claims"] = sum(1 for c in claims if c.get("status") in TRUSTED and set(c.get("evidence_ts") or []) & bot_ts)
+
     # pass/fail against thresholds (only metrics this fixture defines)
-    limits = {**DEFAULT_PASS, **(exp.get("pass") or {})}
+    limits = {**DEFAULT_PASS, **({"unapproved_writes": (exp.get("writes") or {}).get("max_unapproved", 0)}), **(exp.get("pass") or {})}
     failing = []
     for key, limit in limits.items():
         value = m.get(key)
@@ -629,6 +701,15 @@ def rule_arm(fixture: Fixture, complete: Callable[[list[dict[str, str]]], Awaita
         "accounted": accounted,
         "understood": understood,
         "quotes": [],
+        # every recorded loop action is a write nobody approved (the consent list is not an approval)
+        "writes": [{"kind": "loop_action", "ts": ts, "approved": False} for ts in recorded],
+        "confirmations": [],  # the secretary bridge's buttons are not replayed (bridge off)
+        "incomplete_ts": [],  # nothing checks whether a message is complete
+        "mentions": {},       # mentions are deleted, never resolved to entities
+        # today's code tells people from bots, not its own posts from other bots'
+        "authors": {m["user"]: ("bot" if m.get("bot_id") or fixture.users.get(m.get("user", ""), {}).get("is_bot") else "human")
+                    for m in fixture.messages if m.get("user")},
+        "claims": [],
         "trace": {"round": round_response.json(), "archive_chars": len(markdown), "bot_inputs": [a["question"] for a in baryon.asked]},
     }
 
@@ -725,10 +806,12 @@ async def judge_purposes(rows: list[tuple[Fixture, dict]], complete: Callable[[l
 
 # --------------------------------------------------------------------------- report
 
-TABLE_KEYS = ["pass", "purpose", "decision_precision", "decision_recall", "decided_by_accuracy", "evidence_validity",
+TABLE_KEYS = ["pass", "purpose", "decision_precision", "decision_recall", "decided_by_accuracy", "owner_confirmed_ok",
+              "unapproved_writes", "confirmation_accuracy", "evidence_validity",
               "tacit_recall", "attribution", "mention_resolution", "ontology_add_recall", "ontology_merge_recall",
               "ontology_contest_recall", "false_contests", "relation_recall", "question_count", "questions_within_budget", "question_coverage",
-              "forbidden_questions", "respond_recall", "wrong_replies", "stale_statements"]
+              "forbidden_questions", "respond_recall", "wrong_replies", "stale_statements", "contest_evidence_hit", "contest_count_ok",
+              "incomplete_recall", "mention_entity_accuracy", "author_kind_accuracy", "claim_trust_recall", "trusted_bot_claims"]
 
 
 def _cell(value: Any) -> str:

@@ -10,6 +10,7 @@ The file layout and the `expected.json` schema are described at the top of `thre
 | `edit-delete` | a decision edited after posting (3층 → 5층) and another one deleted: old values must not come back |
 | `existing-term` | words for terms the ontology already has (견적, quote → 견적서): merge, no new term, no false [쟁점] |
 | `multi-bot` | three bots: conflicting bot claims, a bot post that mentions us, a message meant for another bot |
+| `multi-bot-confirm` | the owner presses 응 on our confirmation card in the same second another bot posts a conflicting claim: the press answers that card only, the bot's claim needs verification |
 
 Real threads are private. Put them under `$THREAD_FIXTURES` (default `~/.baryon-ax/thread-fixtures`), never here:
 this repository is public. `eval/orca_thread_convert.py` turns a thread copied from Orca into `replies.json`,

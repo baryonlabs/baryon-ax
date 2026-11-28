@@ -53,18 +53,27 @@ def perfect(f) -> dict:
     return {
         "purpose": " ".join(first(exp["purpose"]["keyphrases"])),
         "decisions": [{"statement": " ".join(first(d["statement"])), "decided_by": d["decided_by"][0], "kind": d["kind"],
-                       "evidence_ts": d["evidence_ts"]} for d in exp["decisions"]],
+                       "evidence_ts": d["evidence_ts"],
+                       "confirmed": any(te.phrase_hit(" ".join(first(d["statement"])), c)
+                                        for c in (exp.get("owner_confirmed") or {}).get("statements", []))} for d in exp["decisions"]],
         "tacit": [{"statement": " ".join(first(t["statement"])), "evidence_ts": t["evidence_ts"]} for t in exp.get("tacit", [])],
         "questions": [{"text": " ".join(first(link))} for link in exp["questions"].get("must_cover_links", [])],
         "ontology_change": {
             "added": [{"label": te.as_group(w["label"])[0], "definition": " ".join(first(w.get("definition")))} for w in oc.get("must_add", [])],
             "merged": [{"from": te.as_group(w["label"])[0], "into": te.as_group(w["into"])[0]} for w in oc.get("must_merge_into", [])],
-            "contested": [te.as_group(w)[0] for w in oc.get("must_contest", [])],
+            "contested": [{"label": te.as_group(w["label"] if isinstance(w, dict) else w)[0],
+                           "evidence_ts": w.get("evidence_ts", []) if isinstance(w, dict) else []} for w in oc.get("must_contest", [])],
             "relations": [{key: te.as_group(r[key])[0] for key in ("s", "p", "o") if key in r} for r in oc.get("relations_expected", [])],
         },
         "responded_ts": exp["addressed_to_bot"]["respond"],
         "accounted": [{"ts": ts, "speaker": f.by_ts[ts]["user"]} for ts in f.human_ts],
         "understood": {ts: " ".join(names) for ts, names in exp["message_accounting"].get("mentions", {}).items()},
+        "writes": [], "confirmations": exp.get("confirmations", []), "incomplete_ts": exp.get("incomplete_ts", []),
+        "mentions": {ts: [{"id": item["id"], "entity": te.as_group(item["entity"])[0]} for item in items]
+                     for ts, items in exp.get("mention_entities", {}).items()},
+        "authors": exp.get("authors", {}),
+        "claims": [{"statement": " ".join(first(c["statement"])), "evidence_ts": c["evidence_ts"], "status": "needs_verification"}
+                   for c in (exp.get("source_trust") or {}).get("claims", [])],
     }
 
 
@@ -98,6 +107,19 @@ def test_a_raw_mention_is_not_a_resolved_name() -> None:
     prediction = perfect(f)
     prediction["understood"] = {"1700000000.000100": "<@UBARYON0001> 견적 유효기간", "1700000240.000600": "<@UTESTPARK01|park> 님이"}
     assert te.score(f, prediction)["mention_resolution"] == 0.5
+
+
+def test_a_button_press_answers_its_card_and_other_bots_claims_stay_unverified() -> None:
+    f = fixture("multi-bot-confirm")
+    prediction = perfect(f)
+    assert te.score(f, prediction)["pass"]
+    prediction["confirmations"] = [{"card_ts": "1700500010.000200", "by": "nam", "result": "rejected"}]  # 응 read as 아니
+    prediction["claims"][0]["status"] = "verified"                                                      # a bot's word taken as fact
+    prediction["writes"] = [{"kind": "tacit_draft", "ts": "1700500030.500300", "approved": False}]
+    prediction["authors"] = {**prediction["authors"], "UBARYON0001": "other_bot"}
+    result = te.score(f, prediction)
+    assert result["confirmation_accuracy"] == 0.0 and result["trusted_bot_claims"] == 1 and result["unapproved_writes"] == 1
+    assert result["claim_trust_recall"] == 0.0 and result["author_kind_accuracy"] == 0.75 and not result["pass"]
 
 
 def test_a_new_term_for_an_existing_one_is_not_a_merge() -> None:

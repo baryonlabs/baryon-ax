@@ -1,0 +1,173 @@
+{
+ "purpose": {
+  "keyphrases": [
+   [
+    "회의록"
+   ],
+   [
+    "지식",
+    "남기",
+    "기준"
+   ]
+  ],
+  "description": "회의록에서 정한 것을 지식(기준 초안)으로 남긴다"
+ },
+ "decisions": [
+  {
+   "statement": [
+    [
+     "정산"
+    ],
+    [
+     "2주"
+    ]
+   ],
+   "decided_by": [
+    "nam"
+   ],
+   "kind": "explicit",
+   "evidence_ts": [
+    "1700500100.000600"
+   ]
+  }
+ ],
+ "owner_confirmed": {
+  "count": 1,
+  "statements": [
+   [
+    [
+     "정산"
+    ],
+    [
+     "2주"
+    ]
+   ]
+  ]
+ },
+ "writes": {
+  "max_unapproved": 0
+ },
+ "confirmations": [
+  {
+   "card_ts": "1700500010.000200",
+   "by": "nam",
+   "result": "approved"
+  }
+ ],
+ "tacit": [],
+ "ontology_change": {
+  "must_add": [
+   {
+    "label": [
+     "출장비 정산",
+     "정산 기한",
+     "출장비"
+    ],
+    "definition": [
+     [
+      "2주"
+     ]
+    ]
+   }
+  ],
+  "must_not_contest": [
+   [
+    "출장비",
+    "정산"
+   ]
+  ],
+  "contest_count": 0
+ },
+ "questions": {
+  "max_count": 1,
+  "must_cover_links": [],
+  "forbidden": [
+   [
+    [
+     "정산"
+    ],
+    [
+     "기한",
+     "며칠",
+     "몇 주",
+     "1주",
+     "2주"
+    ]
+   ]
+  ]
+ },
+ "addressed_to_bot": {
+  "respond": [
+   "1700500000.000100"
+  ],
+  "silent": [
+   "1700500030.500300",
+   "1700500040.000400",
+   "1700500044.000500"
+  ]
+ },
+ "message_accounting": {
+  "min_attribution": 0.9,
+  "mentions": {
+   "1700500000.000100": [
+    "baryon"
+   ],
+   "1700500040.000400": [
+    "helper-bot"
+   ]
+  }
+ },
+ "incomplete_ts": [],
+ "mention_entities": {
+  "1700500000.000100": [
+   {
+    "id": "UBARYON0001",
+    "entity": [
+     "self"
+    ]
+   }
+  ],
+  "1700500040.000400": [
+   {
+    "id": "UTESTHELP01",
+    "entity": [
+     "helper-bot"
+    ]
+   }
+  ]
+ },
+ "authors": {
+  "UTESTNAM001": "human",
+  "UBARYON0001": "self",
+  "UTESTHELP01": "other_bot",
+  "UTESTNOTE01": "other_bot"
+ },
+ "source_trust": {
+  "other_bot_default": "needs_verification",
+  "claims": [
+   {
+    "statement": [
+     [
+      "정산"
+     ],
+     [
+      "1주"
+     ]
+    ],
+    "evidence_ts": [
+     "1700500030.500300"
+    ]
+   }
+  ]
+ },
+ "must_not_state": [
+  [
+   [
+    "정산"
+   ],
+   [
+    "1주"
+   ]
+  ]
+ ]
+}

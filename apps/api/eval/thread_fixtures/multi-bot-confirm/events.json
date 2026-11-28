@@ -1,0 +1,94 @@
+[
+ {
+  "type": "message",
+  "user": "UTESTNAM001",
+  "ts": "1700500000.000100",
+  "text": "<@UBARYON0001> 이번 주 회의록에서 정한 것 지식으로 남길 수 있어?"
+ },
+ {
+  "type": "message",
+  "subtype": "bot_message",
+  "user": "UBARYON0001",
+  "bot_id": "BBARYON0001",
+  "username": "baryon",
+  "ts": "1700500010.000200",
+  "text": "회의록에서 '출장비 정산은 2주 안에'를 기준 초안으로 남길까요?",
+  "blocks": [
+   {
+    "type": "section",
+    "text": {
+     "type": "mrkdwn",
+     "text": "회의록에서 '출장비 정산은 2주 안에'를 기준 초안으로 남길까요?"
+    }
+   },
+   {
+    "type": "actions",
+    "elements": [
+     {
+      "type": "button",
+      "action_id": "confirm_yes",
+      "text": {
+       "type": "plain_text",
+       "text": "응"
+      },
+      "value": "yes"
+     },
+     {
+      "type": "button",
+      "action_id": "confirm_no",
+      "text": {
+       "type": "plain_text",
+       "text": "아니"
+      },
+      "value": "no"
+     }
+    ]
+   }
+  ],
+  "thread_ts": "1700500000.000100"
+ },
+ {
+  "type": "block_actions",
+  "ts": "1700500030.400000",
+  "event_ts": "1700500030.400000",
+  "user": "UTESTNAM001",
+  "action_id": "confirm_yes",
+  "value": "yes",
+  "message_ts": "1700500010.000200",
+  "thread_ts": "1700500000.000100"
+ },
+ {
+  "type": "message",
+  "subtype": "bot_message",
+  "user": "UTESTNOTE01",
+  "bot_id": "BTESTNOTE01",
+  "username": "notes-bot",
+  "ts": "1700500030.500300",
+  "text": "정리: 출장비 정산 기한은 1주입니다. <@UBARYON0001|baryon>",
+  "thread_ts": "1700500000.000100"
+ },
+ {
+  "type": "message",
+  "user": "UTESTNAM001",
+  "ts": "1700500040.000400",
+  "text": "<@UTESTHELP01> 지난 회의록 링크 줘",
+  "thread_ts": "1700500000.000100"
+ },
+ {
+  "type": "message",
+  "subtype": "bot_message",
+  "user": "UTESTHELP01",
+  "bot_id": "BTESTHELP01",
+  "username": "helper-bot",
+  "ts": "1700500044.000500",
+  "text": "링크입니다: https://example.com/minutes/weekly",
+  "thread_ts": "1700500000.000100"
+ },
+ {
+  "type": "message",
+  "user": "UTESTNAM001",
+  "ts": "1700500100.000600",
+  "text": "정산 기한은 2주가 맞아",
+  "thread_ts": "1700500000.000100"
+ }
+]
