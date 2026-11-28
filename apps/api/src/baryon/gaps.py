@@ -578,56 +578,46 @@ _PACK_ID = re.compile(r"[A-Za-z0-9_-]{1,80}")
 
 
 class PackStore:
-    def __init__(self, root: str | Path | None = None) -> None:
-        default = os.getenv("ONTOLOGY_STORE", "/tmp/baryon-ax-ontology")
-        self.root = Path(root or default)
+    """Gap packs live in the organization's one ontology (``loop.LoopStore``, ``packs``) since S4: saving a pack also
+    merges its typed entities and open slots into the same terms and relations the loop uses (``ontology_merge``).
+    The admin API (``/v1/admin/ontology-packs``) is unchanged. ``ontology_migrate`` moves packs written as
+    ``$ONTOLOGY_STORE/ont_*.json`` before S4."""
+
+    def __init__(self, root: str | Path | None = None, store: Any = None) -> None:
+        from .loop import LoopStore
+
+        self.store = store or (LoopStore(Path(root) / "loop") if root else LoopStore())
 
     def save(self, pack: dict[str, Any]) -> dict[str, Any]:
-        self.root.mkdir(parents=True, exist_ok=True)
-        (self.root / f"{pack['id']}.json").write_text(
-            json.dumps(pack, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        from .ontology_merge import merge_pack
+
+        self.store.update(pack["organization_id"], lambda data: merge_pack(data, pack))
         return pack
 
     def list(self, organization_id: str, limit: int = 50) -> list[dict[str, Any]]:
-        packs: list[dict[str, Any]] = []
-        if not self.root.exists():
-            return packs
-        for path in sorted(self.root.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
-            try:
-                pack = json.loads(path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                continue
-            if pack.get("organization_id") == organization_id:
-                packs.append(pack)
-            if len(packs) >= limit:
-                break
-        return packs
+        packs = sorted(self.store.load(organization_id)["packs"].values(), key=lambda pack: pack.get("saved_at", ""), reverse=True)
+        return [_without_store_fields(pack) for pack in packs if pack.get("organization_id") == organization_id][:limit]
 
     def purge_organization(self, organization_id: str) -> int:
-        removed = 0
-        if not self.root.exists():
+        def purge(data: dict) -> int:
+            removed = len(data["packs"])
+            pack_ids = set(data["packs"])
+            data["packs"] = {}
+            for key, term in list(data["terms"].items()):  # terms that only a pack gave are the pack's
+                sources = term.get("sources") or []
+                if sources and all(s.get("type") == "knowledge_gap" and s.get("pack_id") in pack_ids for s in sources):
+                    del data["terms"][key]
+            data["relations"] = [r for r in data["relations"] if r.get("s_id") in data["terms"]]
             return removed
-        for path in self.root.glob("*.json"):
-            try:
-                pack = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if pack.get("organization_id") == organization_id:
-                path.unlink(missing_ok=True)
-                removed += 1
-        return removed
+
+        return self.store.update(organization_id, purge)
 
     def get(self, organization_id: str, pack_id: str) -> dict[str, Any] | None:
-        # Pack ids are generated as ``ont_<hex>``; refuse anything that could
-        # leave the store directory.
         if not _PACK_ID.fullmatch(pack_id or ""):
             return None
-        path = self.root / f"{pack_id}.json"
-        if not path.exists():
-            return None
-        try:
-            pack = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return None
-        return pack if pack.get("organization_id") == organization_id else None
+        pack = self.store.load(organization_id)["packs"].get(pack_id)
+        return _without_store_fields(pack) if pack and pack.get("organization_id") == organization_id else None
+
+
+def _without_store_fields(pack: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in pack.items() if key != "saved_at"}

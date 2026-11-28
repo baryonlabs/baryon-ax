@@ -232,6 +232,9 @@ DEADLINE_RE = re.compile(r"(?P<when>(?:\d{1,2}월\s*)?\d{1,2}일|[월화수목�
 REASON_RE = re.compile(r"(?:니까|으니|라서|이라서|어서|아서|해서|여서|때문|면\s|이면|하면|에만|후에만|만\s*유효|^단\s|^다만\s|경우)")
 TOPIC_MARK = re.compile(r"(?<=\S)(?:은|는)\s+")
 ADVERBIAL = re.compile(r"(?:으로|로|에서|에|에게|한테|께|부터|까지|쪽|때|중|후|전|동안|으로는|로는|에서는|에는|에선|엔)[,]?$")
+CONTAINS_RE = re.compile(r"(?P<s>[가-힣A-Za-z0-9]{2,12})(?:에는|엔)\s+(?:(?:꼭|반드시|항상|늘)\s+)?(?P<o>[가-힣A-Za-z0-9]{2,12}?)(?:을|를)\s+"
+                         r"(?:(?:꼭|반드시|항상|늘|같이|함께)\s+)?(?P<p>적|기재|포함|넣|첨부|표시)")
+CONTAINS_VERB = {"적": "적는다", "기재": "기재한다", "포함": "포함한다", "넣": "넣는다", "첨부": "첨부한다", "표시": "표시한다"}
 ROLE_OF = re.compile(r"^(?P<s>.+?)의\s*(?P<r>역할|담당|정체)$")
 ROLE_WORDS = ("담당", "역할", "맡은 일", "하는 일", "정체", "담당자")
 UNKNOWN_RE = re.compile(r"정해진\s*(?:것|게)\s*없|기록에\s*없|모르|알\s*수\s*없|확인\s*(?:하지\s*)?못|없습니다$|없어요$|미정")
@@ -476,6 +479,9 @@ def understand_rules(thread: Thread) -> dict:
                     continue
             if is_question:
                 continue
+            for contains in CONTAINS_RE.finditer(sentence):  # "견적에는 납기를 꼭 적어요": what a document carries
+                out["relations"].append(_item(message.ts, anchor(contains.group(0), message) or quote, s=contains.group("s"),
+                                              p=CONTAINS_VERB[contains.group("p")], o=contains.group("o")))
             if AGREE_RE.search(sentence) and len(sentence) <= 24 and not explicit:  # "네 확정으로 알겠습니다"
                 signal = {"type": "reply", "value": sentence, "by": message.author_name, "by_id": message.author_id,
                           "ts": message.ts, "agree": True}

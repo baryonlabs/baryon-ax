@@ -3630,8 +3630,9 @@ async def ontology_extraction(questions: list[str], organization_id: str) -> Ont
     organization's earlier packs. ONTOLOGY_EXTRACTOR=rules forces the rules."""
     model = ontology_model_ready()
     extraction = await ontology_model_extract_each(questions, ontology_complete) if model else ontology_rule_extract(questions)
-    existing = [str(entity.get("name") or "") for pack in pack_store.list(organization_id, 50)
-                for entity in pack.get("entities") or []]
+    # one ontology since S4: names from earlier packs and from the loop's terms (documents, Slack threads) alike
+    existing = [name for term in pack_store.store.load(organization_id)["terms"].values() if term.get("kind") != "stub"
+                for name in [str(term.get("label") or ""), *(term.get("synonyms") or [])]]
     return await ontology_resolve_synonyms(extraction, existing, ontology_complete if model else None)
 
 

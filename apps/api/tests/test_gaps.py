@@ -181,5 +181,10 @@ def test_pack_store_persists_json_per_organization(tmp_path) -> None:
     loaded = store.get("org_gaps", pack["id"])
     assert loaded is not None and loaded["name"] == "테스트 팩"
     assert store.get("other_org", pack["id"]) is None
-    assert json.loads((tmp_path / f"{pack['id']}.json").read_text())["id"] == pack["id"]
+    # one ontology per organization since S4: the pack and its entities live in the loop store's file
+    stored = json.loads((tmp_path / "loop" / "org_gaps.json").read_text())
+    assert stored["packs"][pack["id"]]["id"] == pack["id"]
+    assert any(term["label"] == "인건비 예산" or "인건비" in term["label"] for term in stored["terms"].values())
     assert len(store.list("org_gaps")) == 1
+    store.save(pack)  # saving again adds nothing
+    assert len(json.loads((tmp_path / "loop" / "org_gaps.json").read_text())["terms"]) == len(stored["terms"])

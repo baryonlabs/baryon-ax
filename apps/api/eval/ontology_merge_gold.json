@@ -1,0 +1,701 @@
+{
+ "description": "Golden merge pairs for eval/merge_eval.py: an existing statement, a new one, and what the merger should do. Synthetic: invented names.",
+ "classes": [
+  "same",
+  "different",
+  "refine",
+  "contest"
+ ],
+ "pairs": [
+  {
+   "id": "p01",
+   "existing": {
+    "label": "견적서",
+    "value": "유효기간 30일",
+    "trust": "human"
+   },
+   "new": {
+    "label": "견적서",
+    "value": "유효기간 30일",
+    "trust": "human"
+   },
+   "expected": "same",
+   "why": "identical statement from another message"
+  },
+  {
+   "id": "p02",
+   "existing": {
+    "label": "연차 휴가",
+    "value": "입사 1년 뒤 15일",
+    "trust": "document"
+   },
+   "new": {
+    "label": "연차휴가",
+    "value": "입사 1년 뒤 15일",
+    "trust": "human"
+   },
+   "expected": "same",
+   "why": "spacing variant of the label"
+  },
+  {
+   "id": "p03",
+   "existing": {
+    "label": "견적서",
+    "value": "고객에게 보내는 가격 제안 문서",
+    "trust": "document"
+   },
+   "new": {
+    "label": "견적",
+    "value": "고객에게 보내는 가격 제안 문서",
+    "trust": "human"
+   },
+   "expected": "same",
+   "why": "one generic syllable (서)"
+  },
+  {
+   "id": "p04",
+   "existing": {
+    "label": "납기",
+    "value": "주문 확정 후 14일",
+    "trust": "document"
+   },
+   "new": {
+    "label": "납기일",
+    "value": "주문 확정 후 14일",
+    "trust": "human"
+   },
+   "expected": "same",
+   "why": "one generic syllable (일)"
+  },
+  {
+   "id": "p05",
+   "existing": {
+    "label": "정산 기한",
+    "value": "2주",
+    "trust": "owner"
+   },
+   "new": {
+    "label": "정산 기한",
+    "value": "14일",
+    "trust": "human"
+   },
+   "expected": "same",
+   "why": "the same duration in other units"
+  },
+  {
+   "id": "p06",
+   "existing": {
+    "label": "배포 일정",
+    "value": "매주 목요일 오후 4시",
+    "trust": "human"
+   },
+   "new": {
+    "label": "배포 일정",
+    "value": "목요일 오후 4시, 매주",
+    "trust": "human"
+   },
+   "expected": "same",
+   "why": "the same words in another order"
+  },
+  {
+   "id": "p07",
+   "existing": {
+    "label": "고객 지원 담당",
+    "value": "ryu",
+    "trust": "owner"
+   },
+   "new": {
+    "label": "고객 지원 담당",
+    "value": "ryu 님",
+    "trust": "human"
+   },
+   "expected": "same",
+   "why": "an honorific"
+  },
+  {
+   "id": "p08",
+   "existing": {
+    "label": "법인카드",
+    "value": "회사 명의로 발급한 결제 카드",
+    "trust": "document"
+   },
+   "new": {
+    "label": "법인 카드",
+    "value": "회사 명의로 발급한 결제 카드",
+    "trust": "human"
+   },
+   "expected": "same",
+   "why": "spacing variant"
+  },
+  {
+   "id": "p09",
+   "existing": {
+    "label": "출장비 한도",
+    "value": "1일 15만원",
+    "trust": "document"
+   },
+   "new": {
+    "label": "출장비 한도",
+    "value": "하루 15만 원",
+    "trust": "human"
+   },
+   "expected": "same",
+   "why": "the same amount written differently (hard)"
+  },
+  {
+   "id": "p10",
+   "existing": {
+    "label": "demo.site",
+    "value": "자체 서비스",
+    "trust": "human"
+   },
+   "new": {
+    "label": "demo.site",
+    "value": "자체 서비스이다",
+    "trust": "human"
+   },
+   "expected": "same",
+   "why": "a copula"
+  },
+  {
+   "id": "p11",
+   "existing": {
+    "label": "견적 유효기간",
+    "value": "30일",
+    "trust": "owner"
+   },
+   "new": {
+    "label": "견적 유효기간",
+    "value": "30일로 하죠",
+    "trust": "owner"
+   },
+   "expected": "same",
+   "why": "a decision restating the value"
+  },
+  {
+   "id": "p12",
+   "existing": {
+    "label": "환불",
+    "value": "구매 후 7일 이내 전액",
+    "trust": "document"
+   },
+   "new": {
+    "label": "환불 승인",
+    "value": "팀장이 한다",
+    "trust": "human"
+   },
+   "expected": "different",
+   "why": "an act about the term, not the term"
+  },
+  {
+   "id": "p13",
+   "existing": {
+    "label": "승인",
+    "value": "결재선 순서대로",
+    "trust": "document"
+   },
+   "new": {
+    "label": "승인자",
+    "value": "팀장",
+    "trust": "human"
+   },
+   "expected": "different",
+   "why": "the person, not the act"
+  },
+  {
+   "id": "p14",
+   "existing": {
+    "label": "법인카드",
+    "value": "회사 명의 결제 카드",
+    "trust": "document"
+   },
+   "new": {
+    "label": "법인카드 한도",
+    "value": "월 300만원",
+    "trust": "human"
+   },
+   "expected": "different",
+   "why": "an attribute of the term"
+  },
+  {
+   "id": "p15",
+   "existing": {
+    "label": "연차",
+    "value": "입사 1년 뒤 15일",
+    "trust": "document"
+   },
+   "new": {
+    "label": "반차",
+    "value": "4시간",
+    "trust": "human"
+   },
+   "expected": "different",
+   "why": "a sibling concept"
+  },
+  {
+   "id": "p16",
+   "existing": {
+    "label": "견적서",
+    "value": "고객에게 보내는 가격 제안 문서",
+    "trust": "document"
+   },
+   "new": {
+    "label": "계약서",
+    "value": "서명 후 효력이 생기는 문서",
+    "trust": "human"
+   },
+   "expected": "different",
+   "why": "a sibling document"
+  },
+  {
+   "id": "p17",
+   "existing": {
+    "label": "보고",
+    "value": "매주 금요일 팀장에게",
+    "trust": "human"
+   },
+   "new": {
+    "label": "보고서",
+    "value": "주간 실적을 정리한 문서",
+    "trust": "human"
+   },
+   "expected": "different",
+   "why": "the act and its document (hard: one syllable more)"
+  },
+  {
+   "id": "p18",
+   "existing": {
+    "label": "배포",
+    "value": "매주 목요일",
+    "trust": "human"
+   },
+   "new": {
+    "label": "배포 승인",
+    "value": "리드가 한다",
+    "trust": "human"
+   },
+   "expected": "different",
+   "why": "an act about the term"
+  },
+  {
+   "id": "p19",
+   "existing": {
+    "label": "정산",
+    "value": "월말에 한 번",
+    "trust": "document"
+   },
+   "new": {
+    "label": "정산 기한",
+    "value": "2주",
+    "trust": "human"
+   },
+   "expected": "different",
+   "why": "an attribute of the term"
+  },
+  {
+   "id": "p20",
+   "existing": {
+    "label": "고객 지원",
+    "value": "ryu",
+    "trust": "human"
+   },
+   "new": {
+    "label": "고객 지원 채널",
+    "value": "support 채널",
+    "trust": "human"
+   },
+   "expected": "different",
+   "why": "a part of the term"
+  },
+  {
+   "id": "p21",
+   "existing": {
+    "label": "출장비",
+    "value": "실비 정산",
+    "trust": "document"
+   },
+   "new": {
+    "label": "출장",
+    "value": "국내외 업무 이동",
+    "trust": "human"
+   },
+   "expected": "different",
+   "why": "the thing the cost is for"
+  },
+  {
+   "id": "p22",
+   "existing": {
+    "label": "QA",
+    "value": "수요일까지",
+    "trust": "human"
+   },
+   "new": {
+    "label": "QA 체크리스트",
+    "value": "배포 전 확인 항목",
+    "trust": "human"
+   },
+   "expected": "different",
+   "why": "a document of the term"
+  },
+  {
+   "id": "p23",
+   "existing": {
+    "label": "운영 콘솔",
+    "value": "승인 채널",
+    "trust": "human"
+   },
+   "new": {
+    "label": "운영",
+    "value": "실행 봇",
+    "trust": "human"
+   },
+   "expected": "different",
+   "why": "a name that starts the same"
+  },
+  {
+   "id": "p24",
+   "existing": {
+    "label": "견적서",
+    "value": "고객에게 보내는 가격 제안 문서",
+    "trust": "document"
+   },
+   "new": {
+    "label": "견적서",
+    "value": "고객에게 보내는 가격 제안 문서로 납기와 유효기간을 적는다",
+    "trust": "human"
+   },
+   "expected": "refine",
+   "why": "adds what it carries"
+  },
+  {
+   "id": "p25",
+   "existing": {
+    "label": "견적 유효기간",
+    "value": "30일",
+    "trust": "owner"
+   },
+   "new": {
+    "label": "견적 유효기간",
+    "value": "30일, 원자재 급등 시 15일",
+    "trust": "owner"
+   },
+   "expected": "refine",
+   "why": "adds an exception"
+  },
+  {
+   "id": "p26",
+   "existing": {
+    "label": "고객 지원 담당",
+    "value": "ryu",
+    "trust": "human"
+   },
+   "new": {
+    "label": "고객 지원 담당",
+    "value": "ryu 님(11월 순번)",
+    "trust": "human"
+   },
+   "expected": "refine",
+   "why": "adds why"
+  },
+  {
+   "id": "p27",
+   "existing": {
+    "label": "배포",
+    "value": "매주 목요일 오후 4시",
+    "trust": "human"
+   },
+   "new": {
+    "label": "배포",
+    "value": "매주 목요일 오후 4시, QA는 수요일까지",
+    "trust": "human"
+   },
+   "expected": "refine",
+   "why": "adds a condition"
+  },
+  {
+   "id": "p28",
+   "existing": {
+    "label": "연차",
+    "value": "입사 1년 뒤 15일",
+    "trust": "document"
+   },
+   "new": {
+    "label": "연차",
+    "value": "입사 1년 뒤 15일, 2년마다 1일 추가",
+    "trust": "document"
+   },
+   "expected": "refine",
+   "why": "adds a rule"
+  },
+  {
+   "id": "p29",
+   "existing": {
+    "label": "납기",
+    "value": "주문 확정 후 14일",
+    "trust": "document"
+   },
+   "new": {
+    "label": "납기",
+    "value": "주문 확정 후 14일, 맞춤 제작품은 협의",
+    "trust": "human"
+   },
+   "expected": "refine",
+   "why": "adds an exception"
+  },
+  {
+   "id": "p30",
+   "existing": {
+    "label": "법인카드",
+    "value": "회사 명의 결제 카드",
+    "trust": "document"
+   },
+   "new": {
+    "label": "법인카드",
+    "value": "회사 명의 결제 카드, 개인 용도 사용 금지",
+    "trust": "human"
+   },
+   "expected": "refine",
+   "why": "adds a rule"
+  },
+  {
+   "id": "p31",
+   "existing": {
+    "label": "정산 기한",
+    "value": "2주",
+    "trust": "owner"
+   },
+   "new": {
+    "label": "정산 기한",
+    "value": "1주",
+    "trust": "needs_verification"
+   },
+   "expected": "refine",
+   "why": "another bot disagrees with the owner: kept as needs_verification, no [쟁점]"
+  },
+  {
+   "id": "p32",
+   "existing": {
+    "label": "고객 지원 담당",
+    "value": "song",
+    "trust": "needs_verification"
+   },
+   "new": {
+    "label": "고객 지원 담당",
+    "value": "ryu",
+    "trust": "owner"
+   },
+   "expected": "refine",
+   "why": "the owner overrides another bot"
+  },
+  {
+   "id": "p33",
+   "existing": {
+    "label": "견적서 담당",
+    "value": "park",
+    "trust": "human"
+   },
+   "new": {
+    "label": "견적서 담당",
+    "value": "kim",
+    "trust": "owner"
+   },
+   "expected": "refine",
+   "why": "the owner overrides a person"
+  },
+  {
+   "id": "p34",
+   "existing": {
+    "label": "연차",
+    "value": "입사 1년 뒤 15일",
+    "trust": "document"
+   },
+   "new": {
+    "label": "연차",
+    "value": "입사 1년 뒤 20일",
+    "trust": "document"
+   },
+   "expected": "contest",
+   "why": "two documents, two numbers"
+  },
+  {
+   "id": "p35",
+   "existing": {
+    "label": "정산 기한",
+    "value": "1주",
+    "trust": "needs_verification"
+   },
+   "new": {
+    "label": "정산 기한",
+    "value": "2주",
+    "trust": "needs_verification"
+   },
+   "expected": "contest",
+   "why": "two bots, two durations"
+  },
+  {
+   "id": "p36",
+   "existing": {
+    "label": "고객 지원 담당",
+    "value": "song 님",
+    "trust": "human"
+   },
+   "new": {
+    "label": "고객 지원 담당",
+    "value": "ryu 님",
+    "trust": "human"
+   },
+   "expected": "contest",
+   "why": "two people, two names"
+  },
+  {
+   "id": "p37",
+   "existing": {
+    "label": "환불 승인 기준",
+    "value": "아직 안 정했어",
+    "trust": "human"
+   },
+   "new": {
+    "label": "환불 승인 기준",
+    "value": "50만원 이하는 팀장",
+    "trust": "human"
+   },
+   "expected": "contest",
+   "why": "not decided against a value"
+  },
+  {
+   "id": "p38",
+   "existing": {
+    "label": "배포 일정",
+    "value": "목요일 오후 4시",
+    "trust": "human"
+   },
+   "new": {
+    "label": "배포 일정",
+    "value": "화요일 오전 10시",
+    "trust": "human"
+   },
+   "expected": "contest",
+   "why": "two times"
+  },
+  {
+   "id": "p39",
+   "existing": {
+    "label": "워크숍 장소",
+    "value": "5층 세미나실",
+    "trust": "human"
+   },
+   "new": {
+    "label": "워크숍 장소",
+    "value": "3층 회의실",
+    "trust": "human"
+   },
+   "expected": "contest",
+   "why": "two floors"
+  },
+  {
+   "id": "p40",
+   "existing": {
+    "label": "출장비 한도",
+    "value": "1일 15만원",
+    "trust": "document"
+   },
+   "new": {
+    "label": "출장비 한도",
+    "value": "1일 20만원",
+    "trust": "document"
+   },
+   "expected": "contest",
+   "why": "two amounts"
+  },
+  {
+   "id": "p41",
+   "existing": {
+    "label": "토끼봇",
+    "value": "AI 비서 앱",
+    "trust": "needs_verification"
+   },
+   "new": {
+    "label": "토끼봇",
+    "value": "아이디어 정리 도구",
+    "trust": "needs_verification"
+   },
+   "expected": "contest",
+   "why": "two bots, nothing in common"
+  },
+  {
+   "id": "p42",
+   "existing": {
+    "label": "담당 시스템",
+    "value": "Jira",
+    "trust": "human"
+   },
+   "new": {
+    "label": "담당 시스템",
+    "value": "Linear",
+    "trust": "human"
+   },
+   "expected": "contest",
+   "why": "two tools"
+  },
+  {
+   "id": "p43",
+   "existing": {
+    "label": "보안 교육",
+    "value": "연 1회",
+    "trust": "document"
+   },
+   "new": {
+    "label": "보안 교육",
+    "value": "분기 1회",
+    "trust": "document"
+   },
+   "expected": "contest",
+   "why": "two periods with the same count (hard)"
+  },
+  {
+   "id": "p44",
+   "existing": {
+    "label": "견적서",
+    "value": "고객에게 보내는 가격 제안 문서",
+    "trust": "document"
+   },
+   "new": {
+    "label": "견적서",
+    "value": "내부 원가 계산표",
+    "trust": "document"
+   },
+   "expected": "contest",
+   "why": "two documents, nothing in common"
+  },
+  {
+   "id": "p45",
+   "existing": {
+    "label": "회의록 보관",
+    "value": "3년",
+    "trust": "document"
+   },
+   "new": {
+    "label": "회의록 보관",
+    "value": "5년",
+    "trust": "document"
+   },
+   "expected": "contest",
+   "why": "two durations"
+  },
+  {
+   "id": "p46",
+   "existing": {
+    "label": "승인 채널",
+    "value": "운영 콘솔에서 받은 것만 유효",
+    "trust": "human"
+   },
+   "new": {
+    "label": "승인 채널",
+    "value": "슬랙 DM도 유효",
+    "trust": "human"
+   },
+   "expected": "contest",
+   "why": "only here vs also there (hard)"
+  }
+ ]
+}
