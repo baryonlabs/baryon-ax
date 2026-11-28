@@ -257,6 +257,20 @@ class TenantRegistry:
             self._save()
             return tenant
 
+    def remove(self, tenant_id: str) -> bool:
+        """Hard-delete a registry record. Only for signup compensation.
+
+        Normal offboarding goes through :meth:`mark_purged`, which keeps the
+        record so the organization id cannot be reused by accident. A tenant
+        that was created moments ago by a failed signup has no data or audit
+        history, so removing it is safe and lets the person retry the same code.
+        """
+        with self._lock:
+            if self._tenants.pop(tenant_id, None) is None:
+                return False
+            self._save()
+            return True
+
 
 # --------------------------------------------------------------------------- usage
 

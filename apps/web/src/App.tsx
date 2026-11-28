@@ -187,13 +187,38 @@ type McpStatus = {
   tools: number; read_tools: number; write_tools: number; execution: string;
 };
 const API = "/api";
-const CURRENT_USER = "local-user";
-const CURRENT_ORG = "local-org";
+const DEFAULT_USER = "local-user";
+const DEFAULT_ORG = "local-org";
+
+/** Dev-only identity. In OIDC mode the API derives identity from the bearer token. */
+const USER_PATTERN = /^[A-Za-z0-9:._+@-]{1,128}$/;
+const ORG_PATTERN = /^[a-z0-9-]{2,40}$/;
+
+function storedDevValue(key: string, fallback: string, pattern: RegExp): string {
+  const value = localStorage.getItem(key) || fallback;
+  return pattern.test(value) ? value : fallback;
+}
+
+function initialDevOrganization(): string {
+  const fromUrl = new URLSearchParams(window.location.search).get("organization");
+  if (fromUrl && ORG_PATTERN.test(fromUrl)) {
+    localStorage.setItem("baryon-organization", fromUrl);
+    return fromUrl;
+  }
+  return storedDevValue("baryon-organization", DEFAULT_ORG, ORG_PATTERN);
+}
+
+const CURRENT_USER = storedDevValue("baryon-user", DEFAULT_USER, USER_PATTERN);
+const CURRENT_ORG = initialDevOrganization();
 
 function identity(role: Role): Record<string, string> {
   // In OIDC mode the API derives identity from the bearer token (added by apiFetch).
   if (OIDC_ENABLED) return {};
-  return { "X-User-Id": CURRENT_USER, "X-Organization-Id": CURRENT_ORG, "X-Roles": role };
+  return {
+    "X-User-Id": storedDevValue("baryon-user", CURRENT_USER, USER_PATTERN),
+    "X-Organization-Id": storedDevValue("baryon-organization", CURRENT_ORG, ORG_PATTERN),
+    "X-Roles": role,
+  };
 }
 
 const UPLOAD_ACCEPT = ".txt,.md,.markdown,.mdown,.pdf,.hwp,.hwpx,.hwpml,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.png,.jpg,.jpeg,.webp,.gif,.tif,.tiff,.html,.htm,.csv,.json";

@@ -41,13 +41,19 @@ from .ingest.pipeline import PipelineConfig, PermanentError, run_pipeline
 from .knowledge import MAX_ENCODED_BYTES, MAX_ITEMS, KnowledgeIngest, KnowledgeItem, KnowledgeProgram, KnowledgeRead
 from .feedback import FeedbackStore
 from .gaps import GapStore, PackStore, build_pack, cluster_gaps, detect_reasons, is_small_talk, verify_pack
+from .idp import ProvisionedOrganization, build_idp_adapter
+from .invites import (
+    DEFAULT_EXPIRES_DAYS, InviteAlreadyUsed, InviteError, InviteInvalid, InviteNotFound,
+    InviteStore, SignupRateLimited, SignupRateLimiter, normalize_email,
+)
+from .mailer import Mailer
 from .ontology import Extraction as OntologyExtraction, model_extract_each as ontology_model_extract_each, resolve_synonyms as ontology_resolve_synonyms, rule_extract as ontology_rule_extract
 from .mcp import MCPClient, MCPGatewayError
 from .mcp_server import MCPServer, Tool, ToolError, parse_body
 from .open_source import open_source_payload
 from .tacit import QUESTION_TEMPLATES, TacitStore, suggest_questions
 from .tenants import (
-    OrgUserIndex, TenancySettings, TenantError, TenantExists, TenantRegistry, UploadReservations,
+    OrgUserIndex, TenancySettings, Tenant, TenantError, TenantExists, TenantRegistry, UploadReservations,
     UsageMeter, estimate_tokens, seconds_until_next_day, seconds_until_next_month,
 )
 
@@ -1798,6 +1804,12 @@ tenant_registry = TenantRegistry()
 usage_meter = UsageMeter()
 upload_reservations = UploadReservations()
 memory_users = OrgUserIndex()
+# Invite-code signup (docs/multi-tenancy.md). The store keeps hashes only; the
+# IdP adapter is a no-op unless AUTH_MODE=oidc and Keycloak is configured.
+invite_store = InviteStore()
+signup_limiter = SignupRateLimiter()
+idp_adapter = build_idp_adapter()
+mailer = Mailer()
 if tenancy.pooled and AUTH_CONFIG.mode != "oidc":
     logger.warning(
         "TENANCY_MODE=pooled with AUTH_MODE=dev trusts the X-Organization-Id header; "
@@ -4214,22 +4226,37 @@ def purge_tenant_data(tenant_id: str) -> tuple[dict[str, int], list[str]]:
     return summary, errors
 
 
+def register_tenant(
+    tenant_id: str, name: str, *, plan: str, quotas: dict | None, notes: str, principal: Principal,
+    source: str = "platform", **audit_extra: object,
+) -> tuple[Tenant, str]:
+    """Create a tenant and emit ``tenant.created``. Shared by the platform API and signup.
+
+    Signup reuses this path so plan/quota defaults and the audit event are
+    identical to an operator-created tenant.
+    """
+    try:
+        tenant = tenant_registry.create(tenant_id, name, plan=plan, quotas=quotas, notes=notes)
+    except TenantExists as error:
+        raise HTTPException(409, str(error)) from error
+    except TenantError as error:
+        raise HTTPException(422, str(error)) from error
+    trace_id = str(uuid.uuid4())
+    audit.emit("tenant.created", principal, trace_id, tenant_id=tenant.id, name=tenant.name,
+               plan=tenant.plan, quotas=tenant.quotas, source=source, **audit_extra)
+    return tenant, trace_id
+
+
 @app.post("/v1/platform/tenants", status_code=201)
 async def create_tenant(
     payload: TenantCreate,
     x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
 ) -> dict:
     principal = platform_principal(x_user_id, x_organization_id, x_roles)
-    try:
-        tenant = tenant_registry.create(
-            payload.id, payload.name, plan=payload.plan, quotas=payload.quotas.model_dump(), notes=payload.notes,
-        )
-    except TenantExists as error:
-        raise HTTPException(409, str(error)) from error
-    except TenantError as error:
-        raise HTTPException(422, str(error)) from error
-    audit.emit("tenant.created", principal, str(uuid.uuid4()), tenant_id=tenant.id, name=tenant.name,
-               plan=tenant.plan, quotas=tenant.quotas)
+    tenant, _ = register_tenant(
+        payload.id, payload.name, plan=payload.plan, quotas=payload.quotas.model_dump(),
+        notes=payload.notes, principal=principal, source="platform",
+    )
     return tenant.as_dict()
 
 
@@ -4355,6 +4382,208 @@ async def get_tenant_audit_events(
     events = audit.recent_for_tenant(tenant_id, limit)
     audit.emit("tenant.audit_viewed", principal, str(uuid.uuid4()), tenant_id=tenant_id, returned=len(events))
     return {"data": events}
+
+
+# --------------------------------------------------------------------------- invites & signup
+# A platform administrator issues a one-time code bound to an organization id
+# and an e-mail address. The person redeems it at the public /v1/signup
+# endpoint; that creates the tenant, prepares the IdP and mails a sign-in link.
+# The raw code is returned only by POST /v1/platform/invites. Audit events use
+# the invite id, never the code.
+
+class InviteCreate(BaseModel):
+    organization_id: str = Field(pattern=TENANT_PATH_PATTERN)
+    email: str = Field(min_length=3, max_length=254)
+    expires_days: int = Field(default=DEFAULT_EXPIRES_DAYS, ge=1, le=365)
+    notes: str = Field(default="", max_length=2000)
+
+
+class SignupRequest(BaseModel):
+    code: str = Field(min_length=4, max_length=128)
+    email: str = Field(min_length=3, max_length=254)
+    org_name: str = Field(min_length=1, max_length=120)
+
+
+def signup_login_url(organization_id: str) -> str:
+    base = os.getenv("APP_BASE_URL", "").strip().rstrip("/") or "http://localhost:5173"
+    return f"{base}/?organization={urllib.parse.quote(organization_id)}"
+
+
+def signup_client_ip(request: Request) -> str:
+    """Client address for the signup limiter.
+
+    Behind nginx/ALB the socket peer is the proxy. Set ``TRUST_PROXY_HEADERS=true``
+    only when a trusted proxy in front sets ``X-Forwarded-For`` (the bundled
+    web nginx does); otherwise a caller could spoof the header.
+    """
+    if os.getenv("TRUST_PROXY_HEADERS", "false").strip().lower() in {"1", "true", "yes", "on"}:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip()[:64] or "unknown"
+        real = request.headers.get("x-real-ip", "").strip()
+        if real:
+            return real[:64]
+    return (request.client.host if request.client and request.client.host else "unknown")[:64]
+
+
+def invite_invalid() -> HTTPException:
+    """One message for a wrong, expired, revoked, wrong-e-mail or used code."""
+    return HTTPException(
+        400,
+        {"code": "invite_invalid", "message": "The invitation code is invalid or has expired."},
+    )
+
+
+def signup_result(tenant: Tenant, email: str, email_sent: bool, login_url: str, already_redeemed: bool) -> dict:
+    payload = {
+        "status": "invited",
+        "organization_id": tenant.id,
+        "organization_name": tenant.name,
+        "email": email,
+        "email_sent": email_sent,
+        "already_redeemed": already_redeemed,
+    }
+    # When no mail went out (development, or an SMTP failure) hand the link back
+    # so the person is not stranded. The link is not a secret.
+    if not email_sent:
+        payload["login_url"] = login_url
+    return payload
+
+
+@app.post("/v1/platform/invites", status_code=201)
+async def create_invite(
+    payload: InviteCreate,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = platform_principal(x_user_id, x_organization_id, x_roles)
+    try:
+        invite, code = invite_store.create(
+            payload.organization_id, payload.email, expires_days=payload.expires_days,
+            created_by=principal.user_id, notes=payload.notes,
+        )
+    except TenantError as error:
+        raise HTTPException(422, str(error)) from error
+    except InviteError as error:
+        raise HTTPException(422, str(error)) from error
+    audit.emit("invite.created", principal, str(uuid.uuid4()), tenant_id=invite.organization_id,
+               invite_id=invite.id, email=invite.email, expires_at=invite.expires_at)
+    # ``code`` is the only place the raw code ever appears.
+    return {**invite.as_dict(), "code": code}
+
+
+@app.get("/v1/platform/invites")
+async def list_invites(
+    status: Literal["pending", "used", "expired", "revoked"] | None = Query(None),
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    platform_principal(x_user_id, x_organization_id, x_roles)
+    invites = invite_store.list(status)
+    return {"data": [invite.as_dict() for invite in invites], "total": len(invites)}
+
+
+@app.delete("/v1/platform/invites/{invite_id}")
+async def revoke_invite(
+    invite_id: str,
+    x_user_id: str | None = Header(None), x_organization_id: str | None = Header(None), x_roles: str | None = Header(None),
+) -> dict:
+    principal = platform_principal(x_user_id, x_organization_id, x_roles)
+    try:
+        invite = invite_store.revoke(invite_id)
+    except InviteNotFound as error:
+        raise HTTPException(404, str(error)) from error
+    except InviteAlreadyUsed as error:
+        raise HTTPException(409, str(error)) from error
+    audit.emit("invite.revoked", principal, str(uuid.uuid4()), tenant_id=invite.organization_id,
+               invite_id=invite.id, email=invite.email)
+    return invite.as_dict()
+
+
+@app.post("/v1/signup", status_code=201)
+async def signup(payload: SignupRequest, request: Request) -> dict:
+    """Public signup: redeem an invite, create a tenant, invite its first admin."""
+    client_ip = signup_client_ip(request)
+    try:
+        signup_limiter.admit(client_ip, payload.code)
+    except SignupRateLimited as error:
+        raise HTTPException(
+            429,
+            {"code": "rate_limited", "message": "Too many signup attempts. Try again later."},
+            headers={"Retry-After": str(error.retry_after)},
+        ) from error
+    try:
+        email = normalize_email(payload.email)
+    except InviteError as error:
+        raise invite_invalid() from error
+    org_name = payload.org_name.strip()
+    if not org_name:
+        raise HTTPException(422, {"code": "invalid_org_name", "message": "Organization name is required."})
+
+    try:
+        state, invite, token = invite_store.claim(payload.code, email)
+    except InviteInvalid as error:
+        raise invite_invalid() from error
+    if invite is None or state == "busy" or (state == "claimed" and token is None):
+        raise invite_invalid()
+    login_url = signup_login_url(invite.organization_id)
+
+    if state == "already":
+        tenant = tenant_registry.get(invite.organization_id)
+        if tenant is None or not tenant.active:
+            raise invite_invalid()
+        # Idempotent retry: do not create a second tenant; re-send the mail so a
+        # lost message does not strand the first administrator.
+        sent = await asyncio.to_thread(mailer.send_invite, email, tenant.name, tenant.id, login_url)
+        audit.emit("invite.resent", Principal(email, tenant.id, {"admin"}), str(uuid.uuid4()),
+                   tenant_id=tenant.id, invite_id=invite.id, email=email, email_sent=sent)
+        return signup_result(tenant, email, sent, login_url, True)
+
+    if tenant_registry.get(invite.organization_id) is not None:
+        invite_store.release(invite.id, token)
+        raise invite_invalid()
+
+    principal = Principal(user_id=email, organization_id=invite.organization_id, roles={"admin"})
+    try:
+        tenant, trace_id = register_tenant(
+            invite.organization_id, org_name, plan="standard", quotas=None,
+            notes=f"invite:{invite.id}", principal=principal, source="invite_signup",
+            invite_id=invite.id, email=email,
+        )
+    except HTTPException:
+        # Includes TenantExists races. Never tell the caller whether the tenant
+        # or e-mail already existed.
+        invite_store.release(invite.id, token)
+        raise invite_invalid()
+
+    provisioned: ProvisionedOrganization | None = None
+    try:
+        provisioned = await asyncio.to_thread(
+            idp_adapter.provision, tenant.id, tenant.name, email, login_url,
+        )
+    except Exception as error:
+        logger.exception("IdP provisioning failed for signup tenant %s", tenant.id)
+        if provisioned is not None:
+            try:
+                await asyncio.to_thread(idp_adapter.rollback, provisioned)
+            except Exception:
+                logger.exception("IdP rollback failed for signup tenant %s", tenant.id)
+        # Compensating transaction: the tenant was created moments ago and has
+        # no data, so remove the registry record and return the code to the pool.
+        tenant_registry.remove(tenant.id)
+        invite_store.release(invite.id, token)
+        audit.emit("invite.provision_failed", principal, trace_id, tenant_id=tenant.id,
+                   invite_id=invite.id, email=email, idp=idp_adapter.mode, reason=type(error).__name__)
+        raise HTTPException(
+            502,
+            {"code": "provision_failed", "message": "The organization could not be created. Please try again."},
+        ) from error
+
+    sent = await asyncio.to_thread(mailer.send_invite, email, tenant.name, tenant.id, login_url)
+    invite_store.complete(invite.id, token, email)
+    audit.emit("invite.redeemed", principal, trace_id, tenant_id=tenant.id, invite_id=invite.id,
+               email=email, idp=idp_adapter.mode, email_sent=sent)
+    if not sent:
+        audit.emit("invite.email_skipped", principal, trace_id, tenant_id=tenant.id, invite_id=invite.id)
+    return signup_result(tenant, email, sent, login_url, False)
 
 
 # --------------------------------------------------------------------------- MCP server

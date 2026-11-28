@@ -644,3 +644,32 @@ details.trace[open] summary::before { transform: rotate(90deg); }
 /* The global chat "form" style (border, 34px icon button) must not apply to the crawl form. */
 form.web-crawl-form { border: 0; border-radius: 0; overflow: visible; background: none; align-items: center; }
 form.web-crawl-form button { width: auto; height: auto; margin: 0; padding: 9px 16px; border-radius: 8px; display: inline-flex; align-self: auto; font-weight: 600; }
+
+/* Invite-code signup (/signup, Signup.tsx). A public page: no sidebar. */
+.signup-page { min-height: 100dvh; display: grid; place-items: center; padding: 32px 18px; background: radial-gradient(circle at 78% 0%, #1b3055 0, transparent 34%), var(--bg); }
+.signup-card { width: min(540px, 100%); display: grid; gap: 18px; padding: 28px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: rgba(15, 23, 41, .92); box-shadow: var(--shadow); }
+.signup-brand { display: flex; align-items: center; gap: 12px; }
+.signup-brand h1 { font-size: 22px; }
+.signup-locale { margin-left: auto; }
+.signup-intro { margin: 0; color: var(--text-soft); font-size: 13px; line-height: 1.6; }
+form.signup-form { display: grid; gap: 14px; border: 0; border-radius: 0; overflow: visible; background: none; }
+.signup-field { display: grid; gap: 6px; color: var(--text-soft); font-size: 12px; font-weight: 600; }
+.signup-field input { width: 100%; padding: 11px 12px; border: 1px solid var(--border-strong); border-radius: 9px; background: #0d1728; color: var(--text); font-weight: 400; }
+.signup-field small { color: var(--muted); font-size: 11px; font-weight: 400; }
+.signup-form .signup-submit { width: 100%; margin: 2px 0 0; height: auto; padding: 11px 14px; display: inline-flex; align-items: center; justify-content: center; align-self: stretch; border-radius: 10px; font-weight: 650; }
+.signup-error { margin: 0; padding: 10px 12px; border: 1px solid rgba(240, 110, 110, .35); border-radius: 8px; background: rgba(240, 110, 110, .08); color: #ff9b9b; font-size: 12px; line-height: 1.5; }
+.signup-success { display: grid; gap: 14px; color: var(--text-soft); font-size: 13px; line-height: 1.6; }
+.signup-success > svg { color: #7fe0a9; }
+.signup-success p { margin: 0; }
+.signup-success dl { display: grid; gap: 8px; margin: 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: rgba(17, 28, 47, .7); }
+.signup-success dl div { display: flex; justify-content: space-between; gap: 12px; }
+.signup-success dt { color: var(--muted); font-size: 11px; }
+.signup-success dd { margin: 0; color: var(--text); font-size: 12px; overflow-wrap: anywhere; }
+.signup-success a.primary.signup-login { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 11px 14px; border-radius: 10px; text-decoration: none; font-weight: 650; }
+.signup-back { display: inline-flex; align-items: center; gap: 6px; justify-self: start; color: var(--muted); font-size: 12px; text-decoration: none; }
+.signup-back:hover { color: var(--text); }
+@media (max-width: 620px) {
+  .signup-card { padding: 22px 18px; }
+  .signup-brand { flex-wrap: wrap; }
+  .signup-locale { margin-left: 0; }
+}
