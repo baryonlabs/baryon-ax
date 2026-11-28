@@ -252,7 +252,9 @@ def test_thread_without_files_answers_normally() -> None:
     ask = {"channel": "C1", "user": "U1", "ts": "101.0", "thread_ts": "100.0", "text": "<@UBOT> 분석하라"}
     web = FakeWeb(replies=[{"user": "U1", "ts": "100.0", "text": "주간 보고 초안"}, ask])
     bot(api).answer(ask, web)
-    assert not api.uploads and api.chats and api.chats[0].get("use_retrieval", True) is True
+    # nothing to register: a question, read against the thread first (no search, no gap), not an intake
+    assert not api.uploads and api.chats and api.chats[0].get("use_retrieval") is False and api.chats[0].get("record_gap") is False
+    assert "주간 보고 초안" in api.chats[0]["messages"][0]["content"]
 
 
 def read_sheet(content: bytes) -> dict[str, list[tuple]]:

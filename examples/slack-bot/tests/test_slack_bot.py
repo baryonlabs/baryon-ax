@@ -22,11 +22,14 @@ CITATIONS = [
 ]
 
 
-def fake_api(requests: list[httpx.Request], fail: bool = False) -> httpx.Client:
+def fake_api(requests: list[httpx.Request], fail: bool = False, thread_answer: str = "NO_ANSWER_IN_THREAD") -> httpx.Client:
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
         if fail:
             return httpx.Response(502, json={"detail": "model down"})
+        if request.url.path == "/v1/chat/completions" and json.loads(request.content).get("use_retrieval") is False:
+            # the thread-first call (no retrieval): the thread does not answer it unless the test says so
+            return httpx.Response(200, json={"id": "trace-t", "choices": [{"message": {"role": "assistant", "content": thread_answer}}]})
         if request.url.path == "/v1/chat/completions":
             return httpx.Response(200, json={
                 "id": "trace-1", "choices": [{"message": {"role": "assistant", "content": "연차휴가는 **입사 1년 후 15일**입니다."}}],
@@ -269,7 +272,10 @@ def test_thread_mention_sends_history_and_survives_missing_scope() -> None:
     replies = [{"user": "U1", "text": "연차는 며칠?", "ts": "1"}, {"user": BOT, "bot_id": "B", "text": "15일", "ts": "2"},
                {"user": "U2", "text": "<@UBOT> 반차도 돼?", "ts": "3"}]
     responder(requests).answer({"channel": "C1", "user": "U2", "ts": "3", "thread_ts": "1", "text": "<@UBOT> 반차도 돼?"}, FakeWeb(replies))
-    assert [m["role"] for m in json.loads(requests[0].content)["messages"]] == ["user", "assistant", "user"]
+    first = json.loads(requests[0].content)  # the thread first: no retrieval, never a gap
+    assert first["use_retrieval"] is False and first["record_gap"] is False and "U1: 연차는 며칠?" in first["messages"][0]["content"]
+    # the thread did not answer it: the documents, with the whole thread as history
+    assert [m["role"] for m in json.loads(requests[1].content)["messages"]] == ["user", "assistant", "user"]
 
     requests.clear()
     responder(requests).answer({"channel": "C1", "user": "U2", "ts": "3", "thread_ts": "1", "text": "<@UBOT> 반차도 돼?"},

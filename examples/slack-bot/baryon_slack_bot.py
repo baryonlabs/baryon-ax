@@ -24,9 +24,11 @@ from typing import Any
 
 import httpx
 
+import router as routing
+import thread_state
 from baryon_auth import ApiAuth, TokenSource
 from slack_text import Message, UserDirectory, readable
-from thread_snapshot import fetch_replies
+from thread_snapshot import ThreadSnapshot, fetch_replies, understanding_payload
 
 logger = logging.getLogger("baryon.slack")
 
@@ -45,6 +47,28 @@ SNIPPET_CHARS = 180
 # "> 작성자: …" style front matter (e.g. who answered and when) is provenance, not content worth quoting.
 METADATA_LINE_RE = re.compile(r"^\s*>\s*[^:\n]{1,20}:\s.*$", re.MULTILINE)
 PENDING_TEXT = ":hourglass_flowing_sand: 문서를 찾아 답변을 준비하고 있습니다…"
+THREAD_PENDING_TEXT = ":hourglass_flowing_sand: 스레드에 적힌 내용부터 읽고 있습니다…"
+SUMMARY_PENDING_TEXT = ":hourglass_flowing_sand: 이 스레드를 정리하고 있습니다…"
+NO_THREAD_ANSWER = "NO_ANSWER_IN_THREAD"
+THREAD_NOTE = ":thread: 이 스레드·채널에 적힌 글로 답했습니다(문서 검색 안 함)."
+NO_GAP_NOTE = ":mag: 스레드·채널과 문서 어디에도 답이 없었습니다. 사람·봇에 관한 질문이라 지식 공백으로 남기지 않았습니다."
+CHANNEL_LINES = 30  # channel messages read before a top-level question about people or bots
+THREAD_PROMPT = """너는 슬랙 봇이다. 아래 [스레드]와 [채널 최근 글], [스레드 이해]만 근거로 [질문]에 답하라.
+- 근거는 사람·봇 이름과 함께 짧게 밝혀라. 다른 봇의 글은 그 봇의 주장일 뿐 확인된 사실이 아니라고 구분하라.
+- 저장·진행·완료 같은 상태는 말하지 마라. 너는 이 답에서 아무것도 저장하거나 실행하지 않는다.
+- 이 글들에 답이 없으면 다른 말 없이 정확히 {sentinel} 한 줄만 써라.
+
+[스레드]
+{thread}
+
+[채널 최근 글]
+{channel}
+
+[스레드 이해]
+{understanding}
+
+[질문]
+{question}"""
 ERROR_PREFIX = ":x: 답변을 만들지 못했습니다"
 STATUS_PREFIXES = (PENDING_TEXT, ERROR_PREFIX)  # bot status posts are not conversation turns
 
@@ -120,10 +144,15 @@ class BaryonClient:
         """A call the bot makes as itself (no On-Behalf-Of header)."""
         return self.auth.request(self.http, method, path, **kwargs)
 
-    def ask(self, messages: list[dict], slack_user: str, thread_id: str, use_retrieval: bool = True) -> Answer:
+    def ask(self, messages: list[dict], slack_user: str, thread_id: str, use_retrieval: bool = True,
+            record_gap: bool = True) -> Answer:
+        """``record_gap=False``: an unanswered exchange is not a knowledge gap (a question about people or bots, a
+        classification call, a remark that is not a question)."""
         body: dict[str, Any] = {"messages": messages, "stream": False, "thread_id": thread_id}
         if not use_retrieval:
             body["use_retrieval"] = False
+        if not record_gap:
+            body["record_gap"] = False
         if self.config.model:
             body["model"] = self.config.model
         response = self.as_user("POST", "/v1/chat/completions", slack_user, json=body)
@@ -133,6 +162,16 @@ class BaryonClient:
         grounding = data.get("grounding") or {}
         return Answer(text=text, citations=data.get("citations") or [], trace_id=data.get("id", ""),
                       answered=bool(grounding.get("answered", True)))
+
+    def understand(self, payload: dict, slack_user: str) -> dict | None:
+        """The thread-understanding reading (apps/api thread_understanding.py), or None when it is unavailable."""
+        try:
+            response = self.as_user("POST", "/v1/loop/threads/understand", slack_user, json=payload)
+            response.raise_for_status()
+            return response.json()
+        except (httpx.HTTPError, ValueError):
+            logger.info("thread understanding unavailable", exc_info=True)
+            return None
 
     def snippets(self, query: str, slack_user: str) -> dict[tuple[str, int], str]:
         """Chunk text for quoting; the chat endpoint returns only document id/title/chunk."""
@@ -271,7 +310,8 @@ def answer_sections(mrkdwn: str, limit: int = SECTION_LIMIT, max_sections: int =
     return parts or [""]
 
 
-def build_blocks(answer: Answer, snippets: dict[tuple[str, int], str], max_sources: int, note: str = "") -> list[dict]:
+def build_blocks(answer: Answer, snippets: dict[tuple[str, int], str], max_sources: int, note: str = "",
+                 recorded_gap: bool = True) -> list[dict]:
     blocks: list[dict] = [{"type": "section", "text": {"type": "mrkdwn", "text": part}} for part in answer_sections(to_mrkdwn(answer.text))]
     if note:
         blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": note}]})
@@ -280,7 +320,8 @@ def build_blocks(answer: Answer, snippets: dict[tuple[str, int], str], max_sourc
     if not answer.answered:
         # Retrieval may still return passages, but they did not answer the question: listing them as sources misleads.
         blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text":
-            ":mag: 문서에서 답을 찾지 못해 지식 공백으로 남겼습니다. 담당자가 답하면 다음부터는 바로 답합니다."}]})
+            ":mag: 문서에서 답을 찾지 못해 지식 공백으로 남겼습니다. 담당자가 답하면 다음부터는 바로 답합니다." if recorded_gap
+            else NO_GAP_NOTE}]})
     elif lines:
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": _clip("*:bookmark_tabs: 근거*\n" + "\n".join(lines), SECTION_LIMIT)}})
     else:
@@ -288,6 +329,18 @@ def build_blocks(answer: Answer, snippets: dict[tuple[str, int], str], max_sourc
     if answer.trace_id:
         blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": f"baryon-ax · trace `{answer.trace_id}`"}]})
     return blocks
+
+
+def understanding_lines(state: thread_state.ThreadState | None) -> str:
+    """The thread reading as prompt lines: purpose, decisions, owners, open questions, disagreements."""
+    if state is None:
+        return ""
+    lines = [f"목적: {state.purpose}"] if state.purpose else []
+    lines += [f"결정({'확정' if d.status == 'confirmed' else '확정 전'}): {d.text}" + (f" — {d.by}" if d.by else "") for d in state.decisions]
+    lines += [f"담당: {o.text}" for o in state.owners]
+    lines += [f"열린 질문: {q.text}" for q in state.questions]
+    lines += [f"엇갈리는 주장: {c.text}" for c in state.contests]
+    return "\n".join(lines)
 
 
 # --------------------------------------------------------------------------- thread subscriptions
@@ -336,6 +389,9 @@ class Responder:
         self.intake = intake  # doc_intake.DocumentIntake: "문서로 추가" requests
         self.directory = UserDirectory()  # user id → name and bot flag; create_app backs it with users.info
         self.team_domain = ""  # the bot's workspace ("acme" of acme.slack.com); links elsewhere cannot be read
+        self.snapshots = None  # thread_snapshot.SnapshotStore; create_app shares the bot's
+        self.states = thread_state.ThreadStateStore()  # per-thread purpose, decisions, owners and work state
+        self.read_threads = False  # read the thread once (POST /v1/loop/threads/understand) before answering in it
 
     def read(self, text: str | None) -> str:
         """Slack mrkdwn → what the model reads: nothing deleted, the bot as "너(이름)", others as "@이름"."""
@@ -408,12 +464,34 @@ class Responder:
             messages.append({"role": "user", "content": fallback})
         return messages
 
-    def answer(self, event: dict, web) -> None:
-        channel, user = event["channel"], event.get("user", "unknown")
-        command = self.command_text(event.get("text"))  # keyword routing; "<@봇>" alone is an empty question
+    def utterance(self, event: dict, web=None, owner: bool = False, secretary_thread: bool = False) -> routing.Utterance:
+        """What the router reads of this message (router.Utterance)."""
+        message = Message.from_event(event, self.directory, self.bot_user_id)
+        others = [m.name for m in message.mentions if m.kind == "user" and not m.is_me]
+        thread_files = False
+        if event.get("thread_ts") and web is not None and self.intake and self.intake.config.enabled and not event.get("files"):
+            from doc_intake import wants_file_reading
+
+            if wants_file_reading(self.command_text(event.get("text"))):
+                from doc_intake import thread_files as files_in
+
+                thread_files = bool(files_in(self._intake_context(web, event) + [event], self.bot_user_id))
+        return routing.Utterance(
+            text=self.command_text(event.get("text")), owner=owner, in_thread=bool(event.get("thread_ts")), others=others,
+            unresolved_mentions=any(m.kind == "user" and m.name in ("", m.id) for m in message.mentions),
+            files=bool(event.get("files")), thread_files=thread_files,
+            intake_enabled=bool(self.intake and self.intake.config.enabled), guide_enabled=bool(self.guide and self.guide.enabled),
+            loop_enabled=False, secretary_thread=secretary_thread)
+
+    def answer(self, event: dict, web, route: routing.Route | None = None) -> None:
+        """Answer one message the bot was asked. ``route`` is the router's decision (Dispatcher); without it the
+        rules decide (a direct call: the caller already knows the message is meant for the bot)."""
+        channel = event["channel"]
+        command = self.command_text(event.get("text"))  # "<@봇>" alone is an empty question
         question = self.read(event.get("text")) if command else ""
         thread_ts = event.get("thread_ts") or event["ts"]
-        if not question and event.get("files"):
+        route = route or routing.classify_rules(self.utterance(event, web))
+        if route.silent:
             return  # files posted without a question: wait for the question ("분석해줘") that usually follows
         if not question:
             usage = ("무엇을 찾아드릴까요? 질문을 그대로 보내 주세요. 예: `연차휴가는 며칠이야?`" if event.get("channel_type") == "im"
@@ -422,35 +500,97 @@ class Responder:
             return
         if self.config.subscribe_threads:
             self.subscriptions.add(channel, thread_ts)
-        if self.intake and self.intake.config.enabled:
-            from doc_intake import thread_files, wants_file_reading, wants_intake
-
-            if wants_intake(command):
+        if route.intent == routing.DOC_INTAKE and self.intake and self.intake.config.enabled:
+            if route.analyze:
+                self.add_documents(event, web, question, analyze=True, messages=self._intake_context(web, event))
+            else:
                 self.add_documents(event, web, question)
-                return
-            # "분석하라", "엑셀 읽어봐" in a thread where people shared files: read those files instead of guessing.
-            if wants_file_reading(command) and (event.get("thread_ts") or event.get("files")):
-                context = self._intake_context(web, event)
-                if thread_files(context + [event], self.bot_user_id):
-                    self.add_documents(event, web, question, analyze=True, messages=context)
-                    return
-        if self.guide and self.guide.enabled:
-            from guide import wants_guide
+            return
+        if route.intent == routing.GUIDE and self.guide and self.guide.enabled and self.answer_from_guide(event, web, question):
+            return
+        if route.intent == routing.SUMMARY and event.get("thread_ts"):
+            self.answer_summary(event, web)
+            return
+        self.answer_question(event, web, question, route)
 
-            if wants_guide(command) and self.answer_from_guide(event, web, question):
-                return
+    # ---------------------------------------------------------------- the thread first
+
+    def read_thread(self, web, channel: str, thread_ts: str, user: str) -> tuple[ThreadSnapshot | None, thread_state.ThreadState | None]:
+        """The thread's snapshot and, when thread reading is on, its state from one understanding reading."""
+        snapshot = None
+        try:
+            if self.snapshots is not None:
+                snapshot = self.snapshots.get(web, channel, thread_ts)
+            else:
+                snapshot = ThreadSnapshot.fetch(web, channel, thread_ts, self.directory, self.bot_user_id)
+        except Exception as error:  # noqa: BLE001 - no history scope: the message alone
+            logger.info("thread %s/%s unreadable (%s)", channel, thread_ts, error)
+            return None, self.states.known(channel, thread_ts)
+        if self.read_threads and len(snapshot):
+            reading = self.baryon.understand(understanding_payload(snapshot, me_name=self.directory.name(self.bot_user_id, "")), user)
+            if reading:
+                return snapshot, self.states.apply_understanding(channel, thread_ts, reading)
+        return snapshot, self.states.known(channel, thread_ts)
+
+    def channel_lines(self, web, event: dict) -> list[str]:
+        """Recent channel messages before a top-level question ("그 봇이 무슨 일을 하고 있어?"), as "이름: 내용"."""
+        try:
+            history = web.conversations_history(channel=event["channel"], latest=event["ts"], inclusive=False,
+                                                limit=CHANNEL_LINES).get("messages", [])
+        except Exception as error:  # noqa: BLE001 - missing *:history scope
+            logger.info("channel history unavailable (%s)", error)
+            return []
+        lines = []
+        for item in reversed(history):  # oldest first
+            if item.get("subtype") not in (None, "file_share", "bot_message", "thread_broadcast"):
+                continue
+            message = Message.from_event(item, self.directory, self.bot_user_id)
+            if message.text_for_me and not message.from_me:
+                lines.append(message.line())
+        return lines
+
+    def answer_question(self, event: dict, web, question: str, route: routing.Route) -> None:
+        """A question: what the thread and channel say first, documents after. A question about people or bots, or
+        one whose mentions could not be read, never becomes a knowledge gap."""
+        channel, user = event["channel"], event.get("user", "unknown")
+        thread_ts = event.get("thread_ts") or event["ts"]
         self._react(web, channel, event["ts"], "eyes", add=True)
         # Read the thread before posting the placeholder so it is not part of the history.
         messages = self._history(web, channel, thread_ts, question) if event.get("thread_ts") else [{"role": "user", "content": question}]
         messages, link_notes = self.expand_links(web, messages)
-        pending = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=PENDING_TEXT)
+        state = None
+        context_lines: list[str] = []
+        if event.get("thread_ts"):
+            _, state = self.read_thread(web, channel, thread_ts, user)
+            context_lines = [m["content"] for m in messages[:-1]]
+        channel_lines = self.channel_lines(web, event) if route.intent == routing.THREAD_QUESTION and not event.get("thread_ts") else []
+        thread_first = bool(context_lines or channel_lines)
+        pending = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=THREAD_PENDING_TEXT if thread_first else PENDING_TEXT)
         try:
-            result = self.baryon.ask(messages, user, thread_id=f"slack:{channel}:{thread_ts}")
+            if thread_first:
+                prompt = THREAD_PROMPT.format(sentinel=NO_THREAD_ANSWER, thread="\n".join(context_lines) or "(없음)",
+                                              channel="\n".join(channel_lines[-CHANNEL_LINES:]) or "(없음)",
+                                              understanding=understanding_lines(state) or "(없음)", question=question)
+                from_thread = self.baryon.ask([{"role": "user", "content": prompt}], user, thread_id=f"slack:{channel}:{thread_ts}",
+                                              use_retrieval=False, record_gap=False)
+                if NO_THREAD_ANSWER not in from_thread.text and from_thread.text.strip():
+                    from_thread.citations, from_thread.answered = [], True
+                    text = thread_state.guard(from_thread.text, state)
+                    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": part}} for part in answer_sections(to_mrkdwn(text))]
+                    blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": " ".join([THREAD_NOTE] + link_notes)}]})
+                    if from_thread.trace_id:
+                        blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": f"baryon-ax · trace `{from_thread.trace_id}`"}]})
+                    web.chat_update(channel=channel, ts=pending["ts"], text=_clip(text, TEXT_LIMIT), blocks=blocks)
+                    self._react(web, channel, event["ts"], "white_check_mark", add=True)
+                    return
+                web.chat_update(channel=channel, ts=pending["ts"], text=PENDING_TEXT)
+            result = self.baryon.ask(messages, user, thread_id=f"slack:{channel}:{thread_ts}", record_gap=route.record_gap)
+            result.text = thread_state.guard(result.text, state)
             snippets = (self.baryon.cited_snippets(question, result.citations[: self.config.max_sources * 2], user)
                         if self.config.show_snippets and result.citations and result.answered else {})
             note = " ".join(link_notes + ([ATTACHMENT_NOTE] if event.get("files") else []))
             web.chat_update(channel=channel, ts=pending["ts"], text=_clip(result.text, TEXT_LIMIT),
-                            blocks=build_blocks(result, snippets, self.config.max_sources, note=note))
+                            blocks=build_blocks(result, snippets, self.config.max_sources, note=note, recorded_gap=route.record_gap))
             self._react(web, channel, event["ts"], "white_check_mark", add=True)
         except Exception as error:
             logger.exception("baryon-ax answer failed")
@@ -459,6 +599,20 @@ class Responder:
             self._react(web, channel, event["ts"], "x", add=True)
         finally:
             self._react(web, channel, event["ts"], "eyes", add=False)
+
+    def answer_summary(self, event: dict, web) -> None:
+        """"정리해줘": purpose, decisions, owners and open questions from the thread state (no model, no search)."""
+        channel, user = event["channel"], event.get("user", "unknown")
+        thread_ts = event.get("thread_ts") or event["ts"]
+        self._react(web, channel, event["ts"], "eyes", add=True)
+        pending = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=SUMMARY_PENDING_TEXT)
+        _, state = self.read_thread(web, channel, thread_ts, user)
+        text = thread_state.summary_text(state)
+        web.chat_update(channel=channel, ts=pending["ts"], text=_clip(text, TEXT_LIMIT),
+                        blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": part}} for part in answer_sections(text)]
+                        + [{"type": "context", "elements": [{"type": "mrkdwn", "text": ":memo: 스레드 글에서 읽은 것만 정리했습니다."}]}])
+        self._react(web, channel, event["ts"], "white_check_mark", add=True)
+        self._react(web, channel, event["ts"], "eyes", add=False)
 
     def answer_from_guide(self, event: dict, web, question: str) -> bool:
         """Explain from the whole usage guide. False when there is no guide to read (search answers instead)."""
@@ -578,6 +732,187 @@ class Responder:
 # --------------------------------------------------------------------------- slack app
 
 
+class Dispatcher:
+    """Every Slack message through one router (router.py): who handles it, or silence.
+
+    ``route`` is the decision alone (the eval replays it); ``on_mention`` / ``on_message`` act on it. A message that
+    stops mid-sentence is held (thread_snapshot.TruncationHold) and routed again once its author edits it or the wait
+    ends (:meth:`release`). Edits and deletions update the thread state and take back what the loop recorded from
+    the message (loop_desk.LoopDesk.observe)."""
+
+    def __init__(self, responder: Responder, router: routing.Router | None = None, bridge=None, loop_desk=None, desk=None,
+                 snapshots=None, hold=None, archive=None, background: bool = True) -> None:
+        self.responder = responder
+        self.router = router or routing.Router()
+        self.bridge, self.loop_desk, self.desk, self.archive = bridge, loop_desk, desk, archive
+        self.snapshots, self.hold = snapshots, hold
+        self.background = background  # loop recording off the event thread (the eval runs it inline)
+        self.deferred: dict[tuple[str, str], tuple[dict, Any, bool]] = {}  # held messages: (event, client, mention)
+        self.released: set[tuple[str, str]] = set()
+        self.lock = threading.Lock()
+        self.log: list[tuple[str, routing.Route]] = []  # (ts, route) of recent decisions, newest last
+        self.my_bot_id = ""
+
+    @property
+    def me(self) -> str:
+        return self.responder.bot_user_id
+
+    # ---------------------------------------------------------------- the decision
+
+    def route(self, event: dict, web, mention: bool) -> routing.Route:
+        channel, ts = event.get("channel", ""), event.get("ts", "")
+        message = Message.from_event(event, self.responder.directory, self.me, self.my_bot_id)
+        is_dm = event.get("channel_type") == "im"
+        owner = bool(self.bridge and self.bridge.from_owner(event))
+        secretary_thread = bool(self.bridge and self.bridge.working_in(event))
+        held = False
+        if self.hold is not None and self.hold.config.wait_seconds > 0 and self.hold.should_hold(message):
+            with self.lock:
+                held = (channel, ts) not in self.released
+        previous, caller, context = None, "", ""
+        thread_ts = event.get("thread_ts")
+        if thread_ts and not mention and not is_dm and not message.mentions_me:
+            subscribed = (channel, thread_ts) in self.responder.subscriptions
+            if not subscribed and not (secretary_thread and owner):
+                return self._decided(ts, routing.Route(routing.SILENT, routing.NOBODY, "봇이 들어가지 않은 스레드", "gate"))
+        if thread_ts and self.snapshots is not None:
+            try:
+                snapshot = self.snapshots.get(web, channel, thread_ts)
+                previous, caller = routing.thread_position(snapshot.messages, ts)
+                context = "\n".join(m.line() for m in snapshot.visible()[-8:] if m.ts != ts and m.text_for_me)
+            except Exception as error:  # noqa: BLE001 - no history scope: decide on the message alone
+                logger.info("thread %s/%s unreadable for routing (%s)", channel, thread_ts, error)
+        reason = routing.silence_reason(message, mention=mention, is_dm=is_dm, held=held, previous=previous, last_caller=caller,
+                                        secretary_thread=secretary_thread, owner=owner)
+        if reason:
+            return self._decided(ts, routing.Route(routing.SILENT, routing.NOBODY, reason, "gate"))
+        utterance = self.responder.utterance(event, web, owner=owner, secretary_thread=secretary_thread)
+        utterance.loop_enabled = self.loop_desk is not None
+        return self._decided(ts, self.router.classify(utterance, context))
+
+    def _decided(self, ts: str, route: routing.Route) -> routing.Route:
+        logger.info("route %s → %s/%s (%s, %s)", ts, route.intent, route.handler, route.method, route.reason)
+        self.log.append((ts, route))
+        del self.log[:-500]
+        return route
+
+    # ---------------------------------------------------------------- acting on it
+
+    def on_mention(self, event: dict, client) -> routing.Route:
+        return self.act(event, client, mention=True)
+
+    def on_message(self, event: dict, client) -> routing.Route | None:
+        if self.snapshots is not None:
+            self.snapshots.on_event(event)  # threads already read stay current: edits, deletions (thread_snapshot.py)
+        if self.archive:  # this channel's day changed: it is written as a document once the channel goes quiet
+            self.archive.observe(event)
+        self._observe_change(event)
+        if self.loop_desk:  # record a consenting person's decision or request (loop_desk.py), off the event thread
+            if self.background:
+                threading.Thread(target=self.loop_desk.observe, args=(event, client), daemon=True).start()
+            else:
+                self.loop_desk.observe(event, client)
+        if event.get("subtype") not in (None, "file_share"):
+            return None  # edits, deletions, joins: nothing to answer
+        if f"<@{self.me}" in (event.get("text") or ""):
+            return None  # the app_mention event answers it
+        gap_id = self.desk.answer_gap_id(event) if self.desk else None
+        if gap_id:
+            self.desk.on_answer(event, gap_id, client)
+            return None
+        is_dm = self.responder.is_direct_message(event)
+        if not (is_dm or event.get("thread_ts")):
+            return None  # a channel message that does not call the bot
+        return self.act(event, client, mention=False)
+
+    def act(self, event: dict, client, mention: bool) -> routing.Route:
+        route = self.route(event, client, mention)
+        if route.silent:
+            if route.method == "gate" and route.reason.startswith("끊긴 글"):
+                with self.lock:
+                    self.deferred[(event.get("channel", ""), event.get("ts", ""))] = (event, client, mention)
+                if self.hold is not None:  # the message event may not have reached the hold yet
+                    self.hold.submit(event.get("channel", ""), Message.from_event(event, self.responder.directory, self.me, self.my_bot_id))
+            return route
+        self.execute(route, event, client)
+        return route
+
+    def execute(self, route: routing.Route, event: dict, client) -> None:
+        if route.handler == routing.LOOP:
+            self.loop_command(event, client)
+        elif route.handler == routing.SECRETARY and self.bridge:
+            self.bridge.handle(event, client)
+        elif route.handler == routing.RESPONDER:
+            self.responder.answer(event, client, route=route)
+
+    def release(self, channel: str, message: Message, reason: str) -> None:
+        """TruncationHold handed a held message on (edited, or the wait ended): route it again, with the edited text."""
+        if reason == "ready":
+            return
+        key = (channel, message.ts)
+        with self.lock:
+            entry = self.deferred.pop(key, None)
+            self.released.add(key)
+            if len(self.released) > 5000:
+                self.released.clear()
+        logger.info("unfinished message %s/%s handed on (%s)%s", channel, message.ts, reason, "" if entry else ": not for the bot")
+        if entry is None:
+            return
+        event, client, mention = entry
+        raw = "".join(token.raw for token in message.tokens) or event.get("text", "")
+        self.act({**event, "text": raw}, client, mention)
+
+    def _observe_change(self, event: dict) -> None:
+        """An edit or a deletion: the thread state forgets what that message was the evidence for."""
+        subtype = event.get("subtype")
+        if subtype not in ("message_changed", "message_deleted"):
+            return
+        inner = event.get("message") if subtype == "message_changed" else event.get("previous_message")
+        inner = inner if isinstance(inner, dict) else {}
+        ts = inner.get("ts") or event.get("deleted_ts") or ""
+        thread_ts = inner.get("thread_ts") or event.get("thread_ts") or ts
+        if ts:
+            dropped = self.responder.states.forget_message(event.get("channel", ""), thread_ts, ts)
+            if dropped:
+                logger.info("thread %s: %s of %s dropped %d item(s)", thread_ts, subtype, ts, dropped)
+
+    def loop_command(self, event: dict, client) -> bool:
+        """"질문 있어?" / "인증할 것": the loop's questions and certifications, on demand."""
+        if not self.loop_desk:
+            return False
+        from loop_desk import wants_certify_list, wants_questions
+
+        text, user = self.responder.command_text(event.get("text")), event.get("user", "")
+        thread_ts = event.get("thread_ts") or event["ts"]
+        try:
+            if wants_questions(text):
+                if not self.loop_desk.ask_pending(client, only_user=user, channel=event["channel"], thread_ts=thread_ts):
+                    client.chat_postMessage(channel=event["channel"], thread_ts=thread_ts, text="지금은 여쭤볼 게 없어요. 결정이나 요청이 쌓이면 먼저 여쭤볼게요.")
+                return True
+            if wants_certify_list(text):
+                if not self.loop_desk.list_for_certification(client, user, event["channel"], thread_ts):
+                    client.chat_postMessage(channel=event["channel"], thread_ts=thread_ts, text="인증을 기다리는 항목이 없어요.")
+                return True
+        except httpx.HTTPError as error:
+            logger.warning("loop command failed", exc_info=True)
+            client.chat_postMessage(channel=event["channel"], thread_ts=thread_ts, text=f"{ERROR_PREFIX} ({type(error).__name__}).")
+            return True
+        return False
+
+
+def model_router(baryon: BaryonClient) -> routing.Router:
+    """The router with the model classifying free-form messages (SLACK_ROUTER_MODEL, on by default): one chat call
+    without retrieval and without a gap; any failure falls back to the rules."""
+    if os.getenv("SLACK_ROUTER_MODEL", "true").strip().lower() in {"0", "false", "no", "off"}:
+        return routing.Router()
+
+    def complete(prompt: str) -> str:
+        return baryon.ask([{"role": "user", "content": prompt}], baryon.config.bot_user_id, thread_id="slack:router",
+                          use_retrieval=False, record_gap=False).text
+
+    return routing.Router(complete)
+
+
 def create_app(config: Config | None = None):
     from slack_bolt import App
 
@@ -597,70 +932,29 @@ def create_app(config: Config | None = None):
     responder.team_domain = slack_domain(auth.get("url", ""))
     responder.directory = UserDirectory.from_web(app.client)  # users:read; without it names stay ids
     responder.directory.remember(bot_user_id, auth.get("user", ""), is_bot=True)  # "너(baryon)" even without users:read
+    responder.states = thread_state.ThreadStateStore.from_env()
+    responder.read_threads = True
     desk = _create_desk(responder)
     bridge = _create_bridge()
     loop_desk = _create_loop_desk(baryon, bot_user_id)
     archive = _create_archive(baryon, bot_user_id)
     if bridge:
         bridge.bot_user_id = bot_user_id  # its text is normalized like the rest (slack_text), names from one cache
+        bridge.states = responder.states  # one work state per thread: what the secretary confirmed is what the bot says
     for part in (loop_desk, archive, bridge):
         if part:
             part.directory = responder.directory  # one name cache for the whole bot
-    snapshots, hold = _create_snapshots(responder.directory, bot_user_id, auth.get("bot_id", ""))
+    dispatcher = Dispatcher(responder, model_router(baryon), bridge=bridge, loop_desk=loop_desk, desk=desk, archive=archive)
+    dispatcher.my_bot_id = auth.get("bot_id", "")
+    snapshots, hold = _create_snapshots(responder.directory, bot_user_id, auth.get("bot_id", ""), dispatcher.release)
+    dispatcher.snapshots, dispatcher.hold = snapshots, hold
+    responder.snapshots = snapshots
     if loop_desk:
         loop_desk.snapshots = snapshots  # the loop reads the same thread snapshots (edits, deletions, reactions)
+        loop_desk.states = responder.states
 
-    def loop_command(event, client) -> bool:
-        """"질문 있어?" / "인증할 것": the loop's questions and certifications, on demand."""
-        if not loop_desk:
-            return False
-        from loop_desk import wants_certify_list, wants_questions
-
-        text, user = responder.command_text(event.get("text")), event.get("user", "")
-        thread_ts = event.get("thread_ts") or event["ts"]
-        try:
-            if wants_questions(text):
-                if not loop_desk.ask_pending(client, only_user=user, channel=event["channel"], thread_ts=thread_ts):
-                    client.chat_postMessage(channel=event["channel"], thread_ts=thread_ts, text="지금은 여쭤볼 게 없어요. 결정이나 요청이 쌓이면 먼저 여쭤볼게요.")
-                return True
-            if wants_certify_list(text):
-                if not loop_desk.list_for_certification(client, user, event["channel"], thread_ts):
-                    client.chat_postMessage(channel=event["channel"], thread_ts=thread_ts, text="인증을 기다리는 항목이 없어요.")
-                return True
-        except httpx.HTTPError as error:
-            logger.warning("loop command failed", exc_info=True)
-            client.chat_postMessage(channel=event["channel"], thread_ts=thread_ts, text=f"{ERROR_PREFIX} ({type(error).__name__}).")
-            return True
-        return False
-
-    @app.event("app_mention")
-    def on_mention(event, client):
-        if loop_command(event, client):
-            return
-        # The owner asking for work (draft, send, contact, plan …) goes to the voice secretary (secretary_bridge.py).
-        if bridge and bridge.wants(event, responder.command_text(event.get("text"))):
-            bridge.handle(event, client)
-        else:
-            responder.answer(event, client)
-
-    @app.event("message")
-    def on_message(event, client):
-        snapshots.on_event(event)  # threads already read stay current: edits, deletions (thread_snapshot.py)
-        if archive:  # this channel's day changed: it is written as a document once the channel goes quiet
-            archive.observe(event)
-        if loop_desk:  # record a consenting person's decision or request (loop_desk.py), off the event thread
-            threading.Thread(target=loop_desk.observe, args=(event, client), daemon=True).start()
-        if responder.is_direct_message(event) and loop_command(event, client):
-            return
-        gap_id = desk.answer_gap_id(event) if desk else None
-        if gap_id:
-            desk.on_answer(event, gap_id, client)
-        elif bridge and bridge.follows(event) and f"<@{bot_user_id}" not in (event.get("text") or ""):
-            bridge.handle(event, client)
-        elif bridge and responder.is_direct_message(event) and bridge.wants(event, responder.command_text(event.get("text"))):
-            bridge.handle(event, client)  # the owner asking for work in a DM
-        elif responder.is_direct_message(event) or responder.should_follow_up(event):
-            responder.answer(event, client)
+    app.event("app_mention")(lambda event, client: dispatcher.on_mention(event, client))
+    app.event("message")(lambda event, client: dispatcher.on_message(event, client))
 
     def on_reaction(event):
         """A reaction added or removed: the thread snapshot counts it, and the archived day is rewritten."""
@@ -702,6 +996,7 @@ def create_app(config: Config | None = None):
 
     app.loop_desk = loop_desk
     app.archive = archive
+    app.dispatcher = dispatcher
     app.snapshots, app.hold = snapshots, hold
     if desk:
         from proactive import ACTION_DISCARD, ACTION_DISMISS, ACTION_PUBLISH
@@ -733,16 +1028,16 @@ def _create_bridge():
     return SecretaryBridge(config)
 
 
-def _create_snapshots(directory: UserDirectory, bot_user_id: str, bot_id: str = ""):
-    """Thread snapshots kept current from events, and the hold for messages that stop mid-sentence.
-    The hold only waits and hands the message on (logged); acting on it is the thread-understanding step's job."""
+def _create_snapshots(directory: UserDirectory, bot_user_id: str, bot_id: str = "", handed_on=None):
+    """Thread snapshots kept current from events, and the hold for messages that stop mid-sentence. A held message
+    is handed to ``handed_on(channel, message, reason)`` (Dispatcher.release) once edited or the wait ends."""
     from thread_snapshot import HoldConfig, SnapshotStore, TruncationHold
 
-    def handed_on(channel: str, message: Message, reason: str) -> None:
+    def logged(channel: str, message: Message, reason: str) -> None:
         if reason != "ready":
             logger.info("unfinished message %s/%s handed on (%s)", channel, message.ts, reason)
 
-    hold = TruncationHold(handed_on, HoldConfig.from_env())
+    hold = TruncationHold(handed_on or logged, HoldConfig.from_env())
     return SnapshotStore(directory, bot_user_id, bot_id, hold=hold), hold
 
 

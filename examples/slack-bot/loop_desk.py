@@ -16,6 +16,8 @@ its Slack front end:
 * **Certification**: the answer becomes a criterion. The bot shows it next to its primary sources (the recorded
   action, the answer) with one checkbox per source; **서명(인증)** is refused by the server until every source is
   checked and any [쟁점] is resolved. 보류·거부 ask for a reason and send the item back to draft.
+* **Edits and deletions** take back what a message no longer says: the actions recorded from it are retracted
+  (``POST /v1/loop/actions/retract``; their open questions are withdrawn) and the edited text is read again.
 * "@baryon 질문 있어?" shows my open questions now; "@baryon 인증할 것" shows what waits for my certification.
 
 Environment: LOOP_SLACK_USERS, LOOP_INTERVAL_MINUTES (default 60, 0 = no schedule), LOOP_MAX_QUESTIONS (per person
@@ -182,7 +184,8 @@ class LoopDesk:
         self.bot_user_id = bot_user_id
         self.directory: UserDirectory | None = None  # user names; create_app shares the bot's, else made from web
         self.snapshots = None  # thread_snapshot.SnapshotStore; create_app shares the bot's
-        self._recorded: dict[tuple[str, str, str], bool] = {}  # (channel, ts, statement) already recorded
+        self._recorded: dict[tuple[str, str, str], str] = {}  # (channel, ts, statement) → the recorded action's id
+        self.states = None  # thread_state.ThreadStateStore; create_app shares the bot's (the reading updates it)
 
     # ---------------------------------------------------------------- recording
 
@@ -190,6 +193,11 @@ class LoopDesk:
         """Read the thread of a consenting person's new or edited message and record the confirmed decisions that
         message states. True when something was recorded. ``snapshot``: the thread as the bot already holds it
         (thread_snapshot.SnapshotStore); without one it is fetched."""
+        if event.get("subtype") == "message_deleted":
+            if self.config.records:
+                self.retract(event.get("channel", ""), event.get("deleted_ts") or (event.get("previous_message") or {}).get("ts", ""),
+                             reason="deleted")
+            return False
         message = event.get("message") if event.get("subtype") == "message_changed" and isinstance(event.get("message"), dict) else event
         user, ts = message.get("user", ""), message.get("ts", "")
         if self.directory is None:
@@ -198,6 +206,8 @@ class LoopDesk:
         if (not self.config.records or message.get("bot_id") or user == self.bot_user_id
                 or event.get("subtype") not in (None, "file_share", "message_changed") or not self.consents(user)
                 or len(text) < 4 or wants_questions(text) or wants_certify_list(text)):
+            if event.get("subtype") == "message_changed" and self.config.records:
+                self.retract(event.get("channel", ""), ts)  # it no longer states anything to record
             return False
         channel = event.get("channel", "")
         thread_ts = message.get("thread_ts") or ts
@@ -210,22 +220,47 @@ class LoopDesk:
         except (httpx.HTTPError, ValueError):
             logger.warning("could not read the thread %s/%s", channel, thread_ts, exc_info=True)
             return False
+        if self.states is not None:
+            self.states.apply_understanding(channel, thread_ts, reading)
         before = [m for m in thread.visible() if float(m.ts or 0) < float(ts or 0)][-4:]
         context = "\n".join(m.line() for m in before if m.text_for_me)[:2000]
-        recorded = False
+        pending: list[tuple[str, str, str]] = []  # (who, text, context) this message states now
         for decision in reading.get("decisions") or []:
             decider = (decision.get("decided_by_ids") or [""])[0]
             if not decision.get("confirmed") or ts not in (decision.get("evidence_ts") or []) or not self.consents(decider):
                 continue
             notes = [f"{THREAD_REASON} {r['statement']}" for r in decision.get("reasons") or []] + \
                     [f"{THREAD_CONFIRMS} {c.get('by', '')}: {c.get('quote', '')}" for c in decision.get("confirms") or []]
-            recorded |= self._record(decider, channel, thread_ts, ts, f"<@{decider}>님이 슬랙에서 확정한 결정: {decision['statement']}",
-                                     "\n".join([context, *notes]).strip())
+            pending.append((decider, f"<@{decider}>님이 슬랙에서 확정한 결정: {decision['statement']}", "\n".join([context, *notes]).strip()))
         for question in reading.get("open_questions") or []:  # "환불 승인 기준은 아직 안 정했어": a gap the person named
             if question.get("ask") and ts in (question.get("evidence_ts") or []) and self.consents(user):
-                recorded |= self._record(user, channel, thread_ts, ts, f"<@{user}>님이 아직 정하지 않았다고 한 것: {question.get('question', '')}",
-                                         context)
+                pending.append((user, f"<@{user}>님이 아직 정하지 않았다고 한 것: {question.get('question', '')}", context))
+        if event.get("subtype") == "message_changed":  # an edit takes back what the message no longer says
+            self.retract(channel, ts, keep={re.sub(r"\s+", "", text[:900]) for _, text, _ in pending}, reason="edited")
+        recorded = False
+        for who, text, notes in pending:
+            recorded |= self._record(who, channel, thread_ts, ts, text, notes)
         return recorded
+
+    def retract(self, channel: str, ts: str, keep: set[str] | frozenset[str] = frozenset(), reason: str = "edited") -> int:
+        """Take back the actions recorded from one message (edited or deleted), except the statements in ``keep``
+        (what the edited message still says, spaces removed). The server finds them by the message they came from
+        (``message_ref``), so this works after a restart too. Returns how many it retracted."""
+        if reason != "deleted" and not any(key[:2] == (channel, ts) for key in self._recorded) and not keep:
+            return 0  # an edit of a message nothing was recorded from
+        try:
+            response = self.baryon.as_bot("POST", "/v1/loop/actions/retract", json={
+                "message_ref": f"slack:{channel}:{ts}", "keep_texts": sorted(keep), "reason": reason})
+            response.raise_for_status()
+            count = int((response.json() or {}).get("retracted", 0))
+        except (httpx.HTTPError, ValueError):
+            logger.warning("could not retract the actions of %s/%s", channel, ts, exc_info=True)
+            return 0
+        for key in [key for key in self._recorded if key[:2] == (channel, ts) and key[2] not in keep]:
+            self._recorded.pop(key)
+        if count:
+            logger.info("retracted %d action(s) of %s/%s (%s)", count, channel, ts, reason)
+        return count
 
     def _record(self, user: str, channel: str, thread_ts: str, ts: str, text: str, context: str) -> bool:
         """POST /v1/loop/actions once per (message, statement): an edit reads the message again."""
@@ -234,12 +269,14 @@ class LoopDesk:
             return False
         try:
             response = self.baryon.as_user("POST", "/v1/loop/actions", user, json={
-                "text": text[:900], "context": context[:4000], "source": "slack", "source_ref": f"slack:{channel}:{thread_ts}"})
+                "text": text[:900], "context": context[:4000], "source": "slack", "source_ref": f"slack:{channel}:{thread_ts}",
+                "message_ref": f"slack:{channel}:{ts}"})
             response.raise_for_status()
-        except httpx.HTTPError:
+            action_id = str((response.json() or {}).get("id", ""))
+        except (httpx.HTTPError, ValueError):
             logger.warning("could not record the action", exc_info=True)
             return False
-        self._recorded[key] = True
+        self._recorded[key] = action_id
         while len(self._recorded) > 5000:  # remember recent ones only
             self._recorded.pop(next(iter(self._recorded)))
         return True
