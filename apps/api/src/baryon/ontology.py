@@ -109,6 +109,25 @@ def _noun(token: str) -> str | None:
     return stem
 
 
+# Particles that also appear inside ordinary nouns (가 in 휴가, 도 in 한도) are left to _noun's shorter
+# list; these multi-syllable ones are safe to call a particle at the end of a pack label.
+_LONG_PARTICLES = ("에서는", "에게서", "한테서", "이라고", "으로는", "에게는", "에서", "에게", "한테",
+                   "으로", "까지", "부터", "라고", "에는")
+
+
+def is_entity_noise(name: str) -> bool:
+    """True when a label is a verb form, a question word or a word with a particle stuck to it — not a noun
+    phrase an ontology should hold ("분실하면", "신고해", "얼마", "법인카드에서"). Used by ontology packs."""
+    text = re.sub(r"\s+", " ", str(name or "")).strip()
+    if not text or text in _QUESTION_WORDS:
+        return True
+    last = text.split()[-1]
+    if any(last.endswith(particle) and len(last) - len(particle) >= 2 for particle in _LONG_PARTICLES):
+        return True
+    stem, had_particle = _strip_particle(text)
+    return bool(_PREDICATE_END.search(text)) and not had_particle and stem == text
+
+
 def rule_extract_question(question: str) -> Extraction:
     tokens = _TOKEN.findall(question or "")
     relation = next((name for name, pattern in _SLOT_PATTERNS if pattern.search(question or "")), None)

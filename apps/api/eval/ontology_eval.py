@@ -26,9 +26,25 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from baryon.gaps import salient_terms
-from baryon.ontology import Entity, Extraction, model_extract, rule_extract_question
+from baryon.ontology import (
+    VALUE_TYPE,
+    Entity,
+    Extraction,
+    RelationType,
+    is_entity_noise,
+    model_extract,
+    rule_extract_question,
+)
 
 GOLD = Path(__file__).with_name("ontology_gold_ko.json")
+STARTER = Path(__file__).resolve().parents[3] / "examples" / "ontology" / "starter-pack.ko.json"
+# A starter pack is held to these numbers by tests/test_ontology_pack.py, so they cannot drift loose.
+STARTER_THRESHOLDS = {
+    "noise_entities": 0,        # verb forms, question words, stuck particles: none
+    "related_to_ratio": 0.0,    # the old extractor's only relation type: never
+    "slot_fill_rate": 1.0,      # every slot names an entity and asks for the right kind of value
+    "relation_types": 5,        # distinct types from the closed list (7 available)
+}
 # A predicted entity that is a verb form or a question word is noise, whatever the gold set says.
 NOISE = re.compile(r"(하면|나면|려면|해|해야|해요|했|하나|할까|돼|이야|야|어|지|까|얼마|언제|누구|어디|며칠|무엇|뭐)$")
 
@@ -76,6 +92,52 @@ def summarize(rows: list[dict]) -> dict:
     }
 
 
+def score_pack(pack: dict) -> dict:
+    """Score a starter pack on the merge v2 quality bar (no model, no gold set).
+
+    * ``noise_entities``: labels that are a verb form, a question word or a word with a stuck particle.
+    * ``related_to_ratio``: share of relations (typed relations + open slots) whose type is the old
+      meaningless ``related_to``.
+    * ``slot_fill_rate``: slots a person can actually fill — the subject is one of the pack's entities,
+      the value type matches the relation (한도→금액), and the question is written.
+    * ``relation_types`` / ``relation_type_diversity``: how much of the closed relation list the pack uses.
+    """
+    entities = pack.get("entities") or []
+    relations = pack.get("relations") or []
+    slots = pack.get("slots") or []
+    names = {norm(entity.get("name", "")) for entity in entities}
+    types = [str(item.get("type", "")) for item in relations] + [str(slot.get("relation", "")) for slot in slots]
+    noise = [entity.get("name", "") for entity in entities if is_entity_noise(entity.get("name", ""))]
+    grounded = [slot for slot in slots
+                if norm(slot.get("subject", "")) in names
+                and VALUE_TYPE.get(str(slot.get("relation", ""))) == slot.get("value_type")
+                and str(slot.get("question") or "").strip()]
+    return {
+        "entities": len(entities),
+        "relations": len(relations),
+        "slots": len(slots),
+        "noise_entities": len(noise),
+        "noise_names": noise,
+        "related_to_ratio": round(types.count("related_to") / max(1, len(types)), 3),
+        "slot_fill_rate": round(len(grounded) / max(1, len(slots)), 3),
+        "relation_types": len(set(types)),
+        "relation_type_diversity": round(len(set(types)) / len(RelationType.__args__), 3),  # type: ignore[attr-defined]
+        "entity_types": sorted({str(entity.get("type", "")) for entity in entities}),
+    }
+
+
+def starter_gate(score: dict) -> list[str]:
+    """The failures against :data:`STARTER_THRESHOLDS`; an empty list means the pack passes."""
+    failures = []
+    for key, want in STARTER_THRESHOLDS.items():
+        value = score.get(key)
+        ok = value == want if key in ("noise_entities", "related_to_ratio", "slot_fill_rate") \
+            else (value is not None and value >= want)
+        if not ok:
+            failures.append(f"{key}={value} (want {want})")
+    return failures
+
+
 async def run(args: argparse.Namespace) -> int:
     gold = json.loads(Path(args.gold).read_text(encoding="utf-8"))["questions"]
     arms: dict[str, list[dict]] = {"legacy": [], "rules": []}
@@ -120,6 +182,19 @@ async def run(args: argparse.Namespace) -> int:
     for key in keys:
         print(f"| {key} | " + " | ".join(str(metrics[arm][key]) for arm in metrics) + " |")
 
+    starter = None
+    starter_path = Path(args.starter_pack) if args.starter_pack else None
+    if starter_path and starter_path.is_file():
+        score = score_pack(json.loads(starter_path.read_text(encoding="utf-8")))
+        starter = {"path": str(starter_path), "score": score, "failures": starter_gate(score)}
+        print(f"\n## 스타터 꾸러미: {starter_path}")
+        print("| metric | value | threshold |")
+        print("| --- | --- | --- |")
+        for key, want in STARTER_THRESHOLDS.items():
+            print(f"| {key} | {score[key]} | {want} |")
+        print(f"| relation_type_diversity | {score['relation_type_diversity']} | — |")
+        print("gate: " + ("pass" if not starter["failures"] else "FAIL · " + "; ".join(starter["failures"])))
+
     baseline = arms["legacy"]
     for arm, rows in arms.items():
         if arm == "legacy":
@@ -136,7 +211,8 @@ async def run(args: argparse.Namespace) -> int:
                 mark = "✓" if row["pass"] else "✗"
                 print(f"{mark} {item['q']}\n    entities {row['entities']}\n    slots {row['slots']}")
     if args.json:
-        Path(args.json).write_text(json.dumps({"metrics": metrics, "rows": arms}, ensure_ascii=False, indent=1))
+        Path(args.json).write_text(json.dumps({"metrics": metrics, "rows": arms, "starter_pack": starter},
+                                              ensure_ascii=False, indent=1), encoding="utf-8")
     return 0
 
 
@@ -146,6 +222,8 @@ def main() -> int:
     parser.add_argument("--model-url", default="")
     parser.add_argument("--model", default="qwen2.5:7b")
     parser.add_argument("--no-thinking", action="store_true", help="send enable_thinking=false (Qwen3.x on vLLM)")
+    parser.add_argument("--starter-pack", default=str(STARTER),
+                        help="starter pack to score (default examples/ontology/starter-pack.ko.json; empty to skip)")
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--json", default="")
     return asyncio.run(run(parser.parse_args()))

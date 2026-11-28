@@ -152,3 +152,42 @@ runs four calls at a time. The rules take well under a millisecond.
 
 Headline to quote: on questions it had not seen, model+rules got 9 of 10 fully right with no noise; the old extractor
 got 0 of 10 and a quarter of its entities were verb forms or question words.
+
+### 2026-11-28: starter pack on merge v2 (import path)
+
+A new organization starts with nothing. The pack it is meant to start from is now a curated **starter pack** built on
+the merge v2 model (schema 2: typed entities, typed relations, and slots for values nobody has answered), not a pack
+extracted from gap questions with the old `related_to` chain. An operator imports it for the organization with the
+CLI below (a first-login step can call the same function).
+
+- File: `examples/ontology/starter-pack.ko.json` — a **fictional** company (데모상사): 15 concepts over all six
+  entity types, 12 typed relations, and 5 open slots. Public repository, so no real organization's material.
+- Builder: `apps/api/src/baryon/ontology_pack.py`. `build_pack` asks the configured model for a draft and accepts
+  it only if **the whole draft** matches the strict schema; one unknown field, one relation type outside the closed
+  list, one relation end that is not an entity, or one verb form as an entity rejects the whole answer. There is no
+  partial acceptance and no repair. `validate_pack` is the same gate for a hand-written file.
+- Import: `python -m baryon.ontology_pack import --pack <file> --org <id> [--dry-run]`. It merges through
+  `ontology_merge` (one organization file, claim-level same/refine/contest, source-keyed claims), so importing the
+  same pack again changes nothing. `--dry-run` prints the diff and writes nothing. The pack never leaves the
+  organization's own store; `TENANCY_MODE=pooled` only accepts a registered, active tenant. A slot the organization
+  can already answer is not reopened.
+- Eval: `apps/api/eval/ontology_eval.py` scores the starter pack with a deterministic gate and fails loudly.
+
+| structural metric | old pack #10 (`ont_goldfish_core`) | starter pack (`starter-pack.ko.json`) |
+| --- | --- | --- |
+| entities that are verb forms or question words | yes (`분실하면`, `신고해`) | **0** |
+| `related_to` share of relations | 1.0 (the only relation type) | **0.0** |
+| slot fill rate (subject is an entity, right value type, question written) | 0 (no slots) | **1.0 (5/5)** |
+| distinct relation types from the closed list | 1 / 7 | **7 / 7** |
+| typed entities | none (all `개념`) | 15 over 6 types |
+
+These are structural metrics — they say the pack is shaped like an ontology, not that a model answers better.
+The model arms above are still the quality evidence for extraction. Run the gate from `apps/api`:
+
+```bash
+uv run python eval/ontology_eval.py          # the starter pack table is printed after the question arms
+uv run python eval/ontology_eval.py --json /tmp/ontology.json
+```
+
+The thresholds are pinned in `apps/api/tests/test_ontology_pack.py` (`STARTER_THRESHOLDS`): noise = 0,
+`related_to` = 0, slot fill = 1.0, at least 5 of the 7 relation types. Loosening one of them breaks a test.
