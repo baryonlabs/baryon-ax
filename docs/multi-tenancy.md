@@ -41,7 +41,7 @@ Browser / Bot / MCP client
 
 ```env
 TENANCY_MODE=pooled
-TENANT_STORE=/data/tenants          # tenants.json, usage.json, memory_users.json
+TENANT_STORE=/data/tenants          # tenants.json, usage.json, memory_users.json, invites.json
 USAGE_FLUSH_SECONDS=5               # 사용량 카운터 디스크 반영 주기(초)
 OIDC_PLATFORM_ADMIN_ROLE=baryon-platform-admin
 TENANT_SHARED_GATEWAY_ALLOWED=false # 공유 MCP 게이트웨이 도구 실행 허용 여부
