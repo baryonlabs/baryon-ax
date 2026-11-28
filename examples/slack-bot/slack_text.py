@@ -197,18 +197,30 @@ def _link_text(token: Token) -> str:
     return f"{label} ({url})"
 
 
-def render(tokens: Iterable[Token], directory: UserDirectory | None = None, me: str = "") -> str:
-    """Tokens → readable text. Mentions become ``@이름``; the mention of ``me`` is dropped when it only
-    addresses the bot and kept when a particle follows it (then it is the subject or object of the sentence)."""
+def self_label(name: str = "") -> str:
+    """How the bot's own mention reads: "너(baryon)", so the model knows the sentence is about itself."""
+    return f"너({name})" if name else "너"
+
+
+def render(tokens: Iterable[Token], directory: UserDirectory | None = None, me: str = "", drop_me: bool = False) -> str:
+    """Tokens → readable text. No mention is deleted: other people and bots become ``@이름``, and the mention of
+    ``me`` (the bot) becomes "너(이름)". ``drop_me=True`` leaves out the bot's mention when it only calls the bot
+    (no particle follows it); that form is only for keyword routing ("문서로 추가", "비서 …"), not for the model."""
     tokens = list(tokens)
     parts: list[str] = []
     skip_space = False
     for index, token in enumerate(tokens):
         kind = token.kind
         if kind == "user":
-            following = tokens[index + 1] if index + 1 < len(tokens) else None
-            if me and token.id == me and not (following and following.kind == "text" and _PARTICLE_AFTER_RE.match(following.text)):
-                skip_space = True
+            if me and token.id == me:
+                following = tokens[index + 1] if index + 1 < len(tokens) else None
+                in_sentence = bool(following and following.kind == "text" and _PARTICLE_AFTER_RE.match(following.text))
+                if drop_me and not in_sentence:
+                    skip_space = True
+                    continue
+                name = _user_name(token, directory)
+                parts.append(self_label("" if name == token.id else name))
+                skip_space = False
                 continue
             parts.append("@" + _user_name(token, directory))
         elif kind == "channel":
@@ -234,9 +246,9 @@ def render(tokens: Iterable[Token], directory: UserDirectory | None = None, me: 
     return "\n".join(line.rstrip() for line in text.strip().split("\n"))
 
 
-def readable(text: str | None, me: str = "", directory: UserDirectory | None = None) -> str:
+def readable(text: str | None, me: str = "", directory: UserDirectory | None = None, drop_me: bool = False) -> str:
     """Slack mrkdwn → readable text (see :func:`render`)."""
-    return render(tokenize(text), directory, me)
+    return render(tokenize(text), directory, me, drop_me)
 
 
 # --------------------------------------------------------------------------- truncation hint
@@ -295,13 +307,36 @@ def looks_truncated(text: str | None) -> bool:
 # --------------------------------------------------------------------------- messages
 
 
+HUMAN, SELF_BOT, OTHER_BOT, USER_TOKEN_APP = "human", "self_bot", "other_bot", "user_token_app"
+
+
 @dataclass(frozen=True)
 class Author:
     id: str                 # user id ("U…"), or the bot id ("B…") for bot posts without a user
-    name: str
-    is_bot: bool = False
+    name: str               # bot_profile.name for bots that have one, else the display name
+    is_bot: bool = False    # self_bot or other_bot
     bot_id: str = ""
     app_name: str = ""
+    kind: str = HUMAN       # human | self_bot | other_bot | user_token_app
+    app_id: str = ""
+
+
+def author_kind(message: dict, me: str = "", my_bot_id: str = "", person: Person | None = None) -> str:
+    """Who posted: the bot itself, another bot, an app posting with a person's user token, or a person.
+
+    * self_bot: ``user`` is the bot's user id, or ``bot_id`` is the bot's own.
+    * other_bot: any other post with ``bot_id``, ``bot_profile`` or subtype ``bot_message``, or by a bot user.
+    * user_token_app: ``app_id`` without a bot: an app wrote it as a person (their user token).
+    * human: everything else.
+    """
+    user_id, bot_id = message.get("user") or "", message.get("bot_id") or ""
+    if (me and user_id == me) or (my_bot_id and bot_id == my_bot_id):
+        return SELF_BOT
+    if bot_id or message.get("bot_profile") or message.get("subtype") == "bot_message" or (person and person.is_bot):
+        return OTHER_BOT
+    if message.get("app_id"):
+        return USER_TOKEN_APP
+    return HUMAN
 
 
 @dataclass(frozen=True)
@@ -340,7 +375,7 @@ class Message:
     thread_ts: str
     author: Author
     text_plain: str          # readable text, every mention as "@이름"
-    text_for_me: str         # the same without a mention that only addresses the bot
+    text_for_me: str         # the same, with the bot's own mention as "너(이름)"
     mentions: list[Mention] = field(default_factory=list)
     links: list[Link] = field(default_factory=list)
     files: list[File] = field(default_factory=list)
@@ -356,12 +391,29 @@ class Message:
         return any(m.is_me for m in self.mentions)
 
     @property
+    def addressees(self) -> list[Mention]:
+        """The mentions the message opens with ("<@A> <@B> 이거 봐줘" → A, B): the people or bots it is said to."""
+        found: list[Mention] = []
+        by_key = {(m.kind, m.id): m for m in self.mentions}
+        for token in self.tokens:
+            if token.kind in ("user", "usergroup", "special"):
+                mention = by_key.get((token.kind, token.id))
+                if mention and mention not in found:
+                    found.append(mention)
+            elif token.kind == "text" and not token.text.strip():
+                continue
+            else:
+                break
+        return found
+
+    @property
     def addressed_to_me(self) -> bool:
-        """False when the message mentions other people or bots (or a user group) but not the bot.
-        A message without mentions, or with only @here/@channel, may be for anyone, so it counts as True."""
+        """False when the message opens with a mention of another person, bot or user group and does not mention
+        the bot anywhere ("<@OTHER> 여기 내용이다"). A mention later in the sentence ("그건 <@K> 한테 물어봐"),
+        no mention at all, or only @here/@channel may be for the bot, so those count as True."""
         if self.mentions_me:
             return True
-        return not any(m.kind in ("user", "usergroup") for m in self.mentions)
+        return not any(m.kind in ("user", "usergroup") for m in self.addressees)
 
     @property
     def looks_truncated(self) -> bool:
@@ -379,7 +431,7 @@ class Message:
         return f"{self.speaker}: {text}" if self.speaker else text
 
     @classmethod
-    def from_event(cls, event: dict, directory: UserDirectory | None = None, me: str = "") -> Message:
+    def from_event(cls, event: dict, directory: UserDirectory | None = None, me: str = "", my_bot_id: str = "") -> Message:
         """A Slack message event or ``conversations.replies`` item → Message.
         ``message_changed`` reads the edited message; ``message_deleted`` and tombstones are marked deleted."""
         subtype = event.get("subtype") or ""
@@ -395,11 +447,14 @@ class Message:
         profile = inner.get("bot_profile") or {}
         app_name = profile.get("name") or inner.get("username") or ""
         person = directory.get(user_id) if directory and user_id else None
-        is_bot = bool(bot_id) or inner.get("subtype") == "bot_message" or bool(person and person.is_bot)
-        name = (person.name if person else "") or app_name or user_id or bot_id
+        kind = author_kind(inner, me, my_bot_id, person)
+        is_bot = kind in (SELF_BOT, OTHER_BOT)
+        # A bot's own profile name ("orca-bot") is what people call it; keep it over the bot user's display name.
+        name = (profile.get("name") or "") or (person.name if person else "") or app_name or user_id or bot_id
         if directory and user_id and app_name and not person:
             directory.remember(user_id, app_name, is_bot=True)
-        author = Author(user_id or bot_id, name, is_bot, bot_id, app_name)
+        author = Author(user_id or bot_id, name, is_bot, bot_id, app_name, kind,
+                        inner.get("app_id") or profile.get("app_id") or "")
 
         mentions: list[Mention] = []
         seen: set[tuple[str, str]] = set()
@@ -432,6 +487,6 @@ class Message:
             edited=subtype == "message_changed" or bool(inner.get("edited")),
             deleted=deleted,
             subtype=subtype,
-            from_me=bool(me) and user_id == me,
+            from_me=kind == SELF_BOT,
             tokens=tokens,
         )

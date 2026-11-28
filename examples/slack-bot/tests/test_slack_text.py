@@ -60,10 +60,11 @@ def test_time_is_not_an_emoji() -> None:
 READABLE_CASES = [
     # the real case (anonymized): the bot's own mention is part of the sentence, the other bot is the topic
     ("self is subject", "<@U_SELF> 는 <@U_OTHERBOT> 이 어떤일을 하고 있는지 알 알고 있나?",
-     "@baryon 는 @orca-bot 이 어떤일을 하고 있는지 알 알고 있나?"),
-    ("self only calls", "<@U_SELF> 연차는 며칠?", "연차는 며칠?"),
-    ("self at the end", "연차는 며칠? <@U_SELF>", "연차는 며칠?"),
-    ("other person kept", "<@U_SELF> <@U_KIM> 한테 물어봐", "@kim.dev 한테 물어봐"),
+     "너(baryon) 는 @orca-bot 이 어떤일을 하고 있는지 알 알고 있나?"),
+    ("self only calls", "<@U_SELF> 연차는 며칠?", "너(baryon) 연차는 며칠?"),
+    ("self at the end", "연차는 며칠? <@U_SELF>", "연차는 며칠? 너(baryon)"),
+    ("other person kept", "<@U_SELF> <@U_KIM> 한테 물어봐", "너(baryon) @kim.dev 한테 물어봐"),
+    ("self unknown name", "<@U_SELF> 확인", "너 확인"),
     ("real name fallback", "<@U_OWNER> 님 확인 부탁", "@오너 님 확인 부탁"),
     ("label when unknown", "<@U_NOBODY|park> 참고", "@park 참고"),
     ("id when nothing known", "<@U_NOBODY> 참고", "@U_NOBODY 참고"),
@@ -84,7 +85,20 @@ READABLE_CASES = [
 
 @pytest.mark.parametrize("name,text,expected", READABLE_CASES, ids=[c[0] for c in READABLE_CASES])
 def test_readable(name, text, expected) -> None:
-    assert readable(text, me=ME, directory=directory()) == expected
+    names = UserDirectory() if name == "self unknown name" else directory()
+    assert readable(text, me=ME, directory=names) == expected
+
+
+ROUTING_CASES = [  # drop_me: only for keyword routing; a mention inside the sentence still stays
+    ("<@U_SELF> 문서로 추가", "문서로 추가"),
+    ("<@U_SELF>", ""),
+    ("<@U_SELF> 는 <@U_OTHERBOT> 을 알아?", "너(baryon) 는 @orca-bot 을 알아?"),
+]
+
+
+@pytest.mark.parametrize("text,expected", ROUTING_CASES)
+def test_routing_text_drops_only_the_call(text, expected) -> None:
+    assert readable(text, me=ME, directory=directory(), drop_me=True) == expected
 
 
 def test_readable_without_me_keeps_every_mention() -> None:
@@ -101,6 +115,9 @@ ADDRESS_CASES = [
     ("here only", "<!here> 공지", False, True),
     ("usergroup only", "<!subteam^S0DEV|@dev> 확인", False, False),
     ("other person only", "<@U_KIM|kim> 이거 봐줘", False, False),
+    ("two others first", "<@U_KIM> <@U_OTHERBOT> 확인해 주세요", False, False),
+    ("other later in sentence", "그건 <@U_KIM> 한테 물어봐", False, True),
+    ("me later than other", "<@U_OTHERBOT> 말고 <@U_SELF> 가 해줘", True, True),
 ]
 
 
@@ -151,13 +168,35 @@ def test_message_from_event_collects_everything() -> None:
     message = Message.from_event(event, directory(), ME)
     assert message.author.name == "오너" and not message.author.is_bot and not message.from_me
     assert message.text_plain == "@baryon 안내서 (https://x.test/a) 보고 @kim.dev 한테 전달해줘"
-    assert message.text_for_me == "안내서 (https://x.test/a) 보고 @kim.dev 한테 전달해줘"
+    assert message.text_for_me == "너(baryon) 안내서 (https://x.test/a) 보고 @kim.dev 한테 전달해줘"
+    assert [m.id for m in message.addressees] == ["U_SELF"]
     assert [(m.id, m.name, m.is_bot, m.is_me) for m in message.mentions] == [
         ("U_SELF", "baryon", True, True), ("U_KIM", "kim.dev", False, False)]
     assert [(link.url, link.label) for link in message.links] == [("https://x.test/a", "안내서")]
     assert message.files[0].name == "단가표.xlsx" and message.reactions[0].count == 2
     assert message.edited and not message.deleted and message.thread_ts == "1.0"
-    assert message.line() == "오너: 안내서 (https://x.test/a) 보고 @kim.dev 한테 전달해줘"
+    assert message.line() == "오너: 너(baryon) 안내서 (https://x.test/a) 보고 @kim.dev 한테 전달해줘"
+    assert message.author.kind == "human"
+
+
+AUTHOR_CASES = [
+    ("person", {"user": "U_OWNER"}, "", "human", "오너"),
+    ("self by user id", {"user": "U_SELF", "bot_id": "B_SELF"}, "", "self_bot", "baryon"),
+    ("self by bot id", {"bot_id": "B_SELF", "subtype": "bot_message"}, "B_SELF", "self_bot", "B_SELF"),
+    ("other bot keeps bot_profile name", {"user": "U_OTHERBOT", "bot_id": "B9", "app_id": "A9",
+                                          "bot_profile": {"name": "orca-bot (app)", "app_id": "A9"}}, "", "other_bot", "orca-bot (app)"),
+    ("bot user without bot_id", {"user": "U_OTHERBOT"}, "", "other_bot", "orca-bot"),
+    ("webhook", {"subtype": "bot_message", "bot_id": "B8", "username": "deploy"}, "", "other_bot", "deploy"),
+    ("app with a user token", {"user": "U_KIM", "app_id": "A7"}, "", "user_token_app", "kim.dev"),
+]
+
+
+@pytest.mark.parametrize("name,event,my_bot_id,kind,author", AUTHOR_CASES, ids=[c[0] for c in AUTHOR_CASES])
+def test_author_kind(name, event, my_bot_id, kind, author) -> None:
+    message = Message.from_event({"ts": "1", "text": "글", **event}, directory(), ME, my_bot_id=my_bot_id)
+    assert (message.author.kind, message.author.name) == (kind, author)
+    assert message.author.is_bot is (kind in ("self_bot", "other_bot"))
+    assert message.from_me is (kind == "self_bot")
 
 
 def test_bot_post_and_edit_and_delete() -> None:

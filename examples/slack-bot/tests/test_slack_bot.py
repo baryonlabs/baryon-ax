@@ -184,7 +184,7 @@ def test_slack_links_are_expanded_or_marked_unreadable() -> None:
 
 def test_strip_mentions_and_mrkdwn() -> None:
     # the bot's own mention goes; other people stay as "@이름" (slack_text.readable)
-    assert strip_mentions("<@UBOT> 연차는 며칠? <@U123|kim>", me="UBOT") == "연차는 며칠? @kim"
+    assert strip_mentions("<@UBOT> 연차는 며칠? <@U123|kim>", me="UBOT") == "연차는 며칠? @kim"  # routing text
     assert to_mrkdwn("## 요약\n[RFP](https://x.test/a)") == "*요약*\n<https://x.test/a|RFP>"
     assert to_mrkdwn("기간은 **15일**입니다") == "기간은 ​*15일*​입니다"
 
@@ -200,7 +200,7 @@ def test_thread_messages_maps_roles_and_skips_status_posts() -> None:
     directory = UserDirectory(lambda uid: {"U1": {"profile": {"display_name": "kim"}}}.get(uid))
     # earlier turns say who spoke; the last one is the question being answered and stays bare
     assert thread_messages(replies, BOT, 10, directory) == [
-        {"role": "user", "content": "kim: 연차는 며칠?"},
+        {"role": "user", "content": "kim: 너 연차는 며칠?"},
         {"role": "assistant", "content": "15일입니다."},
         {"role": "user", "content": "그럼 반차도 돼?"},
     ]
@@ -217,7 +217,7 @@ def test_thread_messages_keep_other_bots_and_who_is_meant() -> None:
               "U_OTHERBOT": {"profile": {"display_name": "orca-bot"}, "is_bot": True}}
     messages = thread_messages(replies, BOT, 10, UserDirectory(people.get))
     assert messages == [
-        {"role": "user", "content": "owner: @baryon 는 @orca-bot 이 어떤일을 하고 있는지 알고 있나?"},
+        {"role": "user", "content": "owner: 너(baryon) 는 @orca-bot 이 어떤일을 하고 있는지 알고 있나?"},
         {"role": "user", "content": "orca-bot (봇): 작업 목록을 정리했어요."},  # another bot is not the assistant
         {"role": "user", "content": "@orca-bot 여기 내용이다"},
     ]
@@ -243,7 +243,8 @@ def test_mention_answers_in_thread_with_sources() -> None:
     bot.answer({"channel": "C1", "user": "U1", "ts": "100.1", "text": "<@UBOT> 연차휴가는 며칠이야?"}, web)
 
     chat = json.loads(requests[0].content)
-    assert chat["messages"] == [{"role": "user", "content": "연차휴가는 며칠이야?"}]
+    # the bot's mention is not deleted: the model reads it as itself ("너"; no users.info in this fake)
+    assert chat["messages"] == [{"role": "user", "content": "너 연차휴가는 며칠이야?"}]
     assert chat["stream"] is False and chat["thread_id"] == "slack:C1:100.1"
     # dev mode: the Slack user is delegated, the bot itself is X-User-Id (→ acting_service)
     headers = requests[0].headers
@@ -273,7 +274,7 @@ def test_thread_mention_sends_history_and_survives_missing_scope() -> None:
     requests.clear()
     responder(requests).answer({"channel": "C1", "user": "U2", "ts": "3", "thread_ts": "1", "text": "<@UBOT> 반차도 돼?"},
                                FakeWeb(history_error=True))
-    assert json.loads(requests[0].content)["messages"] == [{"role": "user", "content": "반차도 돼?"}]
+    assert json.loads(requests[0].content)["messages"] == [{"role": "user", "content": "너 반차도 돼?"}]
 
 
 def test_follow_up_only_in_subscribed_threads() -> None:

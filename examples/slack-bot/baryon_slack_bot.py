@@ -175,9 +175,9 @@ def slack_domain(url: str) -> str:
 
 
 def strip_mentions(text: str | None, me: str = "", directory: UserDirectory | None = None) -> str:
-    """Readable question text: the mention of ``me`` (the bot) is dropped when it only calls the bot; every other
-    mention stays as "@이름" so "<@BOT> <@U2> 이 뭐 해?" keeps who it is about (slack_text.readable)."""
-    return readable(text, me=me, directory=directory)
+    """Routing text for keyword checks ("문서로 추가", "질문 있어?"): the bot's mention is left out when it only
+    calls the bot; every other mention stays as "@이름". What the model reads comes from Responder.read instead."""
+    return readable(text, me=me, directory=directory, drop_me=True)
 
 
 def to_mrkdwn(markdown: str) -> str:
@@ -337,8 +337,12 @@ class Responder:
         self.team_domain = ""  # the bot's workspace ("acme" of acme.slack.com); links elsewhere cannot be read
 
     def read(self, text: str | None) -> str:
-        """Slack mrkdwn → readable text without the mention that only calls this bot (slack_text.readable)."""
+        """Slack mrkdwn → what the model reads: nothing deleted, the bot as "너(이름)", others as "@이름"."""
         return readable(text, me=self.bot_user_id, directory=self.directory)
+
+    def command_text(self, text: str | None) -> str:
+        """Slack mrkdwn → text for keyword routing and the empty-question check (the bot's own call left out)."""
+        return strip_mentions(text, self.bot_user_id, self.directory)
 
     def expand_links(self, web, messages: list[dict]) -> tuple[list[dict], list[str]]:
         """Slack message links in people's turns become the linked thread's text, so "see this thread" is
@@ -405,7 +409,8 @@ class Responder:
 
     def answer(self, event: dict, web) -> None:
         channel, user = event["channel"], event.get("user", "unknown")
-        question = self.read(event.get("text"))
+        command = self.command_text(event.get("text"))  # keyword routing; "<@봇>" alone is an empty question
+        question = self.read(event.get("text")) if command else ""
         thread_ts = event.get("thread_ts") or event["ts"]
         if not question and event.get("files"):
             return  # files posted without a question: wait for the question ("분석해줘") that usually follows
@@ -419,11 +424,11 @@ class Responder:
         if self.intake and self.intake.config.enabled:
             from doc_intake import thread_files, wants_file_reading, wants_intake
 
-            if wants_intake(question):
+            if wants_intake(command):
                 self.add_documents(event, web, question)
                 return
             # "분석하라", "엑셀 읽어봐" in a thread where people shared files: read those files instead of guessing.
-            if wants_file_reading(question) and (event.get("thread_ts") or event.get("files")):
+            if wants_file_reading(command) and (event.get("thread_ts") or event.get("files")):
                 context = self._intake_context(web, event)
                 if thread_files(context + [event], self.bot_user_id):
                     self.add_documents(event, web, question, analyze=True, messages=context)
@@ -431,7 +436,7 @@ class Responder:
         if self.guide and self.guide.enabled:
             from guide import wants_guide
 
-            if wants_guide(question) and self.answer_from_guide(event, web, question):
+            if wants_guide(command) and self.answer_from_guide(event, web, question):
                 return
         self._react(web, channel, event["ts"], "eyes", add=True)
         # Read the thread before posting the placeholder so it is not part of the history.
@@ -590,11 +595,14 @@ def create_app(config: Config | None = None):
     responder = Responder(config, baryon, bot_user_id, intake=intake, guide=Guide.from_env(baryon))
     responder.team_domain = slack_domain(auth.get("url", ""))
     responder.directory = UserDirectory.from_web(app.client)  # users:read; without it names stay ids
+    responder.directory.remember(bot_user_id, auth.get("user", ""), is_bot=True)  # "너(baryon)" even without users:read
     desk = _create_desk(responder)
     bridge = _create_bridge()
     loop_desk = _create_loop_desk(baryon, bot_user_id)
     archive = _create_archive(baryon, bot_user_id)
-    for part in (loop_desk, archive):
+    if bridge:
+        bridge.bot_user_id = bot_user_id  # its text is normalized like the rest (slack_text), names from one cache
+    for part in (loop_desk, archive, bridge):
         if part:
             part.directory = responder.directory  # one name cache for the whole bot
 
@@ -604,7 +612,7 @@ def create_app(config: Config | None = None):
             return False
         from loop_desk import wants_certify_list, wants_questions
 
-        text, user = responder.read(event.get("text")), event.get("user", "")
+        text, user = responder.command_text(event.get("text")), event.get("user", "")
         thread_ts = event.get("thread_ts") or event["ts"]
         try:
             if wants_questions(text):
@@ -626,7 +634,7 @@ def create_app(config: Config | None = None):
         if loop_command(event, client):
             return
         # The owner asking for work (draft, send, contact, plan …) goes to the voice secretary (secretary_bridge.py).
-        if bridge and bridge.wants(event, responder.read(event.get("text"))):
+        if bridge and bridge.wants(event, responder.command_text(event.get("text"))):
             bridge.handle(event, client)
         else:
             responder.answer(event, client)
@@ -644,7 +652,7 @@ def create_app(config: Config | None = None):
             desk.on_answer(event, gap_id, client)
         elif bridge and bridge.follows(event) and f"<@{bot_user_id}" not in (event.get("text") or ""):
             bridge.handle(event, client)
-        elif bridge and responder.is_direct_message(event) and bridge.wants(event, responder.read(event.get("text"))):
+        elif bridge and responder.is_direct_message(event) and bridge.wants(event, responder.command_text(event.get("text"))):
             bridge.handle(event, client)  # the owner asking for work in a DM
         elif responder.is_direct_message(event) or responder.should_follow_up(event):
             responder.answer(event, client)
