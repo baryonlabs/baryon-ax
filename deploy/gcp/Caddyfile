@@ -1,0 +1,13 @@
+# HTTPS (Let's Encrypt) and one demo login in front of the web UI. Nothing else is proxied.
+{$DEMO_HOST} {
+	encode zstd gzip
+	basic_auth {
+		{$DEMO_USER} {$DEMO_PASSWORD_HASH}
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+	reverse_proxy web:8080
+}
