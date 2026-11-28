@@ -1,0 +1,52 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "type": "message",
+   "user": "UTESTKIM001",
+   "ts": "1700000000.000100",
+   "text": "<@UBARYON0001> 견적 유효기간을 며칠로 할지 정리해 줄래?",
+   "thread_ts": "1700000000.000100",
+   "reply_count": 5
+  },
+  {
+   "type": "message",
+   "subtype": "bot_message",
+   "user": "UBARYON0001",
+   "bot_id": "BBARYON0001",
+   "username": "baryon",
+   "ts": "1700000003.000200",
+   "text": "제공된 문서에서 견적 유효기간을 찾지 못했습니다.",
+   "thread_ts": "1700000000.000100"
+  },
+  {
+   "type": "message",
+   "user": "UTESTLEE001",
+   "ts": "1700000060.000300",
+   "text": "지난 분기엔 고객마다 달라서 혼선이 있었어요. 보통 2주였고요.",
+   "thread_ts": "1700000000.000100"
+  },
+  {
+   "type": "message",
+   "user": "UTESTKIM001",
+   "ts": "1700000120.000400",
+   "text": "견적 유효기간은 30일로 하죠. 원자재 단가가 한 달 단위로 바뀌니까요.",
+   "thread_ts": "1700000000.000100"
+  },
+  {
+   "type": "message",
+   "user": "UTESTPARK01",
+   "ts": "1700000180.000500",
+   "text": "네 확정으로 알겠습니다. 견적서 양식은 제가 고칠게요.",
+   "thread_ts": "1700000000.000100"
+  },
+  {
+   "type": "message",
+   "user": "UTESTKIM001",
+   "ts": "1700000240.000600",
+   "text": "<@UTESTPARK01> 님이 견적서 양식 수정 담당해 주세요. 금요일까지요.",
+   "thread_ts": "1700000000.000100"
+  }
+ ],
+ "has_more": false
+}

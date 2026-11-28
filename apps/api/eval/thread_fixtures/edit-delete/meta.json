@@ -1,0 +1,8 @@
+{
+ "channel": "CTEST000001",
+ "channel_name": "events",
+ "channel_type": "channel",
+ "bot_user_id": "UBARYON0001",
+ "bot_id": "BBARYON0001",
+ "description": "결정 글이 편집되고(3층 → 5층), 다른 결정 글은 삭제된 스레드. 옛 값을 되풀이하면 안 된다."
+}

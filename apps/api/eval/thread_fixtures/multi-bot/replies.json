@@ -1,0 +1,58 @@
+{
+ "ok": true,
+ "messages": [
+  {
+   "type": "message",
+   "user": "UTESTJO0001",
+   "ts": "1700400000.000100",
+   "text": "<@UBARYON0001> <@UTESTHELP01> 이번 달 고객 지원 담당이 누구인지 알아?",
+   "thread_ts": "1700400000.000100",
+   "reply_count": 5
+  },
+  {
+   "type": "message",
+   "subtype": "bot_message",
+   "user": "UTESTHELP01",
+   "bot_id": "BTESTHELP01",
+   "username": "helper-bot",
+   "ts": "1700400005.000200",
+   "text": "제 기록으로는 고객 지원은 song 님 담당입니다. 환불 승인은 jo 님만 할 수 있습니다.",
+   "thread_ts": "1700400000.000100"
+  },
+  {
+   "type": "message",
+   "subtype": "bot_message",
+   "user": "UTESTNOTE01",
+   "bot_id": "BTESTNOTE01",
+   "username": "notes-bot",
+   "ts": "1700400020.000300",
+   "text": "정리: 고객 지원 담당은 ryu 님(11월 순번)입니다. 환불은 50만원 이하면 담당자가 바로 처리합니다. <@UBARYON0001|baryon>",
+   "thread_ts": "1700400000.000100"
+  },
+  {
+   "type": "message",
+   "user": "UTESTJO0001",
+   "ts": "1700400100.000400",
+   "text": "<@UTESTHELP01> 지난달 순번표 다시 올려줘",
+   "thread_ts": "1700400000.000100"
+  },
+  {
+   "type": "message",
+   "subtype": "bot_message",
+   "user": "UTESTHELP01",
+   "bot_id": "BTESTHELP01",
+   "username": "helper-bot",
+   "ts": "1700400104.000500",
+   "text": "순번표를 올렸습니다: 10월 song, 11월 ryu. 담당은 달마다 바뀝니다.",
+   "thread_ts": "1700400000.000100"
+  },
+  {
+   "type": "message",
+   "user": "UTESTJO0001",
+   "ts": "1700400200.000600",
+   "text": "맞아 이번 달은 ryu 담당이야. 환불 승인 기준은 아직 안 정했어.",
+   "thread_ts": "1700400000.000100"
+  }
+ ],
+ "has_more": false
+}

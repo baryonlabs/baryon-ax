@@ -1,0 +1,146 @@
+{
+ "purpose": {
+  "keyphrases": [
+   [
+    "견적"
+   ],
+   [
+    "납기"
+   ]
+  ],
+  "description": "견적서에 납기를 적는지 확인한다"
+ },
+ "decisions": [
+  {
+   "statement": [
+    [
+     "납기"
+    ],
+    [
+     "칸",
+     "추가"
+    ]
+   ],
+   "decided_by": [
+    "kang"
+   ],
+   "kind": "implicit",
+   "evidence_ts": [
+    "1700300120.000400"
+   ]
+  }
+ ],
+ "tacit": [
+  {
+   "statement": [
+    [
+     "맞춤"
+    ],
+    [
+     "협의"
+    ]
+   ],
+   "evidence_ts": [
+    "1700300060.000300"
+   ]
+  },
+  {
+   "statement": [
+    [
+     "견적"
+    ],
+    [
+     "납기"
+    ],
+    [
+     "적"
+    ]
+   ],
+   "evidence_ts": [
+    "1700300060.000300"
+   ]
+  }
+ ],
+ "ontology_change": {
+  "must_merge_into": [
+   {
+    "label": [
+     "견적",
+     "quote"
+    ],
+    "into": [
+     "견적서"
+    ]
+   }
+  ],
+  "must_not_contest": [
+   [
+    "견적서"
+   ],
+   [
+    "납기"
+   ]
+  ],
+  "relations_expected": [
+   {
+    "s": [
+     "견적서"
+    ],
+    "p": [
+     "포함",
+     "적",
+     "기재"
+    ],
+    "o": [
+     "납기"
+    ]
+   }
+  ]
+ },
+ "questions": {
+  "max_count": 1,
+  "must_cover_links": [
+   [
+    [
+     "맞춤"
+    ],
+    [
+     "기준",
+     "범위",
+     "어디까지",
+     "무엇"
+    ]
+   ]
+  ],
+  "forbidden": [
+   [
+    [
+     "납기"
+    ],
+    [
+     "적어야",
+     "적나요",
+     "적는지"
+    ]
+   ]
+  ]
+ },
+ "addressed_to_bot": {
+  "respond": [
+   "1700300000.000100"
+  ],
+  "silent": [
+   "1700300060.000300",
+   "1700300120.000400"
+  ]
+ },
+ "message_accounting": {
+  "min_attribution": 0.9,
+  "mentions": {
+   "1700300000.000100": [
+    "baryon"
+   ]
+  }
+ },
+ "must_not_state": []
+}

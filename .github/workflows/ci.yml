@@ -21,6 +21,8 @@ jobs:
       - run: pip install "uv==${UV_VERSION}"
       - run: uv sync --frozen --extra dev
       - run: uv run pytest
+      - name: Golden-thread eval (rule arm, repository fixtures, no model)
+        run: uv run python eval/thread_eval.py --no-private
 
   web:
     runs-on: ubuntu-latest

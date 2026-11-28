@@ -1,0 +1,119 @@
+{
+ "purpose": {
+  "keyphrases": [
+   [
+    "워크숍"
+   ],
+   [
+    "장소",
+    "결정"
+   ]
+  ],
+  "description": "다음 주 워크숍 장소를 정한다"
+ },
+ "decisions": [
+  {
+   "statement": [
+    [
+     "워크숍"
+    ],
+    [
+     "5층"
+    ]
+   ],
+   "decided_by": [
+    "yoon"
+   ],
+   "kind": "explicit",
+   "evidence_ts": [
+    "1700200000.000100"
+   ]
+  }
+ ],
+ "tacit": [
+  {
+   "statement": [
+    [
+     "3층"
+    ],
+    [
+     "공사"
+    ]
+   ],
+   "evidence_ts": [
+    "1700200030.000200"
+   ]
+  }
+ ],
+ "ontology_change": {
+  "must_add": [
+   {
+    "label": [
+     "워크숍"
+    ],
+    "definition": [
+     [
+      "5층"
+     ]
+    ]
+   }
+  ],
+  "must_not_contest": [
+   [
+    "워크숍"
+   ]
+  ]
+ },
+ "questions": {
+  "max_count": 1,
+  "must_cover_links": [],
+  "forbidden": [
+   [
+    [
+     "2만원"
+    ]
+   ],
+   [
+    [
+     "3층"
+    ],
+    [
+     "대회의실"
+    ]
+   ]
+  ]
+ },
+ "addressed_to_bot": {
+  "respond": [
+   "1700200180.000500"
+  ],
+  "silent": [
+   "1700200030.000200",
+   "1700200150.000400"
+  ]
+ },
+ "message_accounting": {
+  "min_attribution": 0.9,
+  "mentions": {
+   "1700200180.000500": [
+    "baryon"
+   ]
+  },
+  "deleted_ts": [
+   "1700200090.000300"
+  ]
+ },
+ "must_not_state": [
+  [
+   [
+    "3층대회의실",
+    "3층 대회의실"
+   ]
+  ],
+  [
+   [
+    "2만원"
+   ]
+  ]
+ ]
+}

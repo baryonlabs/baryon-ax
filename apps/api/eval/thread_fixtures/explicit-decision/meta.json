@@ -1,0 +1,8 @@
+{
+ "channel": "CTEST000001",
+ "channel_name": "team-ops",
+ "channel_type": "channel",
+ "bot_user_id": "UBARYON0001",
+ "bot_id": "BBARYON0001",
+ "description": "명시적 결정(견적 유효기간 30일)과 담당자 지정(양식 수정은 park)."
+}
