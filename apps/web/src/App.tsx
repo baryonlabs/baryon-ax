@@ -117,7 +117,7 @@ type OntologyPack = {
   id: string; name: string; domain: string; status: string; created_at: string;
   entities: { name: string; type: string; synonyms?: string[] }[]; relations: { from: string; type: string; to: string }[];
   slots?: { subject: string; relation: string; value_type: string; question: string; status: string }[];
-  required_sources: { kind: string; hint: string }[]; acceptance_questions: string[]; source_gap_ids: string[];
+  required_sources?: { kind: string; hint: string }[]; acceptance_questions?: string[]; source_gap_ids?: string[];
   verification?: PackVerification;
 };
 type OpenSourceComponent = {
@@ -353,7 +353,7 @@ const copy = {
     dismiss: "제외", createPack: "온톨로지 꾸러미 만들기", packCreated: (name: string) => `${name} 초안을 생성했습니다.`,
     noGaps: "아직 지식 공백이 없습니다", noGapsBody: "근거를 찾지 못한 질문이 생기면 여기에 쌓입니다.",
     noPacks: "아직 꾸러미가 없습니다", noPacksBody: "클러스터에서 꾸러미를 만들면 초안이 저장됩니다.",
-    entities: "엔티티", relations: "관계", generatedFrom: (count: number) => `질문 ${count}건에서 생성`,
+    entities: "엔티티", relations: "관계", generatedFrom: (count: number) => `질문 ${count}건에서 생성`, starterPack: "스타터 꾸러미",
     openSlots: "아직 모르는 값", alsoCalled: "다른 이름",
     gapCaptureFailed: "지식 공백을 불러올 수 없습니다.", packFailed: "온톨로지 꾸러미를 만들 수 없습니다.", statusDraft: "초안",
     approvePack: "승인", verifyPack: "재검증", verifying: "검증 중…", coverage: "커버리지", resolved: "해결",
@@ -451,7 +451,7 @@ const copy = {
     dismiss: "Dismiss", createPack: "Create ontology pack", packCreated: (name: string) => `Created draft ${name}.`,
     noGaps: "No knowledge gaps yet", noGapsBody: "Questions the platform cannot ground will appear here.",
     noPacks: "No packs yet", noPacksBody: "Create a pack from a cluster to store a draft.",
-    entities: "entities", relations: "relations", generatedFrom: (count: number) => `From ${count} question(s)`,
+    entities: "entities", relations: "relations", generatedFrom: (count: number) => `From ${count} question(s)`, starterPack: "Starter pack",
     openSlots: "Still unknown", alsoCalled: "Also called",
     gapCaptureFailed: "Could not load knowledge gaps.", packFailed: "Could not create the ontology pack.", statusDraft: "draft",
     approvePack: "Approve", verifyPack: "Re-verify", verifying: "Verifying…", coverage: "Coverage", resolved: "Resolved",
@@ -1823,7 +1823,7 @@ export default function App({ session = null }: { session?: AuthSession | null }
                 <strong>{pack.name}</strong>
                 <span className="badge">{pack.status === "active" ? t.statusActive : pack.status === "reviewed" ? t.statusReviewed : t.statusDraft}</span>
               </header>
-              <p>{t.generatedFrom(pack.source_gap_ids.length)} · {t.entities} {pack.entities.length} · {t.relations} {pack.relations.length}{pack.verification ? ` · ${t.coverage} ${Math.round(pack.verification.coverage * 100)}%` : ""}</p>
+              <p>{pack.source_gap_ids?.length ? t.generatedFrom(pack.source_gap_ids.length) : t.starterPack} · {t.entities} {pack.entities.length} · {t.relations} {pack.relations.length}{pack.verification ? ` · ${t.coverage} ${Math.round(pack.verification.coverage * 100)}%` : ""}</p>
               {pack.verification && <div className="coverage">
                 <div className="meter"><span style={{ width: `${Math.min(100, pack.verification.coverage * 100)}%` }}/></div>
                 <small>{pack.verification.passed}/{pack.verification.total} · {Math.round(pack.verification.coverage * 100)}%</small>
@@ -1842,10 +1842,10 @@ export default function App({ session = null }: { session?: AuthSession | null }
               {pack.verification?.results.filter(result => !result.passed).slice(0, 2).map(result => <p className="muted" key={result.question}>
                 {result.question}{result.missing_terms.length ? ` · ${t.missingTerms}: ${result.missing_terms.join(", ")}` : ""}
               </p>)}
-              <p className="muted">{pack.required_sources.map(source => source.hint).join(" · ")}</p>
+              <p className="muted">{(pack.required_sources ?? []).map(source => source.hint).join(" · ")}</p>
               <div className="pack-actions">
                 {pack.status === "draft" && <button className="primary" disabled={gapBusy} onClick={() => void updatePack(pack, "approve")}><ShieldCheck size={15}/>{t.approvePack}</button>}
-                {(pack.status === "reviewed" || pack.status === "active") && <button className="primary" disabled={gapBusy} onClick={() => void updatePack(pack, "verify")}><RefreshCw size={15}/>{gapBusy ? t.verifying : t.verifyPack}</button>}
+                {(pack.status === "reviewed" || pack.status === "active") && (pack.acceptance_questions?.length ?? 0) > 0 && <button className="primary" disabled={gapBusy} onClick={() => void updatePack(pack, "verify")}><RefreshCw size={15}/>{gapBusy ? t.verifying : t.verifyPack}</button>}
               </div>
             </article>)}
           </div>}
