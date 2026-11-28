@@ -19,7 +19,7 @@ sends or changes. This bridge gives the owner the secretary in Slack:
 
 Environment: SECRETARY_URL (e.g. http://127.0.0.1:18603), SECRETARY_API_KEY, SECRETARY_SLACK_USERS
 (comma-separated Slack user ids), SECRETARY_OWNER (default phone-owner), SECRETARY_ALL=true to bridge
-every message from those users.
+every message from those users, SECRETARY_LOG_TEXT=true to log what was said (off by default).
 """
 
 from __future__ import annotations
@@ -62,6 +62,15 @@ MENTION_ID = re.compile(r"<@([UWB][A-Z0-9]+)(?:\|[^>]*)?>")
 # so its yes/no parser (apps/secretary/secretary/policy.py parse_answer) reads it — never glued to thread context.
 ANSWER_WORDS = re.compile(r"^(?:응|어|네|예|넹|그래|좋아|진행|진행해|해|해줘|해\s*줘|보내|보내줘|보내\s*줘|실행|실행해|오케이|ok|okay|yes|"
                           r"아니|아니요|아뇨|안돼|하지\s*마|취소|그만|no|cancel)(?:요|주세요)?[.!~]*$", re.I)
+
+
+def log_text() -> bool:
+    return os.getenv("SECRETARY_LOG_TEXT", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def shown(text: str, limit: int = 300) -> str:
+    """What was said, for a log line: hidden unless SECRETARY_LOG_TEXT is on (names, addresses, mail bodies)."""
+    return json.dumps(text[:limit], ensure_ascii=False) if log_text() else "(hidden)"
 
 
 def from_bot(message: dict) -> bool:
@@ -108,6 +117,7 @@ class Thread:
     seen: float = 0.0  # thread messages up to this ts were already given to the secretary
     own: set[str] = field(default_factory=set)  # messages the bridge posted (the secretary knows them)
     confirm_ts: str = ""  # the open confirmation's message (its buttons)
+    confirm_id: str = ""  # the secretary's id for it
     confirm_prompt: str = ""
 
 
@@ -300,11 +310,14 @@ class SecretaryBridge:
         channel = (body.get("channel") or {}).get("id", "")
         message = body.get("message") or {}
         thread_ts = message.get("thread_ts") or message.get("ts", "")
+        thread = self.threads.get((channel, thread_ts))
+        logger.info("block_actions user=%s value=%s confirm=%s message=%s thread=%s", user, "yes" if allow else "no",
+                    thread.confirm_id if thread else "-", message.get("ts", ""), thread_ts)
         if user not in self.config.users:
             web.chat_postEphemeral(channel=channel, user=user, text="이 확인은 비서의 주인만 할 수 있어요.")
             return
-        thread = self.threads.get((channel, thread_ts))
         if thread is None or not thread.waiting or thread.confirm_ts != message.get("ts", ""):
+            logger.info("block_actions user=%s ignored: the confirmation is closed or expired", user)
             web.chat_update(channel=channel, ts=message.get("ts", ""), text="⚠️ 이 확인은 이미 끝났거나 만료됐어요.", blocks=[])
             return
         web.chat_update(channel=channel, ts=message.get("ts", ""), blocks=[],
@@ -312,13 +325,13 @@ class SecretaryBridge:
         with thread.lock:
             thread.last_active = time.time()
             # Exactly "응" / "아니", nothing from the thread: the secretary's parser must see a bare answer.
-            self._answer(thread, channel, thread_ts, "응" if allow else "아니", web)
+            self._answer(thread, channel, thread_ts, "응" if allow else "아니", web, source="button")
 
-    def _answer(self, thread: Thread, channel: str, thread_ts: str, word: str, web) -> None:
+    def _answer(self, thread: Thread, channel: str, thread_ts: str, word: str, web, source: str = "person") -> None:
         """Answer the open confirmation and mark its message with what really happened."""
         confirm_ts, prompt = thread.confirm_ts, thread.confirm_prompt
         thread.waiting = False
-        outcome = self._run(thread, channel, thread_ts, word, web, answering=True)
+        outcome = self._run(thread, channel, thread_ts, word, web, answering=True, source=source)
         if confirm_ts:
             done = {True: f"✅ 진행됨 — {prompt}", False: f"✋ 거부됨 — {prompt}"}.get(
                 outcome, "⚠️ 확인 결과를 받지 못했어요. 비서의 답을 확인해 주세요.")
@@ -369,7 +382,7 @@ class SecretaryBridge:
         return response.json()["id"]
 
     def _run(self, thread: Thread, channel: str, thread_ts: str, text: str, web, images: list[dict] | None = None,
-             answering: bool = False) -> bool | None:
+             answering: bool = False, source: str = "person") -> bool | None:
         """One turn on the secretary. Returns the confirmation's outcome when this turn answered one:
         True (진행됨), False (거부됨), None (no confirmation was applied)."""
         pending = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=":robot_face: 비서가 일하고 있어요…")
@@ -381,9 +394,13 @@ class SecretaryBridge:
         outcome: bool | None = None
         used = ""
         last_update = 0.0
+        # source: a person's message, or a button turned into "응"/"아니" (the secretary logs it with the confirmation)
+        extra = {"source": source, **({"confirm_id": thread.confirm_id} if answering and thread.confirm_id else {})}
+        logger.info("turn source=%s chars=%d images=%d confirm=%s text=%s", source, len(text), len(images or []),
+                    extra.get("confirm_id", "-"), shown(text))
         try:
             turn = self.http.post(f"{self.config.url}/v1/sessions/{thread.session}/turn", headers=self.headers,
-                                  json={"text": text[:40000], "images": images or []})
+                                  json={"text": text[:40000], "images": images or [], **extra})
             if turn.status_code == 404 and answering:  # the session and its open confirmation are gone
                 thread.session = self._start()
                 web.chat_update(channel=channel, ts=pending["ts"],
@@ -392,7 +409,7 @@ class SecretaryBridge:
             if turn.status_code == 404:  # the secretary restarted or closed the idle session: start again
                 thread.session = self._start()
                 turn = self.http.post(f"{self.config.url}/v1/sessions/{thread.session}/turn", headers=self.headers,
-                                      json={"text": (START + text)[:40000], "images": images or []})
+                                      json={"text": (START + text)[:40000], "images": images or [], "source": source})
             turn.raise_for_status()
             try:
                 used = str((turn.json() or {}).get("used", ""))
@@ -416,8 +433,10 @@ class SecretaryBridge:
                         cards.append(event["card"])
                     elif kind == "confirmed":
                         outcome = bool(event.get("allow"))
+                        logger.info("confirmed id=%s allow=%s", event.get("id", ""), outcome)
                     elif kind == "confirm":
                         confirm = event.get("prompt", "")
+                        thread.confirm_id = str(event.get("id", ""))
                         break
                     elif kind == "error":
                         reply.append(f"\n(오류: {event.get('message', '')})")

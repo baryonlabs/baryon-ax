@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
+from .logs import log_text, shown
 from .policy import confirmation_prompt, decide, parse_answer, status_label
 from .mail_tools import mail_tools
 from .notify import notify_tools
@@ -230,19 +231,31 @@ class Session:
 
     # --- user input -------------------------------------------------------------------
 
-    async def turn(self, text: str, images: list[dict] | None = None) -> str:
-        """Handle one utterance (with photos, if the owner attached any).
+    async def turn(self, text: str, images: list[dict] | None = None, source: str = "app", confirm_id: str = "") -> str:
+        """Handle one utterance (with photos, if the owner attached any). `source` says who produced it
+        (app, person, button, bot) and `confirm_id` which confirmation a button answers; both only for the log.
         Returns how it was used: confirm | answer | interrupt | queued."""
         self.last_active = time.time()
         text = text.strip()
+        logger.info("turn session=%s source=%s chars=%d images=%d pending=%s busy=%s text=%s", self.id, source, len(text),
+                    len(images or []), (self.pending or {}).get("id", "-"), self.busy, shown(text))
+        if source == "button" and not self.pending:
+            logger.warning("confirm button session=%s for=%s but no confirmation is open", self.id, confirm_id or "-")
         if images:  # a photo is always a new request, never a yes or no
-            self._resolve_pending(False)
+            self._resolve_pending(False, "photo")
         if self.pending:
             answer = parse_answer(text)
+            pending = self.pending
+            if confirm_id and confirm_id != pending["id"]:
+                logger.warning("confirm button session=%s for=%s but the open one is %s", self.id, confirm_id, pending["id"])
+            # A yes/no word is logged as is; anything longer is what the person said, hidden by default.
+            raw = json.dumps(text[:40], ensure_ascii=False) if answer is not None else shown(text)
+            logger.info("confirm answer session=%s id=%s tool=%s source=%s raw=%s parsed=%s", self.id, pending["id"],
+                        pending["tool"], source, raw, answer)
             if answer is not None:
-                self._resolve_pending(answer)
+                self._resolve_pending(answer, f"{source} answer")
                 return "confirm"
-            self._resolve_pending(False)  # anything else counts as "no", then becomes the next request
+            self._resolve_pending(False, f"{source} other reply")  # anything else counts as "no", then becomes the next request
         if self.busy:
             await self.interrupt()
             if text.replace(" ", "").rstrip(".!") in STOP_WORDS:
@@ -260,6 +273,7 @@ class Session:
         """Something happened in the background (a goal finished, or needs an answer). Say it as soon as
         the line is free; never talk over the caller or interrupt a turn."""
         self.notices.append(text)
+        logger.info("turn session=%s source=notice chars=%d text=%s", self.id, len(text), shown(text))
         if not self.busy and not self.pending and not self.closed:
             self._task = asyncio.create_task(self._run(self._notice_prompt()))
 
@@ -269,7 +283,7 @@ class Session:
                 "질문이 있으면 그대로 물어보고, 답을 들으면 answer_goal로 전달하라.\n" + "\n".join(f"- {n}" for n in notices))
 
     async def interrupt(self) -> None:
-        self._resolve_pending(False)
+        self._resolve_pending(False, "interrupt")
         self.backlog.clear()
         if self.busy:
             try:
@@ -349,7 +363,8 @@ class Session:
         from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
 
         decision = decide(tool, tool_input)
-        logger.info("tool %s -> %s %s", tool, decision.action, json.dumps(tool_input, ensure_ascii=False)[:300])
+        logger.info("tool %s -> %s %s", tool, decision.action,
+                    json.dumps(tool_input, ensure_ascii=False)[:300] if log_text() else f"keys={sorted(tool_input)}")
         if decision.action == "auto":
             return PermissionResultAllow()
         if decision.action == "deny":
@@ -359,21 +374,26 @@ class Session:
         future: asyncio.Future[bool] = loop.create_future()
         confirm_id = uuid.uuid4().hex[:8]
         prompt = confirmation_prompt(tool, tool_input)
-        self.pending = {"id": confirm_id, "tool": tool, "prompt": prompt, "future": future}
+        entry = self.pending = {"id": confirm_id, "tool": tool, "prompt": prompt, "future": future}
+        logger.info("confirm asked session=%s id=%s tool=%s prompt=%s", self.id, confirm_id, tool, shown(prompt))
         self.emit({"type": "confirm", "id": confirm_id, "prompt": prompt, "tool": tool})
         try:
             allowed = await asyncio.wait_for(future, CONFIRM_TIMEOUT)
         except asyncio.TimeoutError:
             allowed = False
+            entry["reason"] = "timeout"
         finally:
             if self.pending and self.pending["id"] == confirm_id:
                 self.pending = None
+        logger.info("confirm resolved session=%s id=%s tool=%s result=%s by=%s", self.id, confirm_id, tool,
+                    "allow" if allowed else "deny", entry.get("reason", "unknown"))
         self.emit({"type": "confirmed", "id": confirm_id, "allow": allowed, "tool": tool})
         if allowed:
             return PermissionResultAllow()
         return PermissionResultDeny(message="The user said no (or did not answer). Do not run it; ask what to do instead.")
 
-    def _resolve_pending(self, allow: bool) -> None:
+    def _resolve_pending(self, allow: bool, reason: str = "closed") -> None:
         if self.pending and not self.pending["future"].done():
+            self.pending["reason"] = reason
             self.pending["future"].set_result(allow)
         self.pending = None

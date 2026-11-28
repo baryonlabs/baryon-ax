@@ -31,6 +31,7 @@ class FakeSecretary:
 
     def __init__(self) -> None:
         self.turns: list[str] = []
+        self.bodies: list[dict] = []
         self.images: list[list[dict]] = []
         self.sessions = 0
         self.down = False
@@ -69,6 +70,7 @@ class FakeSecretary:
         if request.url.path.endswith("/turn"):
             body = json.loads(request.content)
             self.turns.append(body["text"])
+            self.bodies.append(body)
             self.images.append(body.get("images", []))
             return httpx.Response(200, json={"used": self._turn(body["text"])})
         if request.url.path.endswith("/events"):
@@ -343,3 +345,24 @@ def test_other_bots_in_the_thread_keep_their_names() -> None:
     work.handle({"channel": "C1", "ts": "11.0", "thread_ts": "10.0", "user": OWNER, "text": thread[-1]["text"]},
                 FakeWeb(replies=thread))
     assert "other-bot (봇): 주간 보고 요약" in secretary.turns[0] and "주인: 주간 보고" not in secretary.turns[0]
+
+
+def test_button_clicks_and_turns_are_logged_without_what_was_said(caplog, monkeypatch) -> None:
+    monkeypatch.delenv("SECRETARY_LOG_TEXT", raising=False)
+    secretary, web = FakeSecretary(), FakeWeb()
+    with caplog.at_level("INFO", logger="baryon-slack-bot.secretary"):
+        work = _waiting(secretary, web)
+        _press(work, web, True)
+    lines = [record.getMessage() for record in caplog.records if record.name == "baryon-slack-bot.secretary"]
+    assert secretary.bodies[0]["source"] == "person" and "confirm_id" not in secretary.bodies[0]
+    assert secretary.bodies[1] == {"text": "응", "images": [], "source": "button", "confirm_id": "c1"}
+    assert any(line.startswith(f"block_actions user={OWNER} value=yes confirm=c1") for line in lines)
+    assert any(line.startswith("turn source=person chars=") and "text=(hidden)" in line for line in lines)
+    assert any(line == "turn source=button chars=1 images=0 confirm=c1 text=(hidden)" for line in lines)
+    assert any(line == "confirmed id=c1 allow=True" for line in lines)
+    assert not any("메일 초안 만들어서" in line for line in lines)
+    monkeypatch.setenv("SECRETARY_LOG_TEXT", "1")
+    caplog.clear()
+    with caplog.at_level("INFO", logger="baryon-slack-bot.secretary"):
+        work.handle({"channel": "C1", "ts": "8.0", "thread_ts": "1.0", "user": OWNER, "text": "제목 바꿔서 다시 만들어 줘"}, web)
+    assert any('text="제목 바꿔서 다시 만들어 줘"' in record.getMessage() for record in caplog.records)

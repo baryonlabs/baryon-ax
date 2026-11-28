@@ -175,6 +175,7 @@ You also need [voice](voice.md) with a dictation model and Supertonic 3 installe
 | `SECRETARY_MAX_SESSIONS` | `2` | Number of conversations at once. |
 | `SECRETARY_IDLE_SECONDS` | `900` | Idle conversations are closed after this long. |
 | `SECRETARY_CONFIRM_TIMEOUT` | `120` | A question unanswered for this long counts as "no". |
+| `SECRETARY_LOG_TEXT` | off | `1` also logs turn text, confirmation prompts and tool input. Off by default because they hold names, addresses and mail bodies. Every log line starts with an ISO 8601 time with its zone. Each confirmation is logged as `confirm asked`, then `confirm answer` (the tool, the yes/no word as it came in, and the `parse_answer` result), then `confirm resolved` (allow or deny, and what decided it). Each turn is logged with its length and `source` (`app`, `person`, `button`, `bot`). The Slack bridge sends `source` and the answered `confirm_id`, and logs `block_actions` button clicks with the user id, the value and the confirm id. |
 | `SECRETARY_MAX_GOALS` | `3` | Goal agents running at once. Others wait as `queued`. |
 | `SECRETARY_STATE_DIR` | `~/.baryon-secretary` | Where the goal list is kept. |
 

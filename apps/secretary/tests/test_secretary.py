@@ -705,3 +705,110 @@ def test_drafts_need_no_yes_but_sending_mail_does() -> None:
     assert policy.decide("Bash", reply).action == "confirm"
     assert policy.confirmation_prompt("Bash", reply).startswith("메일을 보낼까요?")
     assert policy.decide("Bash", {"command": "gog gmail drafts list --max 5 -j"}).action == "auto"
+
+
+# --- logs: what happened in a confirmation can be read back afterwards (item 65) ---------------------
+
+def _lines(caplog) -> list[str]:
+    return [record.getMessage() for record in caplog.records if record.name == "secretary"]
+
+
+def test_every_log_line_has_an_iso_time_with_its_zone() -> None:
+    import logging
+    import re
+
+    from secretary.logs import IsoFormatter
+
+    record = logging.LogRecord("secretary", logging.INFO, __file__, 1, "turn session=%s", ("s1",), None)
+    line = IsoFormatter("%(asctime)s %(levelname)s %(name)s %(message)s").format(record)
+    assert re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}[+-]\d\d:\d\d INFO secretary turn session=s1$", line), line
+    # The server installs it on the root handler and uvicorn's own handlers.
+    handler = logging.StreamHandler()
+    logging.getLogger("uvicorn.access").addHandler(handler)
+    try:
+        from secretary import logs
+
+        logs.setup("INFO")
+        assert isinstance(handler.formatter, IsoFormatter)
+        assert all(isinstance(h.formatter, IsoFormatter) for h in logging.getLogger().handlers
+                   if type(h) is logging.StreamHandler)
+    finally:
+        logging.getLogger("uvicorn.access").removeHandler(handler)
+
+
+def test_a_button_yes_is_logged_from_request_to_allow(caplog, monkeypatch) -> None:
+    monkeypatch.delenv("SECRETARY_LOG_TEXT", raising=False)
+
+    async def run() -> str:
+        FakeClient.results = []
+        FakeClient.scripts = {"메일 보내 줘": [Permission("mcp__claude_ai_Gmail__send_message", {"to": "a@b.c", "body": "비밀 내용"}),
+                                              StreamEvent("보냈어요."), ResultMessage()]}
+        session = new_session()
+        await session.start()
+        await session.turn("메일 보내 줘", source="person")
+        confirm = (await drain(session, until="confirm"))[-1]
+        assert await session.turn("응", source="button", confirm_id=confirm["id"]) == "confirm"
+        await drain(session)
+        return confirm["id"]
+
+    with caplog.at_level("INFO", logger="secretary"):
+        confirm_id = asyncio.run(run())
+    lines = _lines(caplog)
+    turn = next(line for line in lines if line.startswith("turn ") and "source=person" in line)
+    assert "chars=7" in turn and "text=(hidden)" in turn and "메일 보내" not in turn
+    assert any(f"confirm asked session=" in line and f"id={confirm_id} tool=mcp__claude_ai_Gmail__send_message prompt=(hidden)" in line
+               for line in lines)
+    assert any(f"confirm answer" in line and f"id={confirm_id} tool=mcp__claude_ai_Gmail__send_message source=button "
+               'raw="응" parsed=True' in line for line in lines)
+    assert any(f"confirm resolved" in line and f"id={confirm_id}" in line and "result=allow by=button answer" in line for line in lines)
+    assert not any("비밀 내용" in line or "a@b.c" in line for line in lines)  # tool input: keys only
+    assert any("keys=['body', 'to']" in line for line in lines)
+
+
+def test_a_reply_that_is_not_yes_or_no_is_logged_as_a_deny(caplog, monkeypatch) -> None:
+    monkeypatch.delenv("SECRETARY_LOG_TEXT", raising=False)
+
+    async def run() -> None:
+        FakeClient.results = []
+        FakeClient.scripts = {"메일 보내": [Permission("mcp__claude_ai_Gmail__send_message", {"to": "a@b.c"}), ResultMessage()]}
+        session = new_session()
+        await session.start()
+        await session.turn("메일 보내")
+        await drain(session, until="confirm")
+        await session.turn("[앞선 메시지] 김 대리: 제목 바꿔요\n응", source="person", confirm_id="stale")
+        await drain(session)
+
+    with caplog.at_level("INFO", logger="secretary"):
+        asyncio.run(run())
+    lines = _lines(caplog)
+    assert any("confirm answer" in line and "source=person raw=(hidden) parsed=None" in line for line in lines)
+    assert any("confirm resolved" in line and "result=deny by=person other reply" in line for line in lines)
+    assert any("for=stale but the open one is" in line for line in lines)
+    assert not any("김 대리" in line for line in lines)
+
+
+def test_turn_text_is_logged_only_when_turned_on(caplog, monkeypatch) -> None:
+    monkeypatch.setenv("SECRETARY_LOG_TEXT", "1")
+
+    async def run() -> None:
+        FakeClient.scripts = {}
+        session = new_session()
+        await session.start()
+        await session.turn("오늘 일정 알려 줘", source="bot")
+        await drain(session)
+        await session.turn("응", source="button", confirm_id="c0")  # nothing is open
+
+    with caplog.at_level("INFO", logger="secretary"):
+        asyncio.run(run())
+    lines = _lines(caplog)
+    assert any('source=bot chars=10' in line and 'text="오늘 일정 알려 줘"' in line for line in lines)
+    assert any("confirm button" in line and "for=c0 but no confirmation is open" in line for line in lines)
+
+
+def test_http_turn_records_where_the_text_came_from(api, caplog) -> None:
+    FakeClient.scripts = {}
+    session_id = api.post("/v1/sessions", headers=AUTH, json={"owner": "me"}).json()["id"]
+    with caplog.at_level("INFO", logger="secretary"):
+        assert api.post(f"/v1/sessions/{session_id}/turn", headers=AUTH, json={"text": "안녕", "source": "person"}).status_code == 200
+    assert any(f"turn session={session_id} source=person used=answer" in line for line in _lines(caplog))
+    assert api.post(f"/v1/sessions/{session_id}/turn", headers=AUTH, json={"text": "x", "source": "evil\nline"}).status_code == 422
