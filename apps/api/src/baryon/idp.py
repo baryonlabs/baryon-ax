@@ -94,6 +94,7 @@ class ProvisionedOrganization:
     admin_email: str
     admin_user_id: str | None = None
     created_user: bool = False
+    created_organization: bool = True
     admin_invited: bool = False
     delivery: str = ""
 
@@ -192,7 +193,7 @@ class KeycloakAdminAdapter:
                 return item
         return None
 
-    def _create_organization(self, organization_id: str, organization_name: str, login_url: str) -> dict[str, Any]:
+    def _create_organization(self, organization_id: str, organization_name: str, login_url: str) -> tuple[dict[str, Any], bool]:
         body = {
             "name": organization_name[:120],
             "alias": organization_id,
@@ -207,14 +208,16 @@ class KeycloakAdminAdapter:
             existing = self._find_organization(organization_id)
             if existing is None:
                 raise
-            return existing
+            # A retry or an orphan from an earlier failure: reuse it, but never
+            # report it as ours, because a later failure must not delete it.
+            return existing, False
         identifier = self._id_from_location(created)
         if identifier:
-            return {"id": identifier, "alias": organization_id, "name": organization_name}
+            return {"id": identifier, "alias": organization_id, "name": organization_name}, True
         existing = self._find_organization(organization_id)
         if existing is None:
             raise IdpError("Keycloak created an organization without an id")
-        return existing
+        return existing, True
 
     def _find_user(self, email: str) -> dict[str, Any] | None:
         response = self._request("GET", "/users", params={"email": email, "exact": "true"})
@@ -301,7 +304,7 @@ class KeycloakAdminAdapter:
     # ------------------------------------------------------------------ public API
 
     def provision(self, organization_id: str, organization_name: str, admin_email: str, login_url: str) -> ProvisionedOrganization:
-        organization = self._create_organization(organization_id, organization_name, login_url)
+        organization, created_organization = self._create_organization(organization_id, organization_name, login_url)
         organization_key = str(organization.get("id") or organization_id)
         user: dict[str, Any] | None = None
         created_user = False
@@ -318,10 +321,11 @@ class KeycloakAdminAdapter:
                     self._request("DELETE", f"/users/{quote(str(user['id']))}")
                 except IdpError:
                     logger.warning("Could not remove a half-created Keycloak user for %s", organization_id)
-            try:
-                self._request("DELETE", f"/organizations/{quote(organization_key)}")
-            except IdpError:
-                logger.warning("Could not remove a half-created Keycloak organization %s", organization_id)
+            if created_organization:
+                try:
+                    self._request("DELETE", f"/organizations/{quote(organization_key)}")
+                except IdpError:
+                    logger.warning("Could not remove a half-created Keycloak organization %s", organization_id)
             raise
         return ProvisionedOrganization(
             organization_id=organization_id,
@@ -329,12 +333,13 @@ class KeycloakAdminAdapter:
             admin_email=admin_email,
             admin_user_id=str(user["id"]),
             created_user=created_user,
+            created_organization=created_organization,
             admin_invited=True,
             delivery="keycloak",
         )
 
     def rollback(self, provisioned: ProvisionedOrganization) -> None:
-        if provisioned.external_id:
+        if provisioned.created_organization and provisioned.external_id:
             try:
                 self._request("DELETE", f"/organizations/{quote(provisioned.external_id)}")
             except IdpError as error:

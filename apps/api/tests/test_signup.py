@@ -325,6 +325,7 @@ def test_keycloak_adapter_creates_org_user_and_invitation() -> None:
     provisioned = adapter.provision("acme", "Acme Corp", "admin@acme.example", "https://ax.example/?organization=acme")
     assert provisioned.external_id == "org-1"
     assert provisioned.admin_user_id == "user-1" and provisioned.created_user is True
+    assert provisioned.created_organization is True
     paths = [path for _, path in calls]
     assert "/admin/realms/baryon-ax/organizations" in paths
     assert "/admin/realms/baryon-ax/users" in paths
