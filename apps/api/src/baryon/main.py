@@ -113,6 +113,8 @@ class ChatRequest(BaseModel):
     stream: bool = True
     use_retrieval: bool = True
     use_memory: bool = True
+    # false: an unanswered exchange is not a knowledge gap (a client's question about people or bots, a routing call)
+    record_gap: bool = True
     thread_id: str | None = None
     locale: Literal["ko", "en"] = "ko"
     # The composer sends only tool IDs from the user's explicit selection.  The
@@ -3228,6 +3230,8 @@ def record_knowledge_gap(principal: Principal, request: ChatRequest, answer: str
 
     Never raises: gap capture must not break a chat response.
     """
+    if not request.record_gap:
+        return None
     try:
         gap = gap_store.observe(
             organization_id=principal.organization_id,
