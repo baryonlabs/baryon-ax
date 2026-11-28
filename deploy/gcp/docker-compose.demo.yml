@@ -1,0 +1,41 @@
+# Public preview demo on one VM (deploy/gcp/README.md). Use with the base file:
+#   docker compose -f docker-compose.yml -f deploy/gcp/docker-compose.demo.yml up -d --build
+# Only Caddy is reachable from outside (80/443, HTTPS + demo login). The web UI runs in dev mode, which trusts
+# identity headers, so nothing else may be exposed: the API, web and Qdrant bind to loopback.
+services:
+  api:
+    restart: unless-stopped
+    environment:
+      # The model is one setting. Empty = demo-local answers (screen demo) until DEMO_MODEL_URL is set.
+      MODEL_BASE_URL: ${DEMO_MODEL_URL:-}
+      MODEL_NAME: ${DEMO_MODEL_NAME:-baryon-ax-qwen}
+      MODEL_API_KEY: ${DEMO_MODEL_KEY:-none}
+      MODEL_DISABLE_THINKING: "true"
+      SYSTEM_METRICS_ENABLED: "false"
+      AUTH_MODE: dev
+    volumes:
+      # No docker socket on a public host (the base file mounts it for the system-metrics panel).
+      - /dev/null:/var/run/docker.sock:ro
+  web:
+    restart: unless-stopped
+  qdrant:
+    restart: unless-stopped
+  caddy:
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    depends_on: [web]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DEMO_HOST: ${DEMO_HOST:?set DEMO_HOST}
+      DEMO_USER: ${DEMO_USER:-demo}
+      DEMO_PASSWORD_HASH: ${DEMO_PASSWORD_HASH:?set DEMO_PASSWORD_HASH}
+    volumes:
+      - ./deploy/gcp/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:
