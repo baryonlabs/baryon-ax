@@ -19,7 +19,7 @@ sends or changes. This bridge gives the owner the secretary in Slack:
 
 Environment: SECRETARY_URL (e.g. http://127.0.0.1:18603), SECRETARY_API_KEY, SECRETARY_SLACK_USERS
 (comma-separated Slack user ids), SECRETARY_OWNER (default phone-owner), SECRETARY_ALL=true to bridge
-every message from those users.
+every message from those users, SECRETARY_LOG_TEXT=true to log what was said (off by default).
 """
 
 from __future__ import annotations
@@ -56,6 +56,32 @@ MAX_IMAGES = 4                 # the secretary takes four images a turn
 MAX_IMAGE_BYTES = 5_000_000
 FILE_TEXT_CHARS = 20000        # all attached text together
 MAX_FILE_BYTES = 20_000_000
+LEADING_MENTION = re.compile(r"^\s*<@([UWB][A-Z0-9]+)(?:\|[^>]*)?>")
+MENTION_ID = re.compile(r"<@([UWB][A-Z0-9]+)(?:\|[^>]*)?>")
+# A thread reply that only answers an open confirmation ("응", "네 보내줘", "아니"): it goes to the secretary bare,
+# so its yes/no parser (apps/secretary/secretary/policy.py parse_answer) reads it — never glued to thread context.
+ANSWER_WORDS = re.compile(r"^(?:응|어|네|예|넹|그래|좋아|진행|진행해|해|해줘|해\s*줘|보내|보내줘|보내\s*줘|실행|실행해|오케이|ok|okay|yes|"
+                          r"아니|아니요|아뇨|안돼|하지\s*마|취소|그만|no|cancel)(?:요|주세요)?[.!~]*$", re.I)
+
+
+def log_text() -> bool:
+    return os.getenv("SECRETARY_LOG_TEXT", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def shown(text: str, limit: int = 300) -> str:
+    """What was said, for a log line: hidden unless SECRETARY_LOG_TEXT is on (names, addresses, mail bodies)."""
+    return json.dumps(text[:limit], ensure_ascii=False) if log_text() else "(hidden)"
+
+
+def from_bot(message: dict) -> bool:
+    """Posted by a bot or an app — even when Slack also gives it the installing person's user id."""
+    return bool(message.get("bot_id") or message.get("app_id") or message.get("bot_profile")
+                or message.get("subtype") == "bot_message")
+
+
+def bot_name(message: dict) -> str:
+    profile = message.get("bot_profile") or {}
+    return str(profile.get("name") or message.get("username") or "").strip()
 
 
 @dataclass
@@ -90,6 +116,9 @@ class Thread:
     lock: threading.Lock = field(default_factory=threading.Lock)
     seen: float = 0.0  # thread messages up to this ts were already given to the secretary
     own: set[str] = field(default_factory=set)  # messages the bridge posted (the secretary knows them)
+    confirm_ts: str = ""  # the open confirmation's message (its buttons)
+    confirm_id: str = ""  # the secretary's id for it
+    confirm_prompt: str = ""
 
 
 def card_mrkdwn(card: dict) -> str:
@@ -210,15 +239,34 @@ class SecretaryBridge:
 
     def wants(self, event: dict, text: str) -> bool:
         """Bridge this message? Only the owner's, and only work requests or replies in a secretary thread."""
-        if not self.config.enabled or event.get("user") not in self.config.users:
+        if not self._from_owner(event):
             return False
         key = (event.get("channel", ""), event.get("thread_ts") or event.get("ts", ""))
         return self.config.bridge_all or key in self.threads or bool(ACTION_WORDS.search(text))
 
     def follows(self, event: dict) -> bool:
         """A plain reply (no mention) by the owner in a thread the secretary is working in."""
-        return (self.config.enabled and event.get("user") in self.config.users and event.get("subtype") in (None, "file_share")
+        return (self._from_owner(event) and event.get("subtype") in (None, "file_share")
                 and (event.get("channel", ""), event.get("thread_ts", "")) in self.threads)
+
+    def _from_owner(self, event: dict) -> bool:
+        """The owner wrote it, as a person, to this bot. Another bot's or app's post carries the owner's user id
+        when the owner installed it (bot_id / app_id / bot_profile), and "<@다른봇> 여기 내용이다" is for that bot."""
+        return (self.config.enabled and event.get("user") in self.config.users and not from_bot(event)
+                and not self._addressed_elsewhere(event))
+
+    def _bare(self, text: str) -> str:
+        """The text without this bot's own mention ("<@봇> 응" → "응"), for the yes/no check."""
+        mine = MENTION_ID.sub(lambda match: "" if match.group(1) == self.bot_user_id else match.group(0), text)
+        return " ".join(mine.split())
+
+    def _addressed_elsewhere(self, event: dict) -> bool:
+        """It opens by mentioning someone else and does not mention this bot."""
+        text = event.get("text") or ""
+        lead = LEADING_MENTION.match(text)
+        if not lead or event.get("type") == "app_mention":  # an app_mention always calls this bot
+            return False
+        return not (self.bot_user_id and self.bot_user_id in MENTION_ID.findall(text))
 
     # --- one request -------------------------------------------------------------------------
 
@@ -243,6 +291,10 @@ class SecretaryBridge:
                 text = START + text
         with thread.lock:
             thread.last_active = time.time()
+            answer = self._bare(event.get("text") or "")
+            if thread.waiting and not event.get("files") and ANSWER_WORDS.match(answer):
+                self._answer(thread, channel, thread_ts, answer, web)  # "응" in the thread: the confirmation's answer
+                return
             thread.waiting = False
             # "위의 내용을 초안으로": what was said in the thread before (the document bot's answer, others' messages)
             # goes with the request, once — and so do the files attached there and to this message.
@@ -258,12 +310,32 @@ class SecretaryBridge:
         channel = (body.get("channel") or {}).get("id", "")
         message = body.get("message") or {}
         thread_ts = message.get("thread_ts") or message.get("ts", "")
+        thread = self.threads.get((channel, thread_ts))
+        logger.info("block_actions user=%s value=%s confirm=%s message=%s thread=%s", user, "yes" if allow else "no",
+                    thread.confirm_id if thread else "-", message.get("ts", ""), thread_ts)
         if user not in self.config.users:
             web.chat_postEphemeral(channel=channel, user=user, text="이 확인은 비서의 주인만 할 수 있어요.")
             return
-        web.chat_update(channel=channel, ts=message.get("ts", ""), text=("✅ 진행할게요." if allow else "✋ 취소했어요."), blocks=[])
-        self.handle({"channel": channel, "ts": thread_ts, "thread_ts": thread_ts, "user": user}, web,
-                    text="응" if allow else "아니")
+        if thread is None or not thread.waiting or thread.confirm_ts != message.get("ts", ""):
+            logger.info("block_actions user=%s ignored: the confirmation is closed or expired", user)
+            web.chat_update(channel=channel, ts=message.get("ts", ""), text="⚠️ 이 확인은 이미 끝났거나 만료됐어요.", blocks=[])
+            return
+        web.chat_update(channel=channel, ts=message.get("ts", ""), blocks=[],
+                        text="⏳ 진행을 전달하고 있어요…" if allow else "⏳ 취소를 전달하고 있어요…")
+        with thread.lock:
+            thread.last_active = time.time()
+            # Exactly "응" / "아니", nothing from the thread: the secretary's parser must see a bare answer.
+            self._answer(thread, channel, thread_ts, "응" if allow else "아니", web, source="button")
+
+    def _answer(self, thread: Thread, channel: str, thread_ts: str, word: str, web, source: str = "person") -> None:
+        """Answer the open confirmation and mark its message with what really happened."""
+        confirm_ts, prompt = thread.confirm_ts, thread.confirm_prompt
+        thread.waiting = False
+        outcome = self._run(thread, channel, thread_ts, word, web, answering=True, source=source)
+        if confirm_ts:
+            done = {True: f"✅ 진행됨 — {prompt}", False: f"✋ 거부됨 — {prompt}"}.get(
+                outcome, "⚠️ 확인 결과를 받지 못했어요. 비서의 답을 확인해 주세요.")
+            web.chat_update(channel=channel, ts=confirm_ts, text=done, blocks=[])
 
     def _context(self, web, channel: str, thread_ts: str, thread: Thread, current_ts: str,
                  attachments: list[dict] | None = None) -> str:
@@ -284,14 +356,16 @@ class SecretaryBridge:
             newest = max(newest, stamp)
             if ts == current_ts or stamp <= thread.seen or ts in thread.own:
                 continue
-            if attachments is not None and not message.get("bot_id"):
+            if attachments is not None and not from_bot(message):
                 attachments += [item for item in message.get("files") or [] if item.get("mode") not in {"tombstone", "hidden_by_limit"}]
             body = self.read(message.get("text"))
             files = ", ".join(item.get("name", "") for item in message.get("files") or [] if item.get("name"))
             if not body and not files:
                 continue
-            who = "주인" if message.get("user") in self.config.users else ("baryon 봇" if message.get("bot_id") else
-                                                                          f"<@{message.get('user', '?')}>")
+            if from_bot(message):  # the real author: "다른봇 (봇)", never "주인" even under the owner's user id
+                who = f"{bot_name(message)} (봇)" if bot_name(message) else "봇"
+            else:
+                who = "주인" if message.get("user") in self.config.users else f"<@{message.get('user', '?')}>"
             lines.append(f"{who}: {body}" + (f" (첨부: {files})" if files else ""))
         thread.seen = newest
         if not lines:
@@ -307,22 +381,40 @@ class SecretaryBridge:
         response.raise_for_status()
         return response.json()["id"]
 
-    def _run(self, thread: Thread, channel: str, thread_ts: str, text: str, web, images: list[dict] | None = None) -> None:
+    def _run(self, thread: Thread, channel: str, thread_ts: str, text: str, web, images: list[dict] | None = None,
+             answering: bool = False, source: str = "person") -> bool | None:
+        """One turn on the secretary. Returns the confirmation's outcome when this turn answered one:
+        True (진행됨), False (거부됨), None (no confirmation was applied)."""
         pending = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=":robot_face: 비서가 일하고 있어요…")
         thread.own.add(pending.get("ts", ""))
         steps: list[str] = []
         reply: list[str] = []
         cards: list[dict] = []
         confirm = ""
+        outcome: bool | None = None
+        used = ""
         last_update = 0.0
+        # source: a person's message, or a button turned into "응"/"아니" (the secretary logs it with the confirmation)
+        extra = {"source": source, **({"confirm_id": thread.confirm_id} if answering and thread.confirm_id else {})}
+        logger.info("turn source=%s chars=%d images=%d confirm=%s text=%s", source, len(text), len(images or []),
+                    extra.get("confirm_id", "-"), shown(text))
         try:
             turn = self.http.post(f"{self.config.url}/v1/sessions/{thread.session}/turn", headers=self.headers,
-                                  json={"text": text[:40000], "images": images or []})
+                                  json={"text": text[:40000], "images": images or [], **extra})
+            if turn.status_code == 404 and answering:  # the session and its open confirmation are gone
+                thread.session = self._start()
+                web.chat_update(channel=channel, ts=pending["ts"],
+                                text="⚠️ 비서가 다시 시작돼 확인이 사라졌어요. 아무것도 실행하지 않았어요. 다시 요청해 주세요.")
+                return None
             if turn.status_code == 404:  # the secretary restarted or closed the idle session: start again
                 thread.session = self._start()
                 turn = self.http.post(f"{self.config.url}/v1/sessions/{thread.session}/turn", headers=self.headers,
-                                      json={"text": (START + text)[:40000], "images": images or []})
+                                      json={"text": (START + text)[:40000], "images": images or [], "source": source})
             turn.raise_for_status()
+            try:
+                used = str((turn.json() or {}).get("used", ""))
+            except ValueError:
+                used = ""
             with self.http.stream("GET", f"{self.config.url}/v1/sessions/{thread.session}/events", headers=self.headers) as stream:
                 for line in stream.iter_lines():
                     if not line.startswith("data: "):
@@ -339,8 +431,12 @@ class SecretaryBridge:
                                             text=":robot_face: 비서가 일하고 있어요…\n" + "\n".join(f"• {step}" for step in steps[-4:]))
                     elif kind == "card" and isinstance(event.get("card"), dict):
                         cards.append(event["card"])
+                    elif kind == "confirmed":
+                        outcome = bool(event.get("allow"))
+                        logger.info("confirmed id=%s allow=%s", event.get("id", ""), outcome)
                     elif kind == "confirm":
                         confirm = event.get("prompt", "")
+                        thread.confirm_id = str(event.get("id", ""))
                         break
                     elif kind == "error":
                         reply.append(f"\n(오류: {event.get('message', '')})")
@@ -349,8 +445,23 @@ class SecretaryBridge:
         except Exception as error:  # noqa: BLE001 - say it in the thread instead of failing silently
             logger.exception("secretary request failed")
             web.chat_update(channel=channel, ts=pending["ts"], text=f":x: 비서에게 전달하지 못했어요 ({type(error).__name__}).")
-            return
-        text_out = "".join(reply).strip() or ("확인이 필요해요." if confirm else "끝났어요.")
+            return None
+        status = ""
+        if outcome is True:
+            status = f"✅ 진행됨 — {thread.confirm_prompt or '확인한 작업을 실행했어요.'}"
+        elif outcome is False:
+            status = f"✋ 거부됨 — {thread.confirm_prompt or '확인한 작업'} 실행하지 않았어요."
+        elif answering and used != "confirm":
+            status = "⚠️ 열린 확인이 없어 이 답은 확인으로 쓰이지 않았어요. 아무것도 실행하지 않았어요."
+        said = "".join(reply).strip()
+        if said:
+            text_out = f"{status}\n{said}" if status else said
+        elif status:
+            text_out = status
+        elif confirm:
+            text_out = "확인이 필요해요."
+        else:  # say what was done, not a bare "끝났어요."
+            text_out = (f"마쳤어요. 마지막으로 한 일: {steps[-1]}" if steps else "비서가 답 없이 끝냈어요. 실행된 작업은 없어요.")
         blocks: list[dict] = [{"type": "section", "text": {"type": "mrkdwn", "text": text_out[:2900]}}]
         for card in cards:
             blocks.append({"type": "divider"})
@@ -362,10 +473,13 @@ class SecretaryBridge:
         web.chat_update(channel=channel, ts=pending["ts"], text=text_out[:3000], blocks=blocks[:50])
         if confirm:
             thread.waiting = True
+            thread.confirm_prompt = confirm
             posted = web.chat_postMessage(channel=channel, thread_ts=thread_ts, text=f"확인: {confirm}", blocks=[
                 {"type": "section", "text": {"type": "mrkdwn", "text": f":raised_hand: *확인이 필요해요*\n{confirm}"}},
                 {"type": "actions", "elements": [
                     {"type": "button", "action_id": ACTION_YES, "style": "primary", "text": {"type": "plain_text", "text": "진행"}, "value": "yes"},
                     {"type": "button", "action_id": ACTION_NO, "style": "danger", "text": {"type": "plain_text", "text": "취소"}, "value": "no"}]},
                 {"type": "context", "elements": [{"type": "mrkdwn", "text": "스레드에 \"응\"이나 \"아니\"로 답해도 돼요."}]}])
-            thread.own.add((posted or {}).get("ts", ""))
+            thread.confirm_ts = (posted or {}).get("ts", "")
+            thread.own.add(thread.confirm_ts)
+        return outcome

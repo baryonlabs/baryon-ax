@@ -28,6 +28,7 @@ Environment:
                            profile's MCP list, which the owner then changes from the app
     SECRETARY_MAX_SESSIONS concurrent conversations (default 2)
     SECRETARY_IDLE_SECONDS close idle conversations after this long (default 900)
+    SECRETARY_LOG_TEXT     1 to also log what was said (off by default; logs.py)
 """
 
 from __future__ import annotations
@@ -46,12 +47,13 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from . import logs
 from .goals import Goal, GoalManager
 from .notify import Notifier, public
 from .profile import Profile
 from .session import Session
 
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logs.setup(os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("secretary")
 
 API_KEY = os.getenv("SECRETARY_API_KEY", "")
@@ -178,6 +180,10 @@ class TurnBody(BaseModel):
     # Long enough for a transcribed recording (about 40 minutes of speech).
     text: str = Field(min_length=1, max_length=40000)
     images: list[ImageBody] = Field(default_factory=list, max_length=4)
+    # Who produced the text, for the log: the voice app (app), a person's Slack message (person), a confirmation
+    # button the Slack bridge turned into "응"/"아니" (button), or another bot's post (bot).
+    source: str = Field("app", pattern=r"^(app|person|button|bot)$")
+    confirm_id: str = Field("", max_length=32)  # the confirmation a button answers
 
 
 @app.get("/health")
@@ -304,7 +310,8 @@ async def start(body: StartBody, authorization: str | None = Header(None)) -> di
 async def turn(session_id: str, body: TurnBody, authorization: str | None = Header(None)) -> dict:
     require_key(authorization)
     images = [image.model_dump() for image in body.images]
-    used = await get_session(session_id).turn(body.text, images) if images else await get_session(session_id).turn(body.text)
+    used = await get_session(session_id).turn(body.text, images, source=body.source, confirm_id=body.confirm_id)
+    logger.info("turn session=%s source=%s used=%s", session_id, body.source, used)
     return {"used": used}
 
 
