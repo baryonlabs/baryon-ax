@@ -36,7 +36,7 @@ from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 
 PLATFORM_ADMIN = "platform-admin"
-DEFAULT_PUBLIC_PATHS = "/health,/docs*,/redoc*,/openapi.json,/v1/open-source"
+DEFAULT_PUBLIC_PATHS = "/health,/docs*,/redoc*,/openapi.json,/v1/open-source,/v1/signup"
 IDENTITY_HEADERS = (b"x-user-id", b"x-organization-id", b"x-roles")
 DELEGATION_HEADERS = (b"x-on-behalf-of", b"x-on-behalf-of-roles", b"x-acting-service")
 # Allowed characters for delegated user ids such as ``slack:U123`` or ``discord:42``.

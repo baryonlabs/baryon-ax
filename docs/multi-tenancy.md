@@ -28,7 +28,7 @@ Browser / Bot / MCP client
 ```
 
 - **테넌트 = 조직 ID**입니다. 토큰의 조직 클레임 값이 레지스트리의 테넌트 `id`와 같아야 합니다.
-- 게이트 예외: 공개 경로(`OIDC_PUBLIC_PATHS`: `/health`, `/docs*`, `/openapi.json`, `/v1/open-source` 등)와 `/v1/platform/*`(플랫폼 관리자 자체 권한 검사).
+- 게이트 예외: 공개 경로(`OIDC_PUBLIC_PATHS`: `/health`, `/docs*`, `/openapi.json`, `/v1/open-source`, `/v1/signup` 등)와 `/v1/platform/*`(플랫폼 관리자 자체 권한 검사). `OIDC_PUBLIC_PATHS`를 직접 지정하면 `/v1/signup`을 반드시 포함하세요.
 - 오류 응답은 기계가 읽을 수 있는 형식입니다.
 
 ```json
@@ -46,6 +46,26 @@ USAGE_FLUSH_SECONDS=5               # 사용량 카운터 디스크 반영 주�
 OIDC_PLATFORM_ADMIN_ROLE=baryon-platform-admin
 TENANT_SHARED_GATEWAY_ALLOWED=false # 공유 MCP 게이트웨이 도구 실행 허용 여부
 AUTH_MODE=oidc                      # pooled에서는 반드시 oidc
+
+# 초대 코드 가입 (docs/multi-tenancy.md 6절)
+APP_BASE_URL=https://ax.example.com # 초대 메일 링크의 기준 주소
+SIGNUP_RATE_LIMIT_PER_HOUR=20        # IP당 시간당 가입 시도
+SIGNUP_CODE_RATE_LIMIT_PER_HOUR=10   # 코드당 시간당 가입 시도
+INVITE_CLAIM_TIMEOUT_SECONDS=900     # 처리 중인 코드의 재시도 대기
+TRUST_PROXY_HEADERS=false            # 신뢰하는 프록시 뒤에서만 true (X-Forwarded-For)
+SMTP_HOST=                           # 비우면 개발 모드: 링크를 로그에만 남김
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=no-reply@baryon.local
+SMTP_STARTTLS=true
+SMTP_SSL=false
+IDP_MODE=auto                        # auto | stub | keycloak
+KEYCLOAK_URL=https://id.example.com
+KEYCLOAK_REALM=baryon-ax
+KEYCLOAK_ADMIN_CLIENT_ID=baryon-ax-admin
+KEYCLOAK_ADMIN_CLIENT_SECRET=...
+KEYCLOAK_ADMIN_GROUP=baryon-admin
 ```
 
 - `AUTH_MODE=dev`와 `pooled`를 함께 쓰면 `X-Organization-Id` 헤더를 그대로 믿습니다. 시작 시 경고를 남기며 **테스트 전용**입니다.
@@ -103,6 +123,10 @@ AUTH_MODE=oidc                      # pooled에서는 반드시 oidc
 | `DELETE` | `/v1/platform/tenants/{id}` | 오프보딩: `deleting`으로 막고 모든 저장소에서 데이터 삭제 |
 | `GET` | `/v1/platform/tenants/{id}/usage` | 문서 수·저장 용량·일별/월별 사용량 |
 | `GET` | `/v1/platform/tenants/{id}/audit-events` | 테넌트 감사 로그 + 해당 테넌트에 대한 플랫폼 조치 |
+| `POST` | `/v1/platform/invites` | 초대 코드 발급 (201). 응답의 `code`는 **이때 한 번만** |
+| `GET` | `/v1/platform/invites?status=` | 초대 목록 (코드·해시 없음) |
+| `DELETE` | `/v1/platform/invites/{id}` | 회수. 이미 사용된 코드는 409 |
+| `POST` | `/v1/signup` | **공개** 가입: 코드·이메일·조직명 → 테넌트 생성 + 첫 관리자 초대 |
 
 테넌트 레코드:
 
@@ -132,6 +156,64 @@ python scripts/tenant_admin.py delete acme --yes
 ---
 
 ## 6. 온보딩 절차
+
+두 가지 경로가 있습니다. 초대 코드 가입은 pooled 배포의 기본 온보딩이고, 수동 생성은 초대 없이 운영자가 직접 준비할 때 씁니다.
+
+### 6.1 초대 코드 가입 (권장)
+
+1. **코드 발급** (플랫폼 관리자): 조직 ID·첫 관리자 이메일·만료(기본 7일)를 정해 발급합니다. 코드 원문은 응답에서 한 번만 보입니다.
+
+   ```bash
+   python scripts/invite_admin.py create --org acme --email admin@acme.example --expires 7d
+   # 또는
+   curl -X POST https://ax.example.com/v1/platform/invites \
+     -H "Authorization: Bearer $PLATFORM_TOKEN" -H "Content-Type: application/json" \
+     -d '{"organization_id":"acme","email":"admin@acme.example","expires_days":7}'
+   ```
+
+2. **가입 화면**: 초대받은 사람이 `/signup`에서 코드·이메일·조직명을 넣고 제출합니다. 조직 ID는 코드에 묶여 있으므로 사용자가 바꿀 수 없습니다.
+
+3. **자동 처리** (`POST /v1/signup`):
+   - 코드 검증(1회용·만료·회수 확인, 상수 시간 비교) → 테넌트 생성(`/v1/platform/tenants`와 같은 경로·기본 plan/쿼터)
+   - IdP 어댑터로 Organization(`alias`=테넌트 ID) 준비 + 첫 관리자 초대
+   - 감사 이벤트 `tenant.created`, `invite.redeemed` (코드 원문 없음)
+   - 초대 메일 발송: "조직 X가 만들어졌습니다. 여기서 로그인하세요" (한국어+영어)
+   - IdP 준비가 실패하면 테넌트를 되돌리고(보상 트랜잭션) 코드를 다시 쓸 수 있게 풉니다.
+
+4. **로그인**: 메일의 링크(`APP_BASE_URL/?organization=<id>`)를 열어 첫 관리자로 로그인합니다. 확인은 `GET /v1/auth/me`의 `organization_id`와 `/v1/admin/settings`의 `tenant.status=active`입니다.
+
+5. **회수·조회**:
+
+   ```bash
+   python scripts/invite_admin.py list --status pending
+   python scripts/invite_admin.py revoke <invite-id>
+   ```
+
+**개발 모드**: `AUTH_MODE=dev`이거나 Keycloak 설정이 없으면 IdP는 **stub**입니다(레지스트리에 테넌트만 생성). `SMTP_HOST`가 비어 있으면 메일 대신 서버 로그에 로그인 링크를 남기고 가입은 성공 처리합니다. 같은 코드·이메일로 다시 제출하면 테넌트를 새로 만들지 않고 메일만 다시 보냅니다(멱등).
+
+**IdP 어댑터 설정**: `IDP_MODE=auto`는 `AUTH_MODE=oidc`이고 아래 값이 모두 있을 때만 Keycloak을 씁니다. 서비스 계정에는 `manage-users`와 `manage-realm`(Organizations) 권한이 필요합니다. Keycloak 어댑터는 사용자를 찾거나 만들고, Organization 멤버십과 `KEYCLOAK_ADMIN_GROUP`(기본 `baryon-admin`)을 부여한 뒤 비밀번호 설정·이메일 인증 메일을 보냅니다.
+
+```env
+IDP_MODE=keycloak
+KEYCLOAK_URL=https://id.example.com
+KEYCLOAK_REALM=baryon-ax
+KEYCLOAK_ADMIN_CLIENT_ID=baryon-ax-admin
+KEYCLOAK_ADMIN_CLIENT_SECRET=...
+KEYCLOAK_ADMIN_GROUP=baryon-admin
+```
+
+> 공유 realm에서는 `baryon-admin`이 realm 전역 역할입니다. 한 사용자가 여러 Organization에 속하면 그중 어느 조직에서든 관리자 권한을 갖습니다. 고객별로 관리자 역할을 완전히 분리해야 하면 silo 배포를 쓰거나, 조직별 그룹·역할 매핑을 별도로 구성하세요.
+
+**보안 요약**:
+
+- 코드는 `AX-XXXX-XXXX-XXXX` 형식의 고엔트로피 값이고 `TENANT_STORE/invites.json`에는 SHA-256 해시만 저장합니다.
+- 1회용·만료·회수 가능, 사용 시각과 사용자 이메일을 기록합니다.
+- `/v1/signup`은 IP·코드 단위로 레이트리밋합니다(`SIGNUP_RATE_LIMIT_PER_HOUR`, `SIGNUP_CODE_RATE_LIMIT_PER_HOUR`).
+- 잘못된 코드, 만료, 회수, 다른 이메일은 모두 같은 `invite_invalid` 응답이라 코드·이메일·조직의 존재 여부를 알 수 없습니다.
+- 초대 API는 플랫폼 관리자만 호출할 수 있습니다. 테넌트 관리자는 403입니다.
+- 감사 로그에는 `invite_id`·테넌트·이메일·행위자만 남고 코드 원문은 남지 않습니다.
+
+### 6.2 수동 온보딩 (초대 없이)
 
 1. **테넌트 생성**: `POST /v1/platform/tenants` (또는 CLI `create`). ID는 IdP의 조직 alias와 같게 정합니다.
 2. **IdP 준비**: Keycloak에 같은 alias로 Organization(또는 조직 속성)을 만들고, 첫 관리자 계정을 만들어 `baryon-admin` 그룹과 해당 Organization에 넣습니다.
